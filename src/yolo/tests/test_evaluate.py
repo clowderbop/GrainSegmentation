@@ -204,6 +204,34 @@ class EvaluateMainTests(unittest.TestCase):
         self.assertAlmostEqual(means["mean_AP"], 0.5)
         self.assertAlmostEqual(means["mean_AP50"], 0.6)
 
+    def test_aggregate_sahi_means_instance_metrics(self) -> None:
+        ev = _reload_evaluate()
+        row_a = {
+            "AP": 0.5,
+            "AP50": 0.5,
+            "AP75": 0.5,
+            "APs": 0.0,
+            "APm": 0.0,
+            "APl": 0.5,
+            "AR1": 0.0,
+            "AR10": 0.5,
+            "AR100": 0.5,
+            "aji": 0.8,
+            "precision_iou50": 0.9,
+            "recall_iou50": 0.7,
+            "f1_iou50": 0.75,
+            "precision_iou75": 0.8,
+            "recall_iou75": 0.6,
+            "f1_iou75": 0.65,
+            "mP_iou50_95": 0.85,
+            "mR_iou50_95": 0.65,
+            "mF1_iou50_95": 0.7,
+        }
+        row_b = {**row_a, "aji": 0.4, "f1_iou50": 0.5}
+        means = ev.aggregate_sahi_means([row_a, row_b])
+        self.assertAlmostEqual(means["mean_aji"], 0.6)
+        self.assertAlmostEqual(means["mean_f1_iou50"], 0.625)
+
     def test_aggregate_sahi_means_single_image_all_undefined(self) -> None:
         ev = _reload_evaluate()
         row = {
@@ -264,6 +292,12 @@ class EvaluateMainTests(unittest.TestCase):
                     loaded = json.loads(text)
                     self.assertIsNone(loaded["mean_AP"])
                     self.assertIsNone(loaded["mean_AP50"])
+                    self.assertAlmostEqual(loaded["mean_aji"], 1.0)
+                    self.assertAlmostEqual(loaded["mean_mF1_iou50_95"], 1.0)
+                    row0 = loaded["per_image"][0]
+                    self.assertTrue(row0["empty_gt"])
+                    self.assertAlmostEqual(row0["aji"], 1.0)
+                    self.assertAlmostEqual(row0["f1_iou50"], 1.0)
 
 
 if __name__ == "__main__":

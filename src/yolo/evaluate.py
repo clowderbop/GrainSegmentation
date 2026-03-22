@@ -1,11 +1,23 @@
 """
 Evaluate trained YOLO segmentation models: Ultralytics val or SAHI tiled inference on held-out TIFFs (COCO mask AP).
+
+Import path: this module imports ``evaluation.metrics`` from the sibling ``src/evaluation``
+package. The parent of this file's directory is ``src/yolo``, so ``src`` is prepended to
+``sys.path`` once at import time. Any process that imports ``evaluate`` therefore resolves
+``evaluation.*`` the same way as running from ``src/yolo`` with ``PYTHONPATH`` including
+``src``. Prefer not importing this module solely to reuse that side effect in unrelated code.
+
+SAHI JSON semantics: COCO AP fields use ``-1`` / excluded means when GT is empty; instance
+metrics (AJI, IoU-sweep P/R/F1) follow ``evaluation.metrics`` and are still reported. Each
+per-image row includes ``empty_gt`` when there are no GT annotations so consumers can tell
+``mean_AP`` null (no valid COCO AP) from ``mean_aji`` etc. (empty-empty can be perfect 1.0).
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +25,19 @@ import numpy as np
 import yaml
 from tifffile import TiffFile
 
+# See module docstring: resolve ``evaluation`` from repo ``src/`` without a separate install.
+_YOLO_ROOT = Path(__file__).resolve().parent
+_SRC_ROOT = _YOLO_ROOT.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from evaluation.metrics import compute_aji, compute_instance_metrics_dict
+
 from config import variant_choices
+from instance_label_maps import (
+    dt_annotations_to_instance_map,
+    gt_annotations_to_instance_map,
+)
 from pipeline import resolve_variant_paths
 from train import _parse_device
 
@@ -307,8 +331,13 @@ def aggregate_sahi_means(
     Same rule for single-image and multi-image runs.
     When no image contributes a valid value for a metric, the aggregate is None
     (JSON null), not NaN.
+
+    U-Net-style instance metrics (``aji``, ``f1_iou50``, …) use the same mean rule
+    excluding non-finite values. Rows may omit these keys (legacy JSON); only rows
+    that contain a key contribute to its ``mean_*``. Use per-image ``empty_gt`` to
+    interpret COCO ``-1`` vs instance metrics on empty tiles.
     """
-    mean_keys = (
+    coco_mean_keys = (
         "AP",
         "AP50",
         "AP75",
@@ -319,12 +348,31 @@ def aggregate_sahi_means(
         "AR10",
         "AR100",
     )
+    instance_mean_keys = (
+        "aji",
+        "precision_iou50",
+        "recall_iou50",
+        "f1_iou50",
+        "precision_iou75",
+        "recall_iou75",
+        "f1_iou75",
+        "mP_iou50_95",
+        "mR_iou50_95",
+        "mF1_iou50_95",
+    )
     out: dict[str, float | None] = {}
-    for key in mean_keys:
+    for key in coco_mean_keys:
         values = [
             float(row[key])
             for row in per_image
             if np.isfinite(row[key]) and row[key] >= 0
+        ]
+        out[f"mean_{key}"] = float(np.mean(values)) if values else None
+    for key in instance_mean_keys:
+        values = [
+            float(row[key])
+            for row in per_image
+            if key in row and np.isfinite(row[key]) and row[key] >= 0
         ]
         out[f"mean_{key}"] = float(np.mean(values)) if values else None
     return out
@@ -389,17 +437,29 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
             gt_annotations=gt_anns,
             dt_annotations=dt_anns,
         )
+        gt_map = gt_annotations_to_instance_map(gt_anns, height, width)
+        pred_map = dt_annotations_to_instance_map(dt_anns, height, width)
+        aji = float(compute_aji(gt_map, pred_map))
+        inst_metrics = {
+            k: float(v)
+            for k, v in compute_instance_metrics_dict(gt_map, pred_map).items()
+        }
+
         row: dict[str, Any] = {
             "test_tiff": str(tiff_path),
             "test_gpkg": str(gpkg_path),
             "image_id": image_id,
             "gt_instances": len(gt_anns),
             "pred_instances": len(dt_anns),
+            "empty_gt": len(gt_anns) == 0,
+            "aji": aji,
         }
+        row.update(inst_metrics)
         row.update(summary.to_dict())
         per_image.append(row)
         print(
             f"{tiff_path.name}: AP={summary.ap_50_95:.4f} AP50={summary.ap_50:.4f} "
+            f"AJI={aji:.4f} mF1@0.5:0.95={inst_metrics['mF1_iou50_95']:.4f} "
             f"GT={len(gt_anns)} Pred={len(dt_anns)}"
         )
 

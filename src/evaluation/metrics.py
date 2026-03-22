@@ -2,8 +2,18 @@ import numpy as np
 
 from evaluation.instance_masks import semantic_to_instance_label_map
 
-# IoU thresholds for mP/mR/mF1@0.5:0.95 (COCO-style sweep).
+# IoU thresholds for mP/mR/mF1@0.5:0.95 (same grid as common instance-segmentation sweeps).
 IOU_THRESHOLDS_50_95 = tuple(np.arange(0.50, 1.0, 0.05))
+
+
+def _index_for_reported_threshold(threshold: float) -> int:
+    """Index of ``threshold`` in ``IOU_THRESHOLDS_50_95`` (e.g. 0.75 for F1@0.75)."""
+    for i, t in enumerate(IOU_THRESHOLDS_50_95):
+        if np.isclose(t, threshold, rtol=0.0, atol=1e-9):
+            return i
+    raise ValueError(
+        f"threshold {threshold} not found in IOU_THRESHOLDS_50_95: {IOU_THRESHOLDS_50_95!r}"
+    )
 
 
 def get_instances(semantic_mask: np.ndarray, interior_class: int = 1):
@@ -24,19 +34,33 @@ def build_instance_iou_matrix(
 ) -> tuple[np.ndarray, list[int], list[int]]:
     """
     Pairwise IoU between each GT instance and each predicted instance (0 = background).
-    Rows: true_ids, columns: pred_ids.
+    Rows: true_ids order, columns: pred_ids order.
+
+    Uses a single pixel contingency histogram (same idea as AJI) instead of per-pair boolean masks.
     """
     true_ids = _instance_ids(true_instances)
     pred_ids = _instance_ids(pred_instances)
     nt, np_ = len(true_ids), len(pred_ids)
     mat = np.zeros((nt, np_), dtype=np.float64)
+    if nt == 0 or np_ == 0:
+        return mat, true_ids, pred_ids
+
+    max_true = int(true_instances.max())
+    max_pred = int(pred_instances.max())
+    intersection_matrix = np.histogram2d(
+        true_instances.flatten(),
+        pred_instances.flatten(),
+        bins=(max_true + 1, max_pred + 1),
+        range=((0, max_true + 1), (0, max_pred + 1)),
+    )[0]
+    true_areas = intersection_matrix.sum(axis=1)
+    pred_areas = intersection_matrix.sum(axis=0)
+
     for i, tid in enumerate(true_ids):
-        tm = true_instances == tid
         for j, pid in enumerate(pred_ids):
-            pm = pred_instances == pid
-            inter = np.logical_and(tm, pm).sum()
-            union = np.logical_or(tm, pm).sum()
-            mat[i, j] = float(inter) / float(union) if union > 0 else 0.0
+            inter = float(intersection_matrix[tid, pid])
+            union = float(true_areas[tid] + pred_areas[pid] - inter)
+            mat[i, j] = inter / union if union > 0 else 0.0
     return mat, true_ids, pred_ids
 
 
@@ -67,6 +91,29 @@ def greedy_one_to_one_tp_count(iou_matrix: np.ndarray, iou_threshold: float) -> 
     return tp
 
 
+def precision_recall_f1_from_iou_matrix(
+    iou_matrix: np.ndarray, iou_threshold: float
+) -> tuple[float, float, float]:
+    """Precision, recall, F1 from a precomputed IoU matrix (rows=GT, cols=pred)."""
+    nt, np_ = iou_matrix.shape
+    if nt == 0 and np_ == 0:
+        return 1.0, 1.0, 1.0
+    if nt == 0:
+        return 0.0, 0.0, 0.0
+    if np_ == 0:
+        return 0.0, 0.0, 0.0
+
+    tp = greedy_one_to_one_tp_count(iou_matrix, iou_threshold)
+    fp = np_ - tp
+    fn = nt - tp
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    if precision + recall == 0:
+        return precision, recall, 0.0
+    f1 = 2.0 * precision * recall / (precision + recall)
+    return float(precision), float(recall), float(f1)
+
+
 def compute_instance_precision_recall_f1(
     true_instances: np.ndarray,
     pred_instances: np.ndarray,
@@ -87,15 +134,7 @@ def compute_instance_precision_recall_f1(
         return 0.0, 0.0, 0.0
 
     iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
-    tp = greedy_one_to_one_tp_count(iou_matrix, iou_threshold)
-    fp = np_ - tp
-    fn = nt - tp
-    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    if precision + recall == 0:
-        return precision, recall, 0.0
-    f1 = 2.0 * precision * recall / (precision + recall)
-    return float(precision), float(recall), float(f1)
+    return precision_recall_f1_from_iou_matrix(iou_matrix, iou_threshold)
 
 
 def compute_instance_prf_mean_iou_sweep(
@@ -108,17 +147,89 @@ def compute_instance_prf_mean_iou_sweep(
     """
     if not thresholds:
         return float("nan"), float("nan"), float("nan")
+
+    true_ids = _instance_ids(true_instances)
+    pred_ids = _instance_ids(pred_instances)
+    nt, np_ = len(true_ids), len(pred_ids)
+
+    if nt == 0 and np_ == 0:
+        return 1.0, 1.0, 1.0
+    if nt == 0:
+        return 0.0, 0.0, 0.0
+    if np_ == 0:
+        return 0.0, 0.0, 0.0
+
+    iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
     ps: list[float] = []
     rs: list[float] = []
     fs: list[float] = []
     for t in thresholds:
-        p, r, f = compute_instance_precision_recall_f1(
-            true_instances, pred_instances, t
-        )
+        p, r, f = precision_recall_f1_from_iou_matrix(iou_matrix, t)
         ps.append(p)
         rs.append(r)
         fs.append(f)
     return float(np.mean(ps)), float(np.mean(rs)), float(np.mean(fs))
+
+
+def compute_instance_metrics_dict(
+    true_instances: np.ndarray, pred_instances: np.ndarray
+) -> dict[str, float]:
+    """
+    All instance PR/F1 metrics for ``evaluate.py`` in one pass (one IoU matrix, one greedy pass per threshold).
+    """
+    true_ids = _instance_ids(true_instances)
+    pred_ids = _instance_ids(pred_instances)
+    nt, np_ = len(true_ids), len(pred_ids)
+
+    if nt == 0 and np_ == 0:
+        one = 1.0
+        return {
+            "precision_iou50": one,
+            "recall_iou50": one,
+            "f1_iou50": one,
+            "precision_iou75": one,
+            "recall_iou75": one,
+            "f1_iou75": one,
+            "mP_iou50_95": one,
+            "mR_iou50_95": one,
+            "mF1_iou50_95": one,
+        }
+    if nt == 0 or np_ == 0:
+        zero = 0.0
+        return {
+            "precision_iou50": zero,
+            "recall_iou50": zero,
+            "f1_iou50": zero,
+            "precision_iou75": zero,
+            "recall_iou75": zero,
+            "f1_iou75": zero,
+            "mP_iou50_95": zero,
+            "mR_iou50_95": zero,
+            "mF1_iou50_95": zero,
+        }
+
+    iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
+    ps: list[float] = []
+    rs: list[float] = []
+    fs: list[float] = []
+    for t in IOU_THRESHOLDS_50_95:
+        p, r, f = precision_recall_f1_from_iou_matrix(iou_matrix, t)
+        ps.append(p)
+        rs.append(r)
+        fs.append(f)
+
+    idx75 = _index_for_reported_threshold(0.75)
+    return {
+        "precision_iou50": ps[0],
+        "recall_iou50": rs[0],
+        "f1_iou50": fs[0],
+        "precision_iou75": ps[idx75],
+        "recall_iou75": rs[idx75],
+        "f1_iou75": fs[idx75],
+        "mP_iou50_95": float(np.mean(ps)),
+        "mR_iou50_95": float(np.mean(rs)),
+        "mF1_iou50_95": float(np.mean(fs)),
+    }
 
 
 def compute_aji(true_instances: np.ndarray, pred_instances: np.ndarray):

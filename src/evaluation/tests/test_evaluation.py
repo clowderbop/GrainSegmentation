@@ -54,6 +54,24 @@ def _reload_module(name: str):
     return importlib.import_module(name)
 
 
+def _bruteforce_instance_iou_matrix(
+    true_instances: np.ndarray, pred_instances: np.ndarray
+) -> tuple[np.ndarray, list[int], list[int]]:
+    """Reference IoU matrix via per-instance boolean masks (slow; tests only)."""
+    true_ids = sorted(int(x) for x in np.unique(true_instances) if x != 0)
+    pred_ids = sorted(int(x) for x in np.unique(pred_instances) if x != 0)
+    nt, np_ = len(true_ids), len(pred_ids)
+    mat = np.zeros((nt, np_), dtype=np.float64)
+    for i, tid in enumerate(true_ids):
+        tm = true_instances == tid
+        for j, pid in enumerate(pred_ids):
+            pm = pred_instances == pid
+            inter = int(np.logical_and(tm, pm).sum())
+            union = int(np.logical_or(tm, pm).sum())
+            mat[i, j] = float(inter) / float(union) if union > 0 else 0.0
+    return mat, true_ids, pred_ids
+
+
 class MetricsTests(unittest.TestCase):
     def test_compute_aji_penalizes_merged_predictions(self) -> None:
         metrics = _reload_module("evaluation.metrics")
@@ -143,6 +161,27 @@ class MetricsTests(unittest.TestCase):
         self.assertEqual(len(metrics.IOU_THRESHOLDS_50_95), 10)
         self.assertAlmostEqual(metrics.IOU_THRESHOLDS_50_95[0], 0.5)
         self.assertAlmostEqual(metrics.IOU_THRESHOLDS_50_95[-1], 0.95)
+        self.assertEqual(metrics._index_for_reported_threshold(0.75), 5)
+
+    def test_build_instance_iou_matrix_matches_bruteforce(self) -> None:
+        """Histogram IoU matches per-pair mask IoU (regression guard for build_instance_iou_matrix)."""
+        metrics = _reload_module("evaluation.metrics")
+        rng = np.random.default_rng(42)
+        for trial in range(40):
+            h, w = int(rng.integers(3, 14)), int(rng.integers(3, 14))
+            gt = rng.integers(0, 7, size=(h, w), dtype=np.int32)
+            pr = rng.integers(0, 7, size=(h, w), dtype=np.int32)
+            fast, t_ids, p_ids = metrics.build_instance_iou_matrix(gt, pr)
+            slow, t2, p2 = _bruteforce_instance_iou_matrix(gt, pr)
+            self.assertEqual(t_ids, t2)
+            self.assertEqual(p_ids, p2)
+            np.testing.assert_allclose(
+                fast,
+                slow,
+                rtol=1e-9,
+                atol=1e-9,
+                err_msg=f"trial {trial} shape {gt.shape}",
+            )
 
     def test_merge_two_gt_one_pred_no_pair_at_iou50(self) -> None:
         """Merged prediction can fall below 0.5 IoU with each GT; greedy match yields 0 TP."""
@@ -155,6 +194,29 @@ class MetricsTests(unittest.TestCase):
         p50, r50, _ = metrics.compute_instance_precision_recall_f1(gt, pr, 0.5)
         self.assertEqual(p50, 0.0)
         self.assertEqual(r50, 0.0)
+
+    def test_compute_instance_metrics_dict_matches_individual_calls(self) -> None:
+        """Single IoU matrix path matches separate PR/F1 calls."""
+        metrics = _reload_module("evaluation.metrics")
+        gt = np.zeros((8, 8), dtype=np.int32)
+        gt[1:4, 1:4] = 1
+        gt[5:7, 5:7] = 2
+        pr = np.zeros((8, 8), dtype=np.int32)
+        pr[1:4, 1:4] = 1
+        pr[5:7, 5:7] = 2
+        d = metrics.compute_instance_metrics_dict(gt, pr)
+        p50, r50, f50 = metrics.compute_instance_precision_recall_f1(gt, pr, 0.5)
+        p75, r75, f75 = metrics.compute_instance_precision_recall_f1(gt, pr, 0.75)
+        m_p, m_r, m_f = metrics.compute_instance_prf_mean_iou_sweep(gt, pr)
+        self.assertAlmostEqual(d["precision_iou50"], p50)
+        self.assertAlmostEqual(d["recall_iou50"], r50)
+        self.assertAlmostEqual(d["f1_iou50"], f50)
+        self.assertAlmostEqual(d["precision_iou75"], p75)
+        self.assertAlmostEqual(d["recall_iou75"], r75)
+        self.assertAlmostEqual(d["f1_iou75"], f75)
+        self.assertAlmostEqual(d["mP_iou50_95"], m_p)
+        self.assertAlmostEqual(d["mR_iou50_95"], m_r)
+        self.assertAlmostEqual(d["mF1_iou50_95"], m_f)
 
 
 class InferenceTests(unittest.TestCase):
@@ -481,24 +543,9 @@ class EvaluateMainTests(unittest.TestCase):
         _install_evaluate_import_stubs()
         evaluate = _reload_module("evaluation.evaluate")
 
-        from evaluation.coco_mask_ap import InstanceAPSummary
-
         sample = {"id": "heldout_section", "images": ["img.png"], "mask": "mask.png"}
         mask = np.array([[0, 1], [2, 1]], dtype=np.int32)
         pred = np.array([[0, 1], [2, 1]], dtype=np.int32)
-
-        fake_coco = InstanceAPSummary(
-            0.1,
-            0.2,
-            0.3,
-            -1.0,
-            -1.0,
-            -1.0,
-            0.4,
-            0.5,
-            0.6,
-            None,
-        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_json = Path(tmpdir) / "metrics.json"
@@ -535,19 +582,14 @@ class EvaluateMainTests(unittest.TestCase):
                                 "predict_full_image",
                                 return_value=(pred, np.zeros((2, 2, 3))),
                             ):
-                                with patch.object(
-                                    evaluate,
-                                    "evaluate_mask_ap",
-                                    return_value=fake_coco,
-                                ):
-                                    with contextlib.redirect_stdout(stdout):
-                                        evaluate.main()
+                                with contextlib.redirect_stdout(stdout):
+                                    evaluate.main()
 
             saved = json.loads(output_json.read_text())
             self.assertIn("heldout_section", saved)
             self.assertNotIn("mean", saved)
-            self.assertEqual(saved["heldout_section"]["AP"], 0.1)
-            self.assertEqual(saved["heldout_section"]["AP50"], 0.2)
+            self.assertNotIn("AP", saved["heldout_section"])
+            self.assertNotIn("AP50", saved["heldout_section"])
             self.assertEqual(saved["heldout_section"]["f1_iou50"], 1.0)
             self.assertEqual(saved["heldout_section"]["aji"], 1.0)
             self.assertTrue((pred_dir / "heldout_section_pred.png").exists())
@@ -557,24 +599,9 @@ class EvaluateMainTests(unittest.TestCase):
         _install_evaluate_import_stubs()
         evaluate = _reload_module("evaluation.evaluate")
 
-        from evaluation.coco_mask_ap import InstanceAPSummary
-
         sample = {"id": "heldout_section", "images": ["img.png"], "mask": "mask.png"}
         mask = np.array([[0, 1], [2, 1]], dtype=np.int32)
         pred = np.array([[0, 1], [2, 1]], dtype=np.int32)
-
-        fake_coco = InstanceAPSummary(
-            0.1,
-            0.2,
-            0.3,
-            -1.0,
-            -1.0,
-            -1.0,
-            0.4,
-            0.5,
-            0.6,
-            None,
-        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_json = Path(tmpdir) / "metrics.json"
@@ -607,6 +634,7 @@ class EvaluateMainTests(unittest.TestCase):
                 side_effect=AssertionError("predict_full_image should not be called")
             )
 
+            stdout = io.StringIO()
             with patch.object(sys, "argv", argv):
                 with patch.object(evaluate.tf.keras.models, "load_model", load_model):
                     with patch.object(evaluate, "list_samples", return_value=[sample]):
@@ -623,40 +651,26 @@ class EvaluateMainTests(unittest.TestCase):
                                     "predict_full_image",
                                     predict_full_image,
                                 ):
-                                    with patch.object(
-                                        evaluate,
-                                        "evaluate_mask_ap",
-                                        return_value=fake_coco,
-                                    ):
+                                    with contextlib.redirect_stdout(stdout):
                                         evaluate.main()
 
             load_model.assert_not_called()
             predict_full_image.assert_not_called()
+            out = stdout.getvalue()
+            self.assertIn("Reusing cached prediction", out)
+            self.assertIn("Instance maps", out)
+            self.assertIn("AJI:", out)
             saved = json.loads(output_json.read_text())
             self.assertEqual(saved["heldout_section"]["aji"], 1.0)
+            self.assertNotIn("AP", saved["heldout_section"])
 
     def test_main_cache_miss_calls_predict_and_loads_model_once(self) -> None:
         _install_evaluate_import_stubs()
         evaluate = _reload_module("evaluation.evaluate")
 
-        from evaluation.coco_mask_ap import InstanceAPSummary
-
         sample = {"id": "heldout_section", "images": ["img.png"], "mask": "mask.png"}
         mask = np.array([[0, 1], [2, 1]], dtype=np.int32)
         pred = np.array([[0, 1], [2, 1]], dtype=np.int32)
-
-        fake_coco = InstanceAPSummary(
-            0.1,
-            0.2,
-            0.3,
-            -1.0,
-            -1.0,
-            -1.0,
-            0.4,
-            0.5,
-            0.6,
-            None,
-        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_json = Path(tmpdir) / "metrics.json"
@@ -698,12 +712,7 @@ class EvaluateMainTests(unittest.TestCase):
                                     "predict_full_image",
                                     predict_full_image,
                                 ):
-                                    with patch.object(
-                                        evaluate,
-                                        "evaluate_mask_ap",
-                                        return_value=fake_coco,
-                                    ):
-                                        evaluate.main()
+                                    evaluate.main()
 
             load_model.assert_called_once()
             predict_full_image.assert_called_once()
@@ -753,29 +762,15 @@ class EvaluateMainTests(unittest.TestCase):
                             ):
                                 evaluate.main()
 
-    def test_main_uses_selected_instance_method_for_aji_and_coco(self) -> None:
+    def test_main_uses_selected_instance_method_for_aji(self) -> None:
         _install_evaluate_import_stubs()
         evaluate = _reload_module("evaluation.evaluate")
-
-        from evaluation.coco_mask_ap import InstanceAPSummary
 
         sample = {"id": "heldout_section", "images": ["img.png"], "mask": "mask.png"}
         mask = np.array([[0, 1], [2, 1]], dtype=np.int32)
         pred = np.array([[0, 1], [2, 1]], dtype=np.int32)
         cc_instances = np.array([[0, 1], [0, 1]], dtype=np.int32)
         ws_instances = np.array([[0, 1], [0, 2]], dtype=np.int32)
-        fake_coco = InstanceAPSummary(
-            0.1,
-            0.2,
-            0.3,
-            -1.0,
-            -1.0,
-            -1.0,
-            0.4,
-            0.5,
-            0.6,
-            None,
-        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_json = Path(tmpdir) / "metrics.json"
@@ -820,32 +815,26 @@ class EvaluateMainTests(unittest.TestCase):
                                         "semantic_to_instance_label_map_watershed",
                                         return_value=ws_instances,
                                     ) as ws_fn:
+                                        prf_real = (
+                                            evaluate.compute_instance_metrics_dict
+                                        )
                                         with patch.object(
                                             evaluate,
-                                            "compute_aji",
-                                            return_value=0.7,
-                                        ) as compute_aji:
+                                            "compute_instance_metrics_dict",
+                                            wraps=prf_real,
+                                        ) as compute_prf:
                                             with patch.object(
                                                 evaluate,
-                                                "instance_label_map_to_coco_gt",
-                                                return_value=[],
-                                            ):
-                                                with patch.object(
-                                                    evaluate,
-                                                    "instance_label_map_to_coco_dt",
-                                                    return_value=[],
-                                                ) as dt_builder:
-                                                    with patch.object(
-                                                        evaluate,
-                                                        "evaluate_mask_ap",
-                                                        return_value=fake_coco,
-                                                    ):
-                                                        evaluate.main()
+                                                "compute_aji",
+                                                return_value=0.7,
+                                            ) as compute_aji:
+                                                evaluate.main()
 
             compute_aji.assert_called_once_with(cc_instances, ws_instances)
-            dt_builder.assert_called_once_with(
-                ws_instances, image_id=1, height=2, width=2
-            )
+            self.assertEqual(compute_prf.call_count, 1)
+            ca = compute_prf.call_args[0]
+            np.testing.assert_array_equal(ca[0], cc_instances)
+            np.testing.assert_array_equal(ca[1], ws_instances)
             ws_fn.assert_called_once()
             ws_kw = ws_fn.call_args[1]
             self.assertEqual(ws_kw["min_distance"], 1)
@@ -859,25 +848,11 @@ class EvaluateMainTests(unittest.TestCase):
         _install_evaluate_import_stubs()
         evaluate = _reload_module("evaluation.evaluate")
 
-        from evaluation.coco_mask_ap import InstanceAPSummary
-
         sample = {"id": "heldout_section", "images": ["img.png"], "mask": "mask.png"}
         mask = np.array([[0, 1], [2, 1]], dtype=np.int32)
         pred = np.array([[0, 1], [2, 1]], dtype=np.int32)
         cc_instances = np.array([[0, 1], [0, 1]], dtype=np.int32)
         ws_instances = np.array([[0, 1], [0, 2]], dtype=np.int32)
-        fake_coco = InstanceAPSummary(
-            0.0,
-            0.0,
-            0.0,
-            -1.0,
-            -1.0,
-            -1.0,
-            0.0,
-            0.0,
-            0.0,
-            None,
-        )
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_json = Path(tmpdir) / "metrics.json"
@@ -933,11 +908,14 @@ class EvaluateMainTests(unittest.TestCase):
                                         "semantic_to_instance_label_map_watershed",
                                         return_value=ws_instances,
                                     ) as ws_fn:
+                                        prf_real = (
+                                            evaluate.compute_instance_metrics_dict
+                                        )
                                         with patch.object(
                                             evaluate,
-                                            "evaluate_mask_ap",
-                                            return_value=fake_coco,
-                                        ):
+                                            "compute_instance_metrics_dict",
+                                            wraps=prf_real,
+                                        ) as compute_prf:
                                             with patch.object(
                                                 evaluate,
                                                 "compute_aji",
@@ -945,6 +923,10 @@ class EvaluateMainTests(unittest.TestCase):
                                             ):
                                                 evaluate.main()
 
+            self.assertEqual(compute_prf.call_count, 1)
+            ca = compute_prf.call_args[0]
+            np.testing.assert_array_equal(ca[0], cc_instances)
+            np.testing.assert_array_equal(ca[1], ws_instances)
             ws_fn.assert_called_once()
             ws_kw = ws_fn.call_args[1]
             self.assertEqual(ws_kw["min_distance"], 5)

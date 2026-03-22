@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 import numpy as np
 import tensorflow as tf
@@ -12,12 +13,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from training.data import list_samples, _load_rgb_image, _load_raster_mask
 from training.model import weighted_crossentropy
-from evaluation.coco_mask_ap import (
-    aggregate_coco_means,
-    evaluate_mask_ap,
-    instance_label_map_to_coco_dt,
-    instance_label_map_to_coco_gt,
-)
 from evaluation.inference import predict_full_image
 from evaluation.instance_masks import (
     semantic_to_instance_label_map,
@@ -25,8 +20,7 @@ from evaluation.instance_masks import (
 )
 from evaluation.metrics import (
     compute_aji,
-    compute_instance_precision_recall_f1,
-    compute_instance_prf_mean_iou_sweep,
+    compute_instance_metrics_dict,
     get_instances,
 )
 
@@ -68,7 +62,7 @@ def parse_args():
         "--instance-method",
         choices=("cc", "watershed"),
         default="cc",
-        help="How to derive predicted instances for metrics and COCO mask AP.",
+        help="How to derive predicted instances for instance metrics (AJI, PR/F1).",
     )
     parser.add_argument(
         "--watershed-min-distance",
@@ -202,40 +196,9 @@ def _validate_sample_data(
     return mask_int
 
 
-# Averaged only via aggregate_coco_means when multiple samples (skips -1 sentinels).
-_COCO_SCALAR_KEYS = frozenset(
-    ("AP", "AP50", "AP75", "APs", "APm", "APl", "AR1", "AR10", "AR100")
-)
-
-
-def _instance_metrics_from_label_maps(
-    true_instances: np.ndarray, pred_instances: np.ndarray
-) -> dict[str, float]:
-    p50, r50, f50 = compute_instance_precision_recall_f1(
-        true_instances, pred_instances, 0.5
-    )
-    p75, r75, f75 = compute_instance_precision_recall_f1(
-        true_instances, pred_instances, 0.75
-    )
-    m_p, m_r, m_f = compute_instance_prf_mean_iou_sweep(true_instances, pred_instances)
-    return {
-        "precision_iou50": p50,
-        "recall_iou50": r50,
-        "f1_iou50": f50,
-        "precision_iou75": p75,
-        "recall_iou75": r75,
-        "f1_iou75": f75,
-        "mP_iou50_95": m_p,
-        "mR_iou50_95": m_r,
-        "mF1_iou50_95": m_f,
-    }
-
-
 def _compute_mean_metrics(all_metrics: list[dict[str, float]]) -> dict[str, float]:
     mean_metrics = {}
     for key in all_metrics[0].keys():
-        if key in _COCO_SCALAR_KEYS:
-            continue
         values: list[float] = []
         for metrics in all_metrics:
             v = metrics.get(key)
@@ -326,11 +289,11 @@ def main():
 
     results = {}
     all_metrics = []
-    coco_per_image: list[dict[str, float]] = []
 
-    for image_idx, sample in enumerate(samples, start=1):
+    for sample in samples:
         sample_id = sample["id"]
         print(f"Evaluating sample: {sample_id}")
+        t0 = time.perf_counter()
 
         # Load images
         images = [_load_rgb_image(p) for p in sample["images"]]
@@ -339,6 +302,8 @@ def main():
         true_mask = _validate_sample_data(
             images, _load_raster_mask(sample["mask"]), sample["mask"]
         )
+        t_load = time.perf_counter()
+        print(f"  Loaded inputs + GT mask: {t_load - t0:.2f}s")
 
         expected_hw = (int(images[0].shape[0]), int(images[0].shape[1]))
         pred_classes: np.ndarray | None = None
@@ -347,9 +312,14 @@ def main():
             cache_path = _prediction_png_path(args.save_predictions_dir, sample_id)
             if os.path.isfile(cache_path):
                 print(f"Reusing cached prediction: {cache_path}")
+                t_cache = time.perf_counter()
                 pred_classes = _load_cached_prediction_png(cache_path, expected_hw)
+                print(
+                    f"  Loaded cached prediction: {time.perf_counter() - t_cache:.2f}s"
+                )
 
         if pred_classes is None:
+            t_inf = time.perf_counter()
             pred_classes, _ = predict_full_image(
                 model=_ensure_model(),
                 inputs=tuple(images),
@@ -357,6 +327,7 @@ def main():
                 stride=args.stride,
                 batch_size=args.batch_size,
             )
+            print(f"  Inference: {time.perf_counter() - t_inf:.2f}s")
 
             if args.save_predictions_dir:
                 out_img_path = _prediction_png_path(
@@ -364,33 +335,19 @@ def main():
                 )
                 Image.fromarray(pred_classes.astype(np.uint8)).save(out_img_path)
 
+        t_inst = time.perf_counter()
         true_instances = get_instances(true_mask, interior_class=1)
         pred_instances = _pred_instances_for_metrics(pred_classes, args)
+        print(f"  Instance maps (GT + pred): {time.perf_counter() - t_inst:.2f}s")
 
         metrics: dict[str, float] = {}
+        t_aji = time.perf_counter()
         metrics["aji"] = float(compute_aji(true_instances, pred_instances))
-        metrics.update(
-            _instance_metrics_from_label_maps(true_instances, pred_instances)
-        )
+        print(f"  AJI: {time.perf_counter() - t_aji:.2f}s")
 
-        h, w = int(true_mask.shape[0]), int(true_mask.shape[1])
-        gt_anns = instance_label_map_to_coco_gt(
-            true_instances, image_id=image_idx, height=h, width=w
-        )
-        dt_anns = instance_label_map_to_coco_dt(
-            pred_instances, image_id=image_idx, height=h, width=w
-        )
-        coco_summary = evaluate_mask_ap(
-            image_id=image_idx,
-            file_name=f"{sample_id}_eval.png",
-            height=h,
-            width=w,
-            gt_annotations=gt_anns,
-            dt_annotations=dt_anns,
-        )
-        coco_dict = coco_summary.to_dict()
-        metrics.update(coco_dict)
-        coco_per_image.append(coco_dict)
+        t_prf = time.perf_counter()
+        metrics.update(compute_instance_metrics_dict(true_instances, pred_instances))
+        print(f"  Instance PR/F1 (IoU sweep): {time.perf_counter() - t_prf:.2f}s")
 
         results[sample_id] = metrics
         all_metrics.append(metrics)
@@ -398,23 +355,19 @@ def main():
         line = (
             f"Metrics for {sample_id}: AJI: {metrics['aji']:.4f}, "
             f"F1@0.5: {metrics['f1_iou50']:.4f}, F1@0.75: {metrics['f1_iou75']:.4f}, "
-            f"mF1@0.5:0.95: {metrics['mF1_iou50_95']:.4f}, "
-            f"AP: {metrics['AP']:.4f}, AP50: {metrics['AP50']:.4f}, AP75: {metrics['AP75']:.4f}"
+            f"mF1@0.5:0.95: {metrics['mF1_iou50_95']:.4f}"
         )
         print(line)
+        print(f"  Sample total (so far): {time.perf_counter() - t0:.2f}s")
 
     results = _build_results_payload(results, all_metrics)
-    if len(coco_per_image) > 1:
-        if "mean" not in results:
-            results["mean"] = {}
-        results["mean"].update(aggregate_coco_means(coco_per_image))
     _print_summary(results, len(all_metrics))
 
-    # Save to JSON
+    t_json = time.perf_counter()
     with open(args.output_json, "w") as f:
         json.dump(results, f, indent=4)
 
-    print(f"Saved metrics to {args.output_json}")
+    print(f"Saved metrics to {args.output_json} ({time.perf_counter() - t_json:.2f}s)")
 
 
 if __name__ == "__main__":

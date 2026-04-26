@@ -2,37 +2,57 @@
 #SBATCH --job-name=merge_multichannel_tiff
 #SBATCH --output=logs/merge_multichannel_tiff-%j.log
 #SBATCH --mem=50GB
-#SBATCH --time=00:15:00
+#SBATCH --time=00:30:00
+set -euo pipefail
 
 source SLURM/prepare_env.sh
 
 WORK_DIR="$TMPDIR/merge_multichannel_tiff_$SLURM_JOB_ID"
-mkdir -p "$WORK_DIR/cropped"
-mkdir -p "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/merged"
-
-echo "Copying PPL and PPX blend to fast local storage ($TMPDIR)..."
-cp "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/MWD-1#121_PPL.tif" "$WORK_DIR/cropped/"
-cp "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/MWD-1#121_PPXblend.tif" "$WORK_DIR/cropped/"
+TRAIN_DEST="$SCRATCH/GrainSeg/dataset/train"
+TEST_DEST="$SCRATCH/GrainSeg/dataset/test"
+TRAIN_WORK="$WORK_DIR/train"
+TEST_WORK="$WORK_DIR/test"
+mkdir -p "$TRAIN_WORK"
+mkdir -p "$TEST_WORK"
 
 echo "Syncing data prep environment..."
 cd src/data_prep
 uv sync
 
-echo "Merging PPL and PPX blend into a single multichannel TIFF..."
-uv run python -u stack_tiff_channels.py "$WORK_DIR/cropped/" "$WORK_DIR/MWD-1#121_PPL+PPXblend.tif"
+echo "Merging PPL and PPX blend into multichannel TIFFs (train)..."
+cp "$TRAIN_DEST/PPL.tif" "$TRAIN_WORK/"
+cp "$TRAIN_DEST/PPXblend.tif" "$TRAIN_WORK/"
+uv run --no-sync python -u stack_tiff_channels.py \
+    "$TRAIN_WORK" \
+    "$TRAIN_WORK/PPL+PPXblend.tif"
+mv "$TRAIN_WORK/PPL+PPXblend.tif" "$TRAIN_DEST/PPL+PPXblend.tif"
+rm -f "$TRAIN_WORK/PPXblend.tif" # Keep PPL.tif for later
 
-echo "Copying merged TIFF to persistent storage..."
-mv "$WORK_DIR/MWD-1#121_PPL+PPXblend.tif" "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/merged/MWD-1#121_PPL+PPXblend.tif"
-rm "$WORK_DIR/cropped/MWD-1#121_PPXblend.tif"
+echo "Merging PPL and PPX blend into multichannel TIFFs (test)..."
+cp "$TEST_DEST/PPL.tif" "$TEST_WORK/"
+cp "$TEST_DEST/PPXblend.tif" "$TEST_WORK/"
+uv run --no-sync python -u stack_tiff_channels.py \
+    "$TEST_WORK" \
+    "$TEST_WORK/PPL+PPXblend.tif"
+mv "$TEST_WORK/PPL+PPXblend.tif" "$TEST_DEST/PPL+PPXblend.tif"
+rm -f "$TEST_WORK/PPXblend.tif" # Keep PPL.tif for later
 
-echo "Copying PPX images to fast local storage ($TMPDIR)..."
+echo "Merging PPL and all PPX channels (train)..."
 for i in {1..6}; do
-    cp "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/MWD-1#121_PPX${i}.tif" "$WORK_DIR/cropped/"
+    cp "$TRAIN_DEST/PPX${i}.tif" "$TRAIN_WORK/"
 done
+uv run --no-sync python -u stack_tiff_channels.py \
+    "$TRAIN_WORK" \
+    "$TRAIN_WORK/PPL+AllPPX.tif"
+mv "$TRAIN_WORK/PPL+AllPPX.tif" "$TRAIN_DEST/PPL+AllPPX.tif"
 
-echo "Merging PPL and PPX images into a single multichannel TIFF..."
-uv run python -u stack_tiff_channels.py "$WORK_DIR/cropped/" "$WORK_DIR/MWD-1#121_PPL+AllPPX.tif"
-
-mv "$WORK_DIR/MWD-1#121_PPL+AllPPX.tif" "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/merged/MWD-1#121_PPL+AllPPX.tif"
+echo "Merging PPL and all PPX channels (test)..."
+for i in {1..6}; do
+    cp "$TEST_DEST/PPX${i}.tif" "$TEST_WORK/"
+done
+uv run --no-sync python -u stack_tiff_channels.py \
+    "$TEST_WORK" \
+    "$TEST_WORK/PPL+AllPPX.tif"
+mv "$TEST_WORK/PPL+AllPPX.tif" "$TEST_DEST/PPL+AllPPX.tif"
 
 echo "Done!"

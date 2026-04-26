@@ -48,7 +48,7 @@ submit_job() {
         sbatch \
             --mem="$mem" \
             --job-name="$job_name" \
-            SLURM/train_yolo26x_seg.sh \
+            SLURM/train_yolo.sh \
             --variant "$variant" \
             --run-name "$run_name" \
             "${resume_args[@]}" \

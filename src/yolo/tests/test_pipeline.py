@@ -52,7 +52,7 @@ class PipelineTests(unittest.TestCase):
             scratch_root
             / "GrainSeg"
             / "dataset"
-            / "MWD-1#121"
+            / "train"
             / "yolo"
             / "PPL+PPXblend"
             / "PPL_PPXblend.yaml",

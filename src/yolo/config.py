@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 
-DATASET_ROOT = Path("GrainSeg") / "dataset" / "MWD-1#121" / "yolo"
+DATASET_ROOT = Path("GrainSeg") / "dataset" / "train" / "yolo"
 RUN_ROOT = Path("GrainSeg") / "runs" / "yolo26-seg"
 
 

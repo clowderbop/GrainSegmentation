@@ -17,7 +17,7 @@ Implementation choices in this directory follow the indexed `@Yolo` docs for:
 These variants expect prebuilt YOLO datasets under:
 
 ```text
-$SCRATCH/GrainSeg/dataset/MWD-1#121/yolo/
+$SCRATCH/GrainSeg/dataset/train/yolo/
 ```
 
 The dataset YAML files remain the contract for channel count and split layout. The pipeline does not regenerate YOLO datasets inside training jobs.
@@ -40,7 +40,7 @@ uv run python train.py --variant PPL --tune --tune-epochs 30 --tune-iterations 5
 Save random `train` and `val` visualization samples for a YOLO dataset directory:
 
 ```bash
-uv run python visualize_dataset.py "$SCRATCH/GrainSeg/dataset/MWD-1#121/yolo/PPL" --output-dir "$SCRATCH/GrainSeg/visualizations/PPL" --num 4
+uv run python visualize_dataset.py "$SCRATCH/GrainSeg/dataset/train/yolo/PPL" --output-dir "$SCRATCH/GrainSeg/visualizations/PPL" --num 4
 ```
 
 You can also override the dataset YAML directly:

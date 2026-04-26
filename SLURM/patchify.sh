@@ -1,67 +1,186 @@
 #!/bin/bash
-#SBATCH --job-name=split_test_val
-#SBATCH --output=logs/split_test_val-%j.log
+#SBATCH --job-name=patchify
+#SBATCH --output=logs/patchify-%j.log
 #SBATCH --mem=100GB
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
+set -euo pipefail
 
 source SLURM/prepare_env.sh
 
-WORK_DIR="$TMPDIR/split_test_val_$SLURM_JOB_ID"
-mkdir -p "$WORK_DIR"
+WORK_DIR="$TMPDIR/patchify_$SLURM_JOB_ID"
+TRAIN_DEST="$SCRATCH/GrainSeg/dataset/train"
+TEST_DEST="$SCRATCH/GrainSeg/dataset/test"
+TRAIN_WORK="$WORK_DIR/train"
+TEST_WORK="$WORK_DIR/test"
+mkdir -p "$TRAIN_WORK"
+mkdir -p "$TEST_WORK"
+
+# YOLO data YAMLs (path relative to this file; multichannel only where the TIFF has extra bands)
+write_yolo_dataset_yamls() {
+    local yolo_root=$1
+    cat > "$yolo_root/PPL/PPL.yaml" <<'EOF'
+path: .
+train: images/train
+val: images/val
+test:
+
+# Classes
+names:
+  0: grain
+EOF
+    cat > "$yolo_root/PPL+AllPPX/PPL+AllPPX.yaml" <<'EOF'
+path: .
+train: images/train
+val: images/val
+test:
+
+channels: 21
+
+# Classes
+names:
+  0: grain
+EOF
+    cat > "$yolo_root/PPL+PPXblend/PPL_PPXblend.yaml" <<'EOF'
+path: .
+train: images/train
+val: images/val
+test:
+
+channels: 6
+
+# Classes
+names:
+  0: grain
+EOF
+    cat > "$yolo_root/PPLPPXblend/PPLPPXblend.yaml" <<'EOF'
+path: .
+train: images/train
+val: images/val
+test:
+
+# Classes
+names:
+  0: grain
+EOF
+}
+
 cd src/data_prep
 
-echo "Copying input files to fast local storage ($TMPDIR)..."
-cp "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/merged/MWD-1#121_PPL+PPXblend.tif" "$WORK_DIR/"
-cp "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/merged/MWD-1#121_PPL+AllPPX.tif" "$WORK_DIR/"
-cp "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/MWD-1#121_PPLPPXblend.tif" "$WORK_DIR/"
-cp "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/MWD-1#121_PPL.tif" "$WORK_DIR/"
-cp "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/labels.gpkg" "$WORK_DIR/"
+echo "Syncing data prep environment..."
+uv sync
 
-echo "Running split test val script for all 4 models"
-uv run python -u split_tiff_gpkg_to_yolo.py \
-    --image "$WORK_DIR/MWD-1#121_PPL.tif" \
-    --polygons "$WORK_DIR/labels.gpkg" \
-    --output-dir "$WORK_DIR/PPL" \
+echo "Copying train inputs to fast local storage ($TMPDIR)..."
+cp "$TRAIN_DEST/PPL+PPXblend.tif" "$TRAIN_WORK/"
+cp "$TRAIN_DEST/PPL+AllPPX.tif" "$TRAIN_WORK/"
+cp "$TRAIN_DEST/PPLPPXblend.tif" "$TRAIN_WORK/"
+cp "$TRAIN_DEST/PPL.tif" "$TRAIN_WORK/"
+cp "$TRAIN_DEST/train_labels.gpkg" "$TRAIN_WORK/labels.gpkg"
+
+echo "Running split_tiff_gpkg_to_yolo for all variants (train)..."
+uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
+    --image "$TRAIN_WORK/PPL.tif" \
+    --polygons "$TRAIN_WORK/labels.gpkg" \
+    --output-dir "$TRAIN_WORK/PPL" \
     --patch-size 1024 \
     --patch-overlap 0.5 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42
 
-uv run python -u split_tiff_gpkg_to_yolo.py \
-    --image "$WORK_DIR/MWD-1#121_PPLPPXblend.tif" \
-    --polygons "$WORK_DIR/labels.gpkg" \
-    --output-dir "$WORK_DIR/PPLPPXblend" \
+uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
+    --image "$TRAIN_WORK/PPLPPXblend.tif" \
+    --polygons "$TRAIN_WORK/labels.gpkg" \
+    --output-dir "$TRAIN_WORK/PPLPPXblend" \
     --patch-size 1024 \
     --patch-overlap 0.5 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42
 
-uv run python -u split_tiff_gpkg_to_yolo.py \
-    --image "$WORK_DIR/MWD-1#121_PPL+PPXblend.tif" \
-    --polygons "$WORK_DIR/labels.gpkg" \
-    --output-dir "$WORK_DIR/PPL+PPXblend" \
+uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
+    --image "$TRAIN_WORK/PPL+PPXblend.tif" \
+    --polygons "$TRAIN_WORK/labels.gpkg" \
+    --output-dir "$TRAIN_WORK/PPL+PPXblend" \
     --patch-size 1024 \
     --patch-overlap 0.5 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42
 
-    uv run python -u split_tiff_gpkg_to_yolo.py \
-    --image "$WORK_DIR/MWD-1#121_PPL+AllPPX.tif" \
-    --polygons "$WORK_DIR/labels.gpkg" \
-    --output-dir "$WORK_DIR/PPL+AllPPX" \
+uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
+    --image "$TRAIN_WORK/PPL+AllPPX.tif" \
+    --polygons "$TRAIN_WORK/labels.gpkg" \
+    --output-dir "$TRAIN_WORK/PPL+AllPPX" \
     --patch-size 1024 \
     --patch-overlap 0.5 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42
 
-mkdir -p "$SCRATCH/GrainSeg/dataset/MWD-1#121/yolo"
-mv "$WORK_DIR/PPL" "$SCRATCH/GrainSeg/dataset/MWD-1#121/yolo/PPL"
-mv "$WORK_DIR/PPLPPXblend" "$SCRATCH/GrainSeg/dataset/MWD-1#121/yolo/PPLPPXblend"
-mv "$WORK_DIR/PPL+PPXblend" "$SCRATCH/GrainSeg/dataset/MWD-1#121/yolo/PPL+PPXblend"
-mv "$WORK_DIR/PPL+AllPPX" "$SCRATCH/GrainSeg/dataset/MWD-1#121/yolo/PPL+AllPPX"
+echo "Copying YOLO train variants to persistent storage..."
+mkdir -p "$TRAIN_DEST/yolo"
+mv "$TRAIN_WORK/PPL" "$TRAIN_DEST/yolo/PPL"
+mv "$TRAIN_WORK/PPLPPXblend" "$TRAIN_DEST/yolo/PPLPPXblend"
+mv "$TRAIN_WORK/PPL+PPXblend" "$TRAIN_DEST/yolo/PPL+PPXblend"
+mv "$TRAIN_WORK/PPL+AllPPX" "$TRAIN_DEST/yolo/PPL+AllPPX"
+
+write_yolo_dataset_yamls "$TRAIN_DEST/yolo"
+
+echo "Copying test inputs to fast local storage ($TMPDIR)..."
+cp "$TEST_DEST/PPL+PPXblend.tif" "$TEST_WORK/"
+cp "$TEST_DEST/PPL+AllPPX.tif" "$TEST_WORK/"
+cp "$TEST_DEST/PPLPPXblend.tif" "$TEST_WORK/"
+cp "$TEST_DEST/PPL.tif" "$TEST_WORK/"
+cp "$TEST_DEST/test_labels.gpkg" "$TEST_WORK/labels.gpkg"
+
+echo "Running split_tiff_gpkg_to_yolo for all variants (test)..."
+uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
+    --image "$TEST_WORK/PPL.tif" \
+    --polygons "$TEST_WORK/labels.gpkg" \
+    --output-dir "$TEST_WORK/PPL" \
+    --patch-size 1024 \
+    --patch-overlap 0.5 \
+    --tile-size 4096 \
+    --validation-fraction 0.2 \
+    --random-state 42
+
+uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
+    --image "$TEST_WORK/PPLPPXblend.tif" \
+    --polygons "$TEST_WORK/labels.gpkg" \
+    --output-dir "$TEST_WORK/PPLPPXblend" \
+    --patch-size 1024 \
+    --patch-overlap 0.5 \
+    --tile-size 4096 \
+    --validation-fraction 0.2 \
+    --random-state 42
+
+uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
+    --image "$TEST_WORK/PPL+PPXblend.tif" \
+    --polygons "$TEST_WORK/labels.gpkg" \
+    --output-dir "$TEST_WORK/PPL+PPXblend" \
+    --patch-size 1024 \
+    --patch-overlap 0.5 \
+    --tile-size 4096 \
+    --validation-fraction 0.2 \
+    --random-state 42
+
+uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
+    --image "$TEST_WORK/PPL+AllPPX.tif" \
+    --polygons "$TEST_WORK/labels.gpkg" \
+    --output-dir "$TEST_WORK/PPL+AllPPX" \
+    --patch-size 1024 \
+    --patch-overlap 0.5 \
+    --tile-size 4096 \
+    --validation-fraction 0.2 \
+    --random-state 42
+
+echo "Copying YOLO test variants to persistent storage..."
+mkdir -p "$TEST_DEST/yolo"
+mv "$TEST_WORK/PPL" "$TEST_DEST/yolo/PPL"
+mv "$TEST_WORK/PPLPPXblend" "$TEST_DEST/yolo/PPLPPXblend"
+mv "$TEST_WORK/PPL+PPXblend" "$TEST_DEST/yolo/PPL+PPXblend"
+mv "$TEST_WORK/PPL+AllPPX" "$TEST_DEST/yolo/PPL+AllPPX"
+
+write_yolo_dataset_yamls "$TEST_DEST/yolo"
 
 echo "Done!"

@@ -13,6 +13,8 @@ SUBMIT_SCRIPT = REPO_ROOT / "SLURM" / "submit_experiments.sh"
 TRAIN_SCRIPT = REPO_ROOT / "SLURM" / "train_unet_multi_input.sh"
 YOLO_SUBMIT_SCRIPT = REPO_ROOT / "SLURM" / "submit_yolo_experiments.sh"
 YOLO_TRAIN_SCRIPT = REPO_ROOT / "SLURM" / "train_yolo26x_seg.sh"
+YOLO_TEST_SCRIPT = REPO_ROOT / "SLURM" / "test_yolo.sh"
+YOLO_TEST_PATCHES_SCRIPT = REPO_ROOT / "SLURM" / "test_yolo_patches.sh"
 EVAL_SCRIPT = REPO_ROOT / "SLURM" / "evaluate_models_and_plot.sh"
 RASTER_TO_POLYGON_SCRIPT = REPO_ROOT / "SLURM" / "raster_to_polygon.sh"
 
@@ -140,7 +142,12 @@ class SlurmScriptTests(unittest.TestCase):
 
             scratch_root = temp_path / "scratch"
             dataset_dir = (
-                scratch_root / "GrainSeg" / "dataset" / "MWD-1#121" / "yolo" / "PPL"
+                scratch_root
+                / "GrainSeg"
+                / "dataset"
+                / "train"
+                / "yolo"
+                / "PPL"
             )
             dataset_dir.mkdir(parents=True)
             (dataset_dir / "PPL.yaml").write_text(
@@ -217,7 +224,12 @@ exit 0
 
             scratch_root = temp_path / "scratch"
             dataset_dir = (
-                scratch_root / "GrainSeg" / "dataset" / "MWD-1#121" / "yolo" / "PPL"
+                scratch_root
+                / "GrainSeg"
+                / "dataset"
+                / "train"
+                / "yolo"
+                / "PPL"
             )
             dataset_dir.mkdir(parents=True)
             (dataset_dir / "PPL.yaml").write_text(
@@ -248,6 +260,145 @@ exit 0
                 f"path: {copied_yaml.parent}",
                 copied_yaml.read_text(encoding="utf-8"),
             )
+
+    def test_yolo_patch_val_script_rewrites_copied_test_yaml_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir)
+            fake_repo = temp_path / "repo"
+            fake_repo.mkdir()
+            (fake_repo / "SLURM").mkdir()
+            (fake_repo / "src" / "yolo").mkdir(parents=True)
+
+            prepare_env = fake_repo / "SLURM" / "prepare_env.sh"
+            prepare_env.write_text("#!/bin/bash\n:\n", encoding="utf-8")
+
+            spool_script = temp_path / "test_yolo_patches.sh"
+            spool_script.write_text(
+                YOLO_TEST_PATCHES_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+            fake_bin = temp_path / "bin"
+            fake_bin.mkdir()
+            uv_log = temp_path / "uv_calls.txt"
+            uv_path = fake_bin / "uv"
+            uv_path.write_text(
+                """#!/bin/bash
+printf "%s\n" "$@" >> "$UV_LOG"
+if [[ "$1" == "run" && "$2" == "python" && "$3" == "-" ]]; then
+  shift 2
+  exec python3 "$@"
+fi
+exit 0
+""",
+                encoding="utf-8",
+            )
+            uv_path.chmod(
+                uv_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
+
+            scratch_root = temp_path / "scratch"
+            dataset_dir = (
+                scratch_root
+                / "GrainSeg"
+                / "dataset"
+                / "test"
+                / "yolo"
+                / "PPL+AllPPX"
+            )
+            dataset_dir.mkdir(parents=True)
+            (dataset_dir / "PPL+AllPPX.yaml").write_text(
+                "path: .\ntrain: images/train\nval: images/val\ntest:\n",
+                encoding="utf-8",
+            )
+            runtime_tmp = temp_path / "runtime_tmp"
+            runtime_tmp.mkdir()
+
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+            env["UV_LOG"] = str(uv_log)
+            env["TMPDIR"] = str(runtime_tmp)
+            env["SCRATCH"] = str(scratch_root)
+            env["VARIANT"] = "PPL+AllPPX"
+
+            result = subprocess.run(
+                ["bash", str(spool_script)],
+                cwd=fake_repo,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            copied_yaml = runtime_tmp / "yolo" / "PPL+AllPPX" / "PPL+AllPPX.yaml"
+            self.assertTrue(copied_yaml.exists())
+            self.assertIn(
+                f"path: {copied_yaml.parent}",
+                copied_yaml.read_text(encoding="utf-8"),
+            )
+            self.assertIn("test: images/val", copied_yaml.read_text(encoding="utf-8"))
+            uv_calls = uv_log.read_text(encoding="utf-8")
+            self.assertIn(str(copied_yaml), uv_calls)
+            self.assertNotIn("PPL+AllPPX/PPL+AllPPX/PPL+AllPPX.yaml", uv_calls)
+
+    def test_yolo_sahi_script_uses_variant_tiff_and_eval_output_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir)
+            fake_repo = temp_path / "repo"
+            fake_repo.mkdir()
+            (fake_repo / "SLURM").mkdir()
+            (fake_repo / "src" / "yolo").mkdir(parents=True)
+
+            prepare_env = fake_repo / "SLURM" / "prepare_env.sh"
+            prepare_env.write_text("#!/bin/bash\n:\n", encoding="utf-8")
+
+            spool_script = temp_path / "test_yolo.sh"
+            spool_script.write_text(
+                YOLO_TEST_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+            fake_bin = temp_path / "bin"
+            fake_bin.mkdir()
+            uv_log = temp_path / "uv_calls.txt"
+            uv_path = fake_bin / "uv"
+            uv_path.write_text(
+                '#!/bin/bash\nprintf "%s\n" "$@" >> "$UV_LOG"\nexit 0\n',
+                encoding="utf-8",
+            )
+            uv_path.chmod(
+                uv_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
+
+            scratch_root = temp_path / "scratch"
+            test_dir = scratch_root / "GrainSeg" / "dataset" / "test"
+            test_dir.mkdir(parents=True)
+            (test_dir / "PPL+PPXblend.tif").write_bytes(b"fake")
+            (test_dir / "test_labels.gpkg").write_bytes(b"fake")
+            runtime_tmp = temp_path / "runtime_tmp"
+            runtime_tmp.mkdir()
+
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+            env["UV_LOG"] = str(uv_log)
+            env["TMPDIR"] = str(runtime_tmp)
+            env["SCRATCH"] = str(scratch_root)
+            env["VARIANT"] = "PPL+PPXblend"
+            env["SLURM_JOB_ID"] = "12345"
+
+            result = subprocess.run(
+                ["bash", str(spool_script)],
+                cwd=fake_repo,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            uv_calls = uv_log.read_text(encoding="utf-8")
+            expected_out = scratch_root / "GrainSeg" / "eval" / "yolo_PPL+PPXblend"
+            expected_tiff = runtime_tmp / "test_yolo" / "PPL+PPXblend.tif"
+            self.assertIn(str(expected_tiff), uv_calls)
+            self.assertIn(str(expected_out / "metrics-PPL+PPXblend-12345.json"), uv_calls)
+            self.assertIn(str(expected_out), uv_calls)
 
     def test_submit_yolo_experiments_forwards_verbose_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

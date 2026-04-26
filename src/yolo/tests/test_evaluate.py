@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import geopandas as gpd
 import numpy as np
 
 REPO_YOLO = Path(__file__).resolve().parents[1]
@@ -58,6 +59,7 @@ class EvaluateMainTests(unittest.TestCase):
             y = Path(tmp) / "d.yaml"
             y.write_text("path: .\nval: v\n", encoding="utf-8")
             model = MagicMock()
+            model.val.return_value = SimpleNamespace()
             mock_yolo_cls.return_value = model
             args = SimpleNamespace(
                 weights=str(Path(tmp) / "w.pt"),
@@ -82,6 +84,63 @@ class EvaluateMainTests(unittest.TestCase):
             self.assertEqual(call_kw["name"], "ev1")
 
     @patch("ultralytics.YOLO")
+    def test_run_val_writes_metrics_json_under_project_name(
+        self, mock_yolo_cls: MagicMock
+    ) -> None:
+        ev = _reload_evaluate()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            y = root / "d.yaml"
+            y.write_text("path: .\nval: v\n", encoding="utf-8")
+            model = MagicMock()
+            model.val.return_value = SimpleNamespace(
+                box=SimpleNamespace(
+                    map=np.float32(0.12),
+                    map50=0.34,
+                    map75=0.56,
+                    maps=np.array([0.12]),
+                    image_metrics={
+                        "img001": {
+                            "precision": np.float64(0.7),
+                            "recall": 0.8,
+                            "F1": 0.746,
+                            "TP": 3,
+                            "FP": 1,
+                            "FN": 2,
+                        }
+                    },
+                ),
+                speed={"inference": np.float32(1.5)},
+                results_dict={"metrics/mAP50(B)": 0.34},
+            )
+            mock_yolo_cls.return_value = model
+            args = SimpleNamespace(
+                weights=str(root / "w.pt"),
+                device="0",
+                imgsz=640,
+                batch=4,
+                workers=2,
+                plots=False,
+                half=False,
+                save_json=False,
+                project=root / "proj",
+                name="test",
+            )
+            Path(args.weights).write_bytes(b"")
+
+            ev.run_val(args, y)
+
+            metrics_path = root / "proj" / "test" / "metrics.json"
+            self.assertTrue(metrics_path.is_file())
+            payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+            self.assertAlmostEqual(payload["box"]["map"], 0.12, places=6)
+            self.assertAlmostEqual(payload["box"]["map50"], 0.34)
+            self.assertEqual(payload["box"]["maps"], [0.12])
+            self.assertEqual(payload["box"]["image_metrics"]["img001"]["TP"], 3)
+            self.assertAlmostEqual(payload["speed"]["inference"], 1.5)
+            self.assertAlmostEqual(payload["results_dict"]["metrics/mAP50(B)"], 0.34)
+
+    @patch("ultralytics.YOLO")
     def test_run_val_forwards_name_without_project(
         self, mock_yolo_cls: MagicMock
     ) -> None:
@@ -90,6 +149,7 @@ class EvaluateMainTests(unittest.TestCase):
             y = Path(tmp) / "d.yaml"
             y.write_text("path: .\nval: v\n", encoding="utf-8")
             model = MagicMock()
+            model.val.return_value = SimpleNamespace()
             mock_yolo_cls.return_value = model
             args = SimpleNamespace(
                 weights=str(Path(tmp) / "w.pt"),
@@ -175,6 +235,122 @@ class EvaluateMainTests(unittest.TestCase):
                     ev.run_sahi(args)
                     self.assertTrue(out.is_file())
                     self.assertTrue(out.parent.is_dir())
+
+    @patch("sahi.predict.get_sliced_prediction")
+    @patch("sahi.AutoDetectionModel.from_pretrained")
+    def test_run_sahi_writes_mask_only_visual_and_gpkg_under_out_dir(
+        self,
+        mock_from_pretrained: MagicMock,
+        mock_sliced: MagicMock,
+    ) -> None:
+        ev = _reload_evaluate()
+        mock_from_pretrained.return_value = MagicMock()
+        result = MagicMock(object_prediction_list=[])
+
+        def export_visuals(export_dir: str, file_name: str) -> None:
+            Path(export_dir, f"{file_name}.png").write_bytes(b"visual")
+
+        result.export_visuals.side_effect = export_visuals
+        mock_sliced.return_value = result
+        fake_img = np.zeros((10, 10, 1), dtype=np.uint8)
+        with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
+            with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    tiff = root / "tile.tif"
+                    gpkg = root / "tile.gpkg"
+                    tiff.write_bytes(b"")
+                    gpkg.write_bytes(b"")
+                    out_dir = root / "sahi_out"
+                    args = SimpleNamespace(
+                        weights=str(root / "w.pt"),
+                        device="cpu",
+                        conf=0.25,
+                        slice_height=64,
+                        slice_width=64,
+                        overlap_height_ratio=0.2,
+                        overlap_width_ratio=0.2,
+                        test_tiff=tiff,
+                        test_gpkg=gpkg,
+                        manifest=None,
+                        sahi_out_dir=out_dir,
+                        output_json=root / "metrics.json",
+                    )
+                    (root / "w.pt").write_bytes(b"")
+                    ev.run_sahi(args)
+
+                    visual = out_dir / "tile" / "prediction_visual.png"
+                    mask = out_dir / "tile" / "predicted_masks.gpkg"
+                    self.assertTrue(visual.is_file())
+                    self.assertTrue(mask.is_file())
+                    self.assertFalse((out_dir / "tile" / "predicted_masks.tif").exists())
+                    result.export_visuals.assert_not_called()
+                    self.assertEqual(len(gpd.read_file(mask)), 0)
+
+    def test_write_predicted_masks_gpkg_saves_prediction_polygons(self) -> None:
+        ev = _reload_evaluate()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "predicted_masks.gpkg"
+            ev.write_predicted_masks_gpkg(
+                [
+                    {
+                        "category_id": 1,
+                        "score": np.float32(0.9),
+                        "segmentation": [[1, 1, 5, 1, 5, 5, 1, 5]],
+                    }
+                ],
+                height=10,
+                width=10,
+                out_path=out,
+            )
+
+            gdf = gpd.read_file(out)
+            self.assertEqual(len(gdf), 1)
+            self.assertEqual(int(gdf.loc[0, "instance_id"]), 1)
+            self.assertAlmostEqual(float(gdf.loc[0, "score"]), 0.9, places=6)
+            self.assertGreater(gdf.loc[0, "geometry"].area, 0)
+
+    @patch("sahi.predict.get_sliced_prediction")
+    @patch("sahi.AutoDetectionModel.from_pretrained")
+    def test_run_sahi_uses_multichannel_slicer_without_pil_route(
+        self,
+        mock_from_pretrained: MagicMock,
+        mock_sliced: MagicMock,
+    ) -> None:
+        ev = _reload_evaluate()
+        mock_from_pretrained.return_value = MagicMock()
+        result = MagicMock(object_prediction_list=[])
+        fake_img = np.zeros((10, 10, 6), dtype=np.uint8)
+        with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
+            with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
+                with patch.object(
+                    ev, "_get_sliced_prediction_preserve_channels", return_value=result
+                ) as mock_multichannel:
+                    with tempfile.TemporaryDirectory() as tmp:
+                        root = Path(tmp)
+                        tiff = root / "tile.tif"
+                        gpkg = root / "tile.gpkg"
+                        tiff.write_bytes(b"")
+                        gpkg.write_bytes(b"")
+                        args = SimpleNamespace(
+                            weights=str(root / "w.pt"),
+                            device="cpu",
+                            conf=0.25,
+                            slice_height=64,
+                            slice_width=64,
+                            overlap_height_ratio=0.2,
+                            overlap_width_ratio=0.2,
+                            test_tiff=tiff,
+                            test_gpkg=gpkg,
+                            manifest=None,
+                            sahi_out_dir=None,
+                            output_json=root / "metrics.json",
+                        )
+                        (root / "w.pt").write_bytes(b"")
+                        ev.run_sahi(args)
+
+        mock_sliced.assert_not_called()
+        mock_multichannel.assert_called_once()
 
     def test_aggregate_sahi_means_excludes_undefined(self) -> None:
         ev = _reload_evaluate()

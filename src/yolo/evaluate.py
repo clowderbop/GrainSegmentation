@@ -18,6 +18,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +39,7 @@ from config import variant_choices
 from instance_label_maps import (
     dt_annotations_to_instance_map,
     gt_annotations_to_instance_map,
+    segmentation_to_binary_mask,
 )
 from pipeline import resolve_variant_paths
 from train import _parse_device
@@ -48,6 +51,262 @@ from coco_instance_ap import (
     normalize_polygons_to_image_space,
     object_predictions_to_coco_dt,
 )
+
+
+def _is_pil_compatible_array(image: np.ndarray) -> bool:
+    if image.ndim < 3:
+        return True
+    return image.shape[2] in {1, 3, 4}
+
+
+def _visualization_image(image: np.ndarray) -> np.ndarray:
+    if image.ndim == 2:
+        return image
+    if image.shape[2] == 1:
+        return image[:, :, 0]
+    return image[:, :, :3]
+
+
+def _as_rgb_uint8(image: np.ndarray) -> np.ndarray:
+    display = _visualization_image(image)
+    if display.ndim == 2:
+        display = np.repeat(display[:, :, None], 3, axis=2)
+    elif display.shape[2] == 1:
+        display = np.repeat(display, 3, axis=2)
+    return np.clip(display, 0, 255).astype(np.uint8, copy=False)
+
+
+def write_mask_overlay_visual(image: np.ndarray, pred_map: np.ndarray, out_path: Path) -> None:
+    from PIL import Image
+
+    visual = _as_rgb_uint8(image).astype(np.float32)
+    labels = np.unique(pred_map)
+    labels = labels[labels > 0]
+    for label in labels:
+        mask = pred_map == label
+        color = np.array(
+            [
+                (37 * int(label)) % 255,
+                (97 * int(label)) % 255,
+                (173 * int(label)) % 255,
+            ],
+            dtype=np.float32,
+        )
+        visual[mask] = (0.45 * visual[mask]) + (0.55 * color)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(np.clip(visual, 0, 255).astype(np.uint8)).save(out_path)
+
+
+def _mask_to_polygons(mask: np.ndarray) -> list[Any]:
+    import cv2
+    from shapely.geometry import Polygon
+
+    contours, _ = cv2.findContours(
+        mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+    polygons: list[Any] = []
+    for contour in contours:
+        points = contour.reshape(-1, 2)
+        if len(points) < 3:
+            continue
+        polygon = Polygon([(float(x), float(y)) for x, y in points])
+        if not polygon.is_valid:
+            polygon = polygon.buffer(0)
+        if not polygon.is_empty and polygon.area > 0:
+            polygons.append(polygon)
+    return polygons
+
+
+def _segmentation_to_polygons(
+    segmentation: list | dict, height: int, width: int
+) -> list[Any]:
+    from shapely.geometry import Polygon
+
+    if isinstance(segmentation, list):
+        polygons: list[Any] = []
+        for ring in segmentation:
+            if len(ring) < 6:
+                continue
+            coords = list(zip(ring[0::2], ring[1::2], strict=False))
+            polygon = Polygon([(float(x), float(y)) for x, y in coords])
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
+            if not polygon.is_empty and polygon.area > 0:
+                polygons.append(polygon)
+        return polygons
+    mask = segmentation_to_binary_mask(segmentation, height, width)
+    return _mask_to_polygons(mask)
+
+
+def write_predicted_masks_gpkg(
+    dt_annotations: list[dict[str, Any]], *, height: int, width: int, out_path: Path
+) -> None:
+    import geopandas as gpd
+
+    records: list[dict[str, Any]] = []
+    geometries: list[Any] = []
+    for instance_id, ann in enumerate(dt_annotations, start=1):
+        segmentation = ann.get("segmentation")
+        if segmentation is None or segmentation == [] or segmentation == {}:
+            continue
+        for polygon in _segmentation_to_polygons(segmentation, height, width):
+            records.append(
+                {
+                    "instance_id": instance_id,
+                    "category_id": int(ann.get("category_id", 0)),
+                    "score": float(ann.get("score", 0.0)),
+                }
+            )
+            geometries.append(polygon)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    geodata = gpd.GeoDataFrame(records, geometry=geometries)
+    if geodata.empty:
+        geodata = gpd.GeoDataFrame(
+            {
+                "instance_id": [],
+                "category_id": [],
+                "score": [],
+                "geometry": [],
+            },
+            geometry="geometry",
+        )
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="'crs' was not provided.*",
+            category=UserWarning,
+        )
+        geodata.to_file(out_path, layer="predictions", driver="GPKG")
+
+
+class _NumpyPredictionResult:
+    def __init__(self, image: np.ndarray, object_prediction_list: list[Any]) -> None:
+        self.image = image
+        self.object_prediction_list = object_prediction_list
+
+    def export_visuals(self, export_dir: str, file_name: str) -> None:
+        from sahi.utils.cv import visualize_object_predictions
+
+        visualize_object_predictions(
+            image=np.ascontiguousarray(_visualization_image(self.image)),
+            object_prediction_list=self.object_prediction_list,
+            output_dir=export_dir,
+            file_name=file_name,
+            export_format="png",
+        )
+
+
+def _perform_ultralytics_inference_preserve_channels(
+    detection_model: Any, image: np.ndarray
+) -> None:
+    """SAHI's Ultralytics wrapper reverses all channels; keep multichannel TIFF order."""
+    import torch
+    from ultralytics.engine.results import Masks
+
+    kwargs = {
+        "cfg": detection_model.config_path,
+        "verbose": False,
+        "conf": detection_model.confidence_threshold,
+        "device": detection_model.device,
+    }
+    if detection_model.image_size is not None:
+        kwargs = {"imgsz": detection_model.image_size, **kwargs}
+
+    prediction_result = detection_model.model(np.ascontiguousarray(image), **kwargs)
+    if detection_model.has_mask:
+        if not prediction_result[0].masks:
+            device = getattr(detection_model.model, "device", "cpu")
+            prediction_result[0].masks = Masks(
+                torch.tensor([], device=device), prediction_result[0].boxes.orig_shape
+            )
+        prediction_result = [
+            (result.boxes.data, result.masks.data) for result in prediction_result
+        ]
+    elif detection_model.is_obb:
+        device = getattr(detection_model.model, "device", "cpu")
+        prediction_result = [
+            (
+                torch.cat(
+                    [
+                        result.obb.xyxy,
+                        result.obb.conf.unsqueeze(-1),
+                        result.obb.cls.unsqueeze(-1),
+                    ],
+                    dim=1,
+                )
+                if result.obb is not None
+                else torch.empty((0, 6), device=device),
+                result.obb.xyxyxyxy
+                if result.obb is not None
+                else torch.empty((0, 4, 2), device=device),
+            )
+            for result in prediction_result
+        ]
+    else:
+        prediction_result = [result.boxes.data for result in prediction_result]
+
+    detection_model._original_predictions = prediction_result
+    detection_model._original_shape = image.shape
+
+
+def _get_sliced_prediction_preserve_channels(
+    image: np.ndarray,
+    detection_model: Any,
+    *,
+    slice_height: int,
+    slice_width: int,
+    overlap_height_ratio: float,
+    overlap_width_ratio: float,
+    verbose: int = 0,
+) -> _NumpyPredictionResult:
+    from sahi.predict import POSTPROCESS_NAME_TO_CLASS, filter_predictions
+    from sahi.slicing import get_slice_bboxes
+
+    height, width = image.shape[:2]
+    slice_bboxes = get_slice_bboxes(
+        image_height=height,
+        image_width=width,
+        auto_slice_resolution=False,
+        slice_height=slice_height,
+        slice_width=slice_width,
+        overlap_height_ratio=overlap_height_ratio,
+        overlap_width_ratio=overlap_width_ratio,
+    )
+    postprocess = POSTPROCESS_NAME_TO_CLASS["GREEDYNMM"](
+        match_threshold=0.5,
+        match_metric="IOS",
+        class_agnostic=False,
+    )
+
+    object_prediction_list: list[Any] = []
+    start = time.time()
+    for tlx, tly, brx, bry in slice_bboxes:
+        image_slice = image[tly:bry, tlx:brx]
+        _perform_ultralytics_inference_preserve_channels(detection_model, image_slice)
+        detection_model.convert_original_predictions(
+            shift_amount=[tlx, tly],
+            full_shape=[height, width],
+        )
+        predictions = filter_predictions(
+            detection_model.object_prediction_list,
+            exclude_classes_by_name=None,
+            exclude_classes_by_id=None,
+        )
+        for object_prediction in predictions:
+            if object_prediction:
+                object_prediction_list.append(
+                    object_prediction.get_shifted_object_prediction()
+                )
+
+    if len(object_prediction_list) > 1:
+        object_prediction_list = postprocess(object_prediction_list)
+    if verbose:
+        print(
+            f"Performed multichannel sliced prediction on {len(slice_bboxes)} slices "
+            f"in {time.time() - start:.2f}s."
+        )
+    return _NumpyPredictionResult(image=image, object_prediction_list=object_prediction_list)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -266,6 +525,81 @@ def load_image_for_yolo(path: Path) -> np.ndarray:
     return np.clip(arr, 0, 255).astype(np.uint8, copy=False)
 
 
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _optional_metric_attr(obj: Any, name: str) -> Any:
+    if obj is None:
+        return None
+    try:
+        return getattr(obj, name)
+    except Exception:
+        return None
+
+
+def _metric_section(obj: Any) -> dict[str, Any]:
+    keys = (
+        "map",
+        "map50",
+        "map75",
+        "maps",
+        "mp",
+        "mr",
+        "p",
+        "r",
+        "f1",
+        "ap_class_index",
+        "image_metrics",
+    )
+    out: dict[str, Any] = {}
+    for key in keys:
+        value = _optional_metric_attr(obj, key)
+        if value is not None:
+            out[key] = _json_safe(value)
+    return out
+
+
+def _collect_val_metrics(metrics: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for section in ("box", "seg", "mask", "pose", "obb"):
+        values = _metric_section(_optional_metric_attr(metrics, section))
+        if values:
+            payload[section] = values
+    for key in ("speed", "results_dict", "fitness"):
+        value = _optional_metric_attr(metrics, key)
+        if value is not None:
+            payload[key] = _json_safe(value)
+    return payload
+
+
+def write_val_metrics_json(
+    metrics: Any, *, project: Path | None, name: str
+) -> Path | None:
+    if project is None:
+        return None
+    out_path = project.resolve() / name / "metrics.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(_collect_val_metrics(metrics), indent=2, allow_nan=False),
+        encoding="utf-8",
+    )
+    print(f"Wrote val metrics JSON to {out_path}")
+    return out_path
+
+
 def run_val(args: argparse.Namespace, data_yaml: Path) -> Any:
     from ultralytics import YOLO
 
@@ -286,7 +620,9 @@ def run_val(args: argparse.Namespace, data_yaml: Path) -> Any:
     val_kwargs["name"] = args.name
     if args.project is not None:
         val_kwargs["project"] = str(args.project.resolve())
-    return model.val(**val_kwargs)
+    metrics = model.val(**val_kwargs)
+    write_val_metrics_json(metrics, project=args.project, name=args.name)
+    return metrics
 
 
 def _resolve_manifest_path(raw: str, manifest_dir: Path) -> Path:
@@ -407,28 +743,32 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
             height=height,
             width=width,
         )
-        result = get_sliced_prediction(
-            image,
-            detection_model,
-            slice_height=args.slice_height,
-            slice_width=args.slice_width,
-            overlap_height_ratio=args.overlap_height_ratio,
-            overlap_width_ratio=args.overlap_width_ratio,
-            verbose=0,
-        )
+        if _is_pil_compatible_array(image):
+            result = get_sliced_prediction(
+                image,
+                detection_model,
+                slice_height=args.slice_height,
+                slice_width=args.slice_width,
+                overlap_height_ratio=args.overlap_height_ratio,
+                overlap_width_ratio=args.overlap_width_ratio,
+                verbose=0,
+            )
+        else:
+            result = _get_sliced_prediction_preserve_channels(
+                image,
+                detection_model,
+                slice_height=args.slice_height,
+                slice_width=args.slice_width,
+                overlap_height_ratio=args.overlap_height_ratio,
+                overlap_width_ratio=args.overlap_width_ratio,
+                verbose=0,
+            )
         dt_anns = object_predictions_to_coco_dt(
             result.object_prediction_list,
             image_id=image_id,
             height=height,
             width=width,
         )
-        if args.sahi_out_dir is not None:
-            out_root = args.sahi_out_dir.resolve()
-            out_root.mkdir(parents=True, exist_ok=True)
-            sub = out_root / tiff_path.stem
-            sub.mkdir(parents=True, exist_ok=True)
-            result.export_visuals(export_dir=str(sub), file_name="prediction_visual")
-
         summary = evaluate_mask_ap(
             image_id=image_id,
             file_name=tiff_path.name,
@@ -457,6 +797,18 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
         row.update(inst_metrics)
         row.update(summary.to_dict())
         per_image.append(row)
+        if args.sahi_out_dir is not None:
+            out_root = args.sahi_out_dir.resolve()
+            out_root.mkdir(parents=True, exist_ok=True)
+            sub = out_root / tiff_path.stem
+            sub.mkdir(parents=True, exist_ok=True)
+            write_mask_overlay_visual(image, pred_map, sub / "prediction_visual.png")
+            write_predicted_masks_gpkg(
+                dt_anns,
+                height=height,
+                width=width,
+                out_path=sub / "predicted_masks.gpkg",
+            )
         print(
             f"{tiff_path.name}: AP={summary.ap_50_95:.4f} AP50={summary.ap_50:.4f} "
             f"AJI={aji:.4f} mF1@0.5:0.95={inst_metrics['mF1_iou50_95']:.4f} "

@@ -116,7 +116,7 @@ Evaluation metrics include:
 - **Mean P/R/F1 over IoU 0.50–0.95:** `mP_iou50_95`, `mR_iou50_95`, and `mF1_iou50_95` average precision, recall, and F1 at thresholds 0.50, 0.55, …, 0.95 (same matching rule at each threshold).
 - **F1 Score:** The harmonic mean of Precision and Recall, providing a single metric that balances both false positives and false negatives.
 
-For the YOLO models, **COCO-style mask AP (Average Precision)** was also used. It decouples detection performance from spatial accuracy by averaging across multiple IoU thresholds (AP@0.5:0.95). It allows for the creation of precision-recall curves to understand model confidence. It is generally less sensitive to the topological structure of boundaries (like fused touching instances) than AJI. AP was not calculated for U-net models as they don't produce the required confidence scores for each prediction.
+For the YOLO models, **COCO-style mask AP (Average Precision)** was also used. It decouples detection performance from spatial accuracy by averaging across multiple IoU thresholds (mAP@0.5:0.95). It allows for the creation of precision-recall curves to understand model confidence. It is generally less sensitive to the topological structure of boundaries (like fused touching instances) than AJI. AP was not calculated for U-net models as they don't produce the required confidence scores for each prediction.
 
 
 ## Interpretation Notes

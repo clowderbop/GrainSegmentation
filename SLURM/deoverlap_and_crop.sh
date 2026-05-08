@@ -20,6 +20,7 @@ mkdir -p "$TEST_DIR"
 cp $SCRATCH/GrainSeg/dataset/train/train_raw.gpkg "$TRAIN_DIR/"
 cp $SCRATCH/GrainSeg/dataset/test/test_raw.gpkg "$TEST_DIR/"
 
+# Uncropped sources stay unprefixed: PPL.tif, PPX1.tif, ...
 cp $SCRATCH/GrainSeg/dataset/uncropped/PPL.tif "$WORK_DIR/"
 cp $SCRATCH/GrainSeg/dataset/uncropped/PPX*.tif "$WORK_DIR/"
 
@@ -63,5 +64,17 @@ cp "$TEST_DIR/test_cropped.gpkg" $SCRATCH/GrainSeg/dataset/test/test_labels.gpkg
 
 cp -r "$TRAIN_DIR/cropped/"* $SCRATCH/GrainSeg/dataset/train/
 cp -r "$TEST_DIR/cropped/"* $SCRATCH/GrainSeg/dataset/test/
+
+# Add train_ / test_ to full-field PPL and PPX channel TIFFs in dataset (not in uncropped).
+for base in PPL PPX1 PPX2 PPX3 PPX4 PPX5 PPX6; do
+  if [[ -f $SCRATCH/GrainSeg/dataset/train/${base}.tif ]]; then
+    mv -f $SCRATCH/GrainSeg/dataset/train/${base}.tif \
+      $SCRATCH/GrainSeg/dataset/train/train_${base}.tif
+  fi
+  if [[ -f $SCRATCH/GrainSeg/dataset/test/${base}.tif ]]; then
+    mv -f $SCRATCH/GrainSeg/dataset/test/${base}.tif \
+      $SCRATCH/GrainSeg/dataset/test/test_${base}.tif
+  fi
+done
 
 echo "Done!"

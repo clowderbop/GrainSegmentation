@@ -26,43 +26,43 @@ echo "Blending PPX images..."
 
 # Get PPX images
 for i in {1..6}; do
-    cp "$TRAIN_DEST/PPX${i}.tif" "$TRAIN_DIR/"
+    cp "$TRAIN_DEST/train_PPX${i}.tif" "$TRAIN_DIR/"
 done
 
 for i in {1..6}; do
-    cp "$TEST_DEST/PPX${i}.tif" "$TEST_DIR/"
+    cp "$TEST_DEST/test_PPX${i}.tif" "$TEST_DIR/"
 done
 
 uv run --no-sync python -u blend_tiffs.py \
     "$TRAIN_DIR/" \
     "$RESULT_DIR/train_PPXblend.tif"
 
-mv "$RESULT_DIR/train_PPXblend.tif" $TRAIN_DEST/PPXblend.tif
+mv "$RESULT_DIR/train_PPXblend.tif" $TRAIN_DEST/train_PPXblend.tif
 
 
 uv run --no-sync python -u blend_tiffs.py \
     "$TEST_DIR/" \
     "$RESULT_DIR/test_PPXblend.tif"
 
-mv "$RESULT_DIR/test_PPXblend.tif" $TEST_DEST/PPXblend.tif
+mv "$RESULT_DIR/test_PPXblend.tif" $TEST_DEST/test_PPXblend.tif
 
 
 echo "Blending PPL and PPX images..."
 
-## Get remaining PPL images
-cp "$TRAIN_DEST/PPL.tif" "$TRAIN_DIR/"
-cp "$TEST_DEST/PPL.tif" "$TEST_DIR/"
+# train_PPL + train_PPX1..6: lexicographic order puts PPL first (base for blend)
+cp "$TRAIN_DEST/train_PPL.tif" "$TRAIN_DIR/train_PPL.tif"
+cp "$TEST_DEST/test_PPL.tif" "$TEST_DIR/test_PPL.tif"
 
 uv run --no-sync python -u blend_tiffs.py \
     "$TRAIN_DIR" \
     "$RESULT_DIR/train_PPLPPXblend.tif"
 
-mv "$RESULT_DIR/train_PPLPPXblend.tif" $TRAIN_DEST/PPLPPXblend.tif
+mv "$RESULT_DIR/train_PPLPPXblend.tif" $TRAIN_DEST/train_PPLPPXblend.tif
 
 uv run --no-sync python -u blend_tiffs.py \
     "$TEST_DIR/" \
     "$RESULT_DIR/test_PPLPPXblend.tif"
 
-mv "$RESULT_DIR/test_PPLPPXblend.tif" $TEST_DEST/PPLPPXblend.tif
+mv "$RESULT_DIR/test_PPLPPXblend.tif" $TEST_DEST/test_PPLPPXblend.tif
 
 echo "Done!"

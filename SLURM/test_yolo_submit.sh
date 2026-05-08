@@ -1,5 +1,6 @@
 #!/bin/bash
 # Submit SAHI (test_yolo.sh) and patch val (test_yolo_patches.sh) for each training variant.
+# test_yolo.sh reads the held-out multichannel test TIFFs (test_*.tif) in $SCRATCH/GrainSeg/dataset/test/; channel TIFFs also use the test_ prefix.
 # Run from the repository root: bash SLURM/test_yolo_submit.sh
 # Optional: VARIANTS=(PPL) bash SLURM/test_yolo_submit.sh
 

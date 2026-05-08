@@ -9,6 +9,8 @@
 set -euo pipefail
 
 # Edit variant / SAHI tiling as needed (whole held-out TIFF + COCO mask AP vs GPKG).
+# Multichannel test TIFFs: test_PPL*.tif under $SCRATCH/GrainSeg/dataset/test/
+# (single PPL+PPX channels in that tree use test_PPL / test_PPX*; uncropped/ stays unprefixed)
 # Override per job: sbatch --export=ALL,VARIANT=PPL+AllPPX SLURM/test_yolo.sh
 VARIANT="${VARIANT:-PPL}"
 DEVICE="0"
@@ -24,16 +26,16 @@ source SLURM/prepare_env.sh
 
 case "$VARIANT" in
     PPL)
-        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/PPL.tif"
+        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/test_PPL.tif"
         ;;
     PPLPPXblend)
-        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/PPLPPXblend.tif"
+        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/test_PPLPPXblend.tif"
         ;;
     PPL+PPXblend)
-        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/PPL+PPXblend.tif"
+        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/test_PPL+PPXblend.tif"
         ;;
     PPL+AllPPX)
-        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/PPL+AllPPX.tif"
+        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/test_PPL+AllPPX.tif"
         ;;
     *)
         echo "Unknown YOLO variant: $VARIANT" >&2

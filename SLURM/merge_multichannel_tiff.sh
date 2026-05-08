@@ -20,39 +20,40 @@ cd src/data_prep
 uv sync
 
 echo "Merging PPL and PPX blend into multichannel TIFFs (train)..."
-cp "$TRAIN_DEST/PPL.tif" "$TRAIN_WORK/"
-cp "$TRAIN_DEST/PPXblend.tif" "$TRAIN_WORK/"
+# train_PPL + train_PPXblend sort in the correct channel order.
+cp "$TRAIN_DEST/train_PPL.tif" "$TRAIN_WORK/"
+cp "$TRAIN_DEST/train_PPXblend.tif" "$TRAIN_WORK/"
 uv run --no-sync python -u stack_tiff_channels.py \
     "$TRAIN_WORK" \
     "$TRAIN_WORK/PPL+PPXblend.tif"
-mv "$TRAIN_WORK/PPL+PPXblend.tif" "$TRAIN_DEST/PPL+PPXblend.tif"
-rm -f "$TRAIN_WORK/PPXblend.tif" # Keep PPL.tif for later
+mv "$TRAIN_WORK/PPL+PPXblend.tif" "$TRAIN_DEST/train_PPL+PPXblend.tif"
+rm -f "$TRAIN_WORK/train_PPXblend.tif" # Keep train_PPL for the All-PPX merge
 
 echo "Merging PPL and PPX blend into multichannel TIFFs (test)..."
-cp "$TEST_DEST/PPL.tif" "$TEST_WORK/"
-cp "$TEST_DEST/PPXblend.tif" "$TEST_WORK/"
+cp "$TEST_DEST/test_PPL.tif" "$TEST_WORK/"
+cp "$TEST_DEST/test_PPXblend.tif" "$TEST_WORK/"
 uv run --no-sync python -u stack_tiff_channels.py \
     "$TEST_WORK" \
     "$TEST_WORK/PPL+PPXblend.tif"
-mv "$TEST_WORK/PPL+PPXblend.tif" "$TEST_DEST/PPL+PPXblend.tif"
-rm -f "$TEST_WORK/PPXblend.tif" # Keep PPL.tif for later
+mv "$TEST_WORK/PPL+PPXblend.tif" "$TEST_DEST/test_PPL+PPXblend.tif"
+rm -f "$TEST_WORK/test_PPXblend.tif" # Keep test_PPL for the All-PPX merge
 
 echo "Merging PPL and all PPX channels (train)..."
 for i in {1..6}; do
-    cp "$TRAIN_DEST/PPX${i}.tif" "$TRAIN_WORK/"
+    cp "$TRAIN_DEST/train_PPX${i}.tif" "$TRAIN_WORK/"
 done
 uv run --no-sync python -u stack_tiff_channels.py \
     "$TRAIN_WORK" \
     "$TRAIN_WORK/PPL+AllPPX.tif"
-mv "$TRAIN_WORK/PPL+AllPPX.tif" "$TRAIN_DEST/PPL+AllPPX.tif"
+mv "$TRAIN_WORK/PPL+AllPPX.tif" "$TRAIN_DEST/train_PPL+AllPPX.tif"
 
 echo "Merging PPL and all PPX channels (test)..."
 for i in {1..6}; do
-    cp "$TEST_DEST/PPX${i}.tif" "$TEST_WORK/"
+    cp "$TEST_DEST/test_PPX${i}.tif" "$TEST_WORK/"
 done
 uv run --no-sync python -u stack_tiff_channels.py \
     "$TEST_WORK" \
     "$TEST_WORK/PPL+AllPPX.tif"
-mv "$TEST_WORK/PPL+AllPPX.tif" "$TEST_DEST/PPL+AllPPX.tif"
+mv "$TEST_WORK/PPL+AllPPX.tif" "$TEST_DEST/test_PPL+AllPPX.tif"
 
 echo "Done!"

@@ -371,7 +371,7 @@ exit 0
             scratch_root = temp_path / "scratch"
             test_dir = scratch_root / "GrainSeg" / "dataset" / "test"
             test_dir.mkdir(parents=True)
-            (test_dir / "PPL+PPXblend.tif").write_bytes(b"fake")
+            (test_dir / "test_PPL+PPXblend.tif").write_bytes(b"fake")
             (test_dir / "test_labels.gpkg").write_bytes(b"fake")
             runtime_tmp = temp_path / "runtime_tmp"
             runtime_tmp.mkdir()
@@ -395,7 +395,7 @@ exit 0
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             uv_calls = uv_log.read_text(encoding="utf-8")
             expected_out = scratch_root / "GrainSeg" / "eval" / "yolo_PPL+PPXblend"
-            expected_tiff = runtime_tmp / "test_yolo" / "PPL+PPXblend.tif"
+            expected_tiff = runtime_tmp / "test_yolo" / "test_PPL+PPXblend.tif"
             self.assertIn(str(expected_tiff), uv_calls)
             self.assertIn(str(expected_out / "metrics-PPL+PPXblend-12345.json"), uv_calls)
             self.assertIn(str(expected_out), uv_calls)

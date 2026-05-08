@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=EvalModels
+#SBATCH --job-name=test_unet
 #SBATCH --output=logs/%x-%j.log
 #SBATCH --mem=256G
 #SBATCH --cpus-per-task=8

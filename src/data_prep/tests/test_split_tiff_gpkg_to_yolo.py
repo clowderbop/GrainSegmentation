@@ -146,6 +146,56 @@ class SplitTiffGpkgToYoloTests(unittest.TestCase):
                 any(label_path.read_text().strip() for label_path in all_label_paths)
             )
 
+    def test_cli_no_split_writes_all_patches_to_val_only(self) -> None:
+        module = _load_module()
+        image = np.arange(4 * 8 * 8, dtype=np.uint8).reshape(4, 8, 8)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            image_path = tmp_path / "image.tif"
+            polygons_path = tmp_path / "polygons.gpkg"
+            output_dir = tmp_path / "output"
+
+            tifffile.imwrite(image_path, image)
+            gdf = gpd.GeoDataFrame(
+                {"geometry": [Polygon([(1, 1), (5, 1), (5, 5), (1, 5)])]}
+            )
+            gdf.to_file(polygons_path, layer="grains", driver="GPKG")
+
+            argv = [
+                "split_tiff_gpkg_to_yolo.py",
+                "--image",
+                str(image_path),
+                "--polygons",
+                str(polygons_path),
+                "--output-dir",
+                str(output_dir),
+                "--patch-size",
+                "4",
+                "--patch-overlap",
+                "0.0",
+                "--tile-size",
+                "4",
+                "--validation-fraction",
+                "0.5",
+                "--random-state",
+                "7",
+                "--no-split",
+            ]
+            with mock.patch("sys.argv", argv):
+                module.main()
+
+            train_images = sorted((output_dir / "images" / "train").glob("*.tif"))
+            val_images = sorted((output_dir / "images" / "val").glob("*.tif"))
+            train_labels = sorted((output_dir / "labels" / "train").glob("*.txt"))
+            val_labels = sorted((output_dir / "labels" / "val").glob("*.txt"))
+
+            self.assertFalse(train_images)
+            self.assertFalse(train_labels)
+            self.assertTrue(val_images)
+            self.assertTrue(val_labels)
+            self.assertSetEqual(_stems(val_images), _stems(val_labels))
+
     def test_build_yolo_rows_normalizes_padded_edge_patch_against_saved_patch_size(
         self,
     ) -> None:

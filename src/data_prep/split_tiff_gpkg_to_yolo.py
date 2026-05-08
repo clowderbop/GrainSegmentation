@@ -297,6 +297,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--random-state", type=int, required=True)
     parser.add_argument("--coverage-bins", type=int, default=10)
     parser.add_argument("--image-ext", default=".tif")
+    parser.add_argument(
+        "--no-split",
+        action="store_true",
+        help=(
+            "Export every tile's patches into val/ only (no train/). "
+            "Uses all regions; ignores validation-fraction and random-state. "
+            "For held-out test mosaics where a train/val split is meaningless."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -427,24 +436,32 @@ def export_dataset(
     random_state: int,
     coverage_bins: int,
     image_ext: str,
+    *,
+    no_split: bool = False,
 ) -> None:
     image = load_image_channel_first(image_path)
     polygons = _normalize_polygons_to_image_space(_load_polygons(polygons_path))
     _, height, width = image.shape
 
     region_bounds = _region_bounds(height, width, tile_size)
-    coverages = _compute_region_coverages(region_bounds, polygons)
-    train_indices, val_indices = split_region_indices(
-        coverages,
-        validation_fraction=validation_fraction,
-        random_state=random_state,
-        coverage_bins=coverage_bins,
-    )
+    if no_split:
+        region_splits = (
+            ("val", np.arange(len(region_bounds), dtype=np.int64)),
+        )
+    else:
+        coverages = _compute_region_coverages(region_bounds, polygons)
+        train_indices, val_indices = split_region_indices(
+            coverages,
+            validation_fraction=validation_fraction,
+            random_state=random_state,
+            coverage_bins=coverage_bins,
+        )
+        region_splits = (("train", train_indices), ("val", val_indices))
 
     split_dirs = _prepare_output_dirs(output_dir)
     normalized_image_ext = _normalize_image_ext(image_ext)
 
-    for split_name, region_indices in (("train", train_indices), ("val", val_indices)):
+    for split_name, region_indices in region_splits:
         image_dir, label_dir = split_dirs[split_name]
         for region_idx in region_indices:
             y0, y1, x0, x1 = region_bounds[int(region_idx)]
@@ -486,6 +503,7 @@ def main(argv: list[str] | None = None) -> None:
         random_state=args.random_state,
         coverage_bins=args.coverage_bins,
         image_ext=args.image_ext,
+        no_split=args.no_split,
     )
 
 

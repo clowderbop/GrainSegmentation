@@ -15,24 +15,38 @@ TEST_WORK="$WORK_DIR/test"
 mkdir -p "$TRAIN_WORK"
 mkdir -p "$TEST_WORK"
 
-# YOLO data YAMLs (path relative to this file; multichannel only where the TIFF has extra bands)
+# YOLO data YAMLs (path relative to this file; multichannel only where the TIFF has extra bands).
+# held_out=1: all patches live under images/val/ only (--no-split test mosaics); point train/val/test
+# there so Ultralytics model.val(..., split="test") resolves paths without an empty train/ split.
 write_yolo_dataset_yamls() {
     local yolo_root=$1
-    cat > "$yolo_root/PPL/PPL.yaml" <<'EOF'
+    local held_out="${2:-0}"
+    local train_p val_p test_p
+    if [[ "$held_out" == "1" ]]; then
+        train_p="images/val"
+        val_p="images/val"
+        test_p="images/val"
+    else
+        train_p="images/train"
+        val_p="images/val"
+        test_p=""
+    fi
+
+    cat > "$yolo_root/PPL/PPL.yaml" <<EOF
 path: .
-train: images/train
-val: images/val
-test:
+train: $train_p
+val: $val_p
+test: $test_p
 
 # Classes
 names:
   0: grain
 EOF
-    cat > "$yolo_root/PPL+AllPPX/PPL+AllPPX.yaml" <<'EOF'
+    cat > "$yolo_root/PPL+AllPPX/PPL+AllPPX.yaml" <<EOF
 path: .
-train: images/train
-val: images/val
-test:
+train: $train_p
+val: $val_p
+test: $test_p
 
 channels: 21
 
@@ -40,11 +54,11 @@ channels: 21
 names:
   0: grain
 EOF
-    cat > "$yolo_root/PPL+PPXblend/PPL_PPXblend.yaml" <<'EOF'
+    cat > "$yolo_root/PPL+PPXblend/PPL_PPXblend.yaml" <<EOF
 path: .
-train: images/train
-val: images/val
-test:
+train: $train_p
+val: $val_p
+test: $test_p
 
 channels: 6
 
@@ -52,11 +66,11 @@ channels: 6
 names:
   0: grain
 EOF
-    cat > "$yolo_root/PPLPPXblend/PPLPPXblend.yaml" <<'EOF'
+    cat > "$yolo_root/PPLPPXblend/PPLPPXblend.yaml" <<EOF
 path: .
-train: images/train
-val: images/val
-test:
+train: $train_p
+val: $val_p
+test: $test_p
 
 # Classes
 names:
@@ -133,36 +147,39 @@ cp "$TEST_DEST/test_PPLPPXblend.tif" "$TEST_WORK/"
 cp "$TEST_DEST/test_PPL.tif" "$TEST_WORK/"
 cp "$TEST_DEST/test_labels.gpkg" "$TEST_WORK/labels.gpkg"
 
-echo "Running split_tiff_gpkg_to_yolo for all variants (test)..."
+echo "Running split_tiff_gpkg_to_yolo for all variants (test, full mosaic -> val/ only)..."
 uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --image "$TEST_WORK/test_PPL.tif" \
     --polygons "$TEST_WORK/labels.gpkg" \
     --output-dir "$TEST_WORK/PPL" \
     --patch-size 1024 \
-    --patch-overlap 0.5 \
+    --patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
-    --random-state 42
+    --random-state 42 \
+    --no-split
 
 uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --image "$TEST_WORK/test_PPLPPXblend.tif" \
     --polygons "$TEST_WORK/labels.gpkg" \
     --output-dir "$TEST_WORK/PPLPPXblend" \
     --patch-size 1024 \
-    --patch-overlap 0.5 \
+    --patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
-    --random-state 42
+    --random-state 42 \
+    --no-split
 
 uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --image "$TEST_WORK/test_PPL+PPXblend.tif" \
     --polygons "$TEST_WORK/labels.gpkg" \
     --output-dir "$TEST_WORK/PPL+PPXblend" \
     --patch-size 1024 \
-    --patch-overlap 0.5 \
+    --patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
-    --random-state 42
+    --random-state 42 \
+    --no-split
 
 uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --image "$TEST_WORK/test_PPL+AllPPX.tif" \
@@ -172,7 +189,8 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --patch-overlap 0.5 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
-    --random-state 42
+    --random-state 42 \
+    --no-split
 
 echo "Copying YOLO test variants to persistent storage..."
 mkdir -p "$TEST_DEST/yolo"
@@ -181,6 +199,6 @@ mv "$TEST_WORK/PPLPPXblend" "$TEST_DEST/yolo/PPLPPXblend"
 mv "$TEST_WORK/PPL+PPXblend" "$TEST_DEST/yolo/PPL+PPXblend"
 mv "$TEST_WORK/PPL+AllPPX" "$TEST_DEST/yolo/PPL+AllPPX"
 
-write_yolo_dataset_yamls "$TEST_DEST/yolo"
+write_yolo_dataset_yamls "$TEST_DEST/yolo" 1
 
 echo "Done!"

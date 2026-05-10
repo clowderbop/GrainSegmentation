@@ -9,12 +9,13 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SUBMIT_SCRIPT = REPO_ROOT / "SLURM" / "submit_experiments.sh"
+UNET_SUBMIT_SCRIPT = REPO_ROOT / "SLURM" / "train_unet_submit.sh"
 TRAIN_SCRIPT = REPO_ROOT / "SLURM" / "train_unet_multi_input.sh"
-YOLO_SUBMIT_SCRIPT = REPO_ROOT / "SLURM" / "submit_yolo_experiments.sh"
-YOLO_TRAIN_SCRIPT = REPO_ROOT / "SLURM" / "train_yolo26x_seg.sh"
+YOLO_SUBMIT_SCRIPT = REPO_ROOT / "SLURM" / "train_yolo_submit.sh"
+YOLO_TRAIN_SCRIPT = REPO_ROOT / "SLURM" / "train_yolo.sh"
 YOLO_TEST_SCRIPT = REPO_ROOT / "SLURM" / "test_yolo.sh"
 YOLO_TEST_PATCHES_SCRIPT = REPO_ROOT / "SLURM" / "test_yolo_patches.sh"
+UNET_TEST_PATCHES_SCRIPT = REPO_ROOT / "SLURM" / "test_unet_patches.sh"
 EVAL_SCRIPT = REPO_ROOT / "SLURM" / "evaluate_models_and_plot.sh"
 RASTER_TO_POLYGON_SCRIPT = REPO_ROOT / "SLURM" / "raster_to_polygon.sh"
 
@@ -77,7 +78,7 @@ class SlurmScriptTests(unittest.TestCase):
             self.assertIn("sync", uv_log.read_text(encoding="utf-8"))
             self.assertIn("--validation-fraction", uv_log.read_text(encoding="utf-8"))
 
-    def test_submit_experiments_forwards_verbose_flag(self) -> None:
+    def test_train_unet_submit_forwards_verbose_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
             fake_bin = temp_path / "bin"
@@ -98,7 +99,7 @@ class SlurmScriptTests(unittest.TestCase):
             env["SBATCH_ARGS_LOG"] = str(sbatch_args_log)
 
             result = subprocess.run(
-                ["bash", str(SUBMIT_SCRIPT), "--ppl", "--verbose"],
+                ["bash", str(UNET_SUBMIT_SCRIPT), "--ppl", "--verbose"],
                 cwd=REPO_ROOT,
                 env=env,
                 capture_output=True,
@@ -106,7 +107,9 @@ class SlurmScriptTests(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            self.assertIn("--verbose", sbatch_args_log.read_text(encoding="utf-8"))
+            sbatch_args = sbatch_args_log.read_text(encoding="utf-8")
+            self.assertIn("--verbose", sbatch_args)
+            self.assertIn("train_unet_multi_input.sh", sbatch_args)
 
     def test_yolo_train_script_uses_submit_dir_when_running_from_spool_copy(
         self,
@@ -123,7 +126,7 @@ class SlurmScriptTests(unittest.TestCase):
 
             spool_dir = temp_path / "spool"
             spool_dir.mkdir()
-            spool_script = spool_dir / "train_yolo26x_seg.sh"
+            spool_script = spool_dir / "train_yolo.sh"
             spool_script.write_text(
                 YOLO_TRAIN_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
             )
@@ -192,7 +195,7 @@ class SlurmScriptTests(unittest.TestCase):
 
             spool_dir = temp_path / "spool"
             spool_dir.mkdir()
-            spool_script = spool_dir / "train_yolo26x_seg.sh"
+            spool_script = spool_dir / "train_yolo.sh"
             spool_script.write_text(
                 YOLO_TRAIN_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
             )
@@ -340,6 +343,147 @@ exit 0
             self.assertIn(str(copied_yaml), uv_calls)
             self.assertNotIn("PPL+AllPPX/PPL+AllPPX/PPL+AllPPX.yaml", uv_calls)
 
+    def test_unet_patch_eval_script_stages_patch_roots_and_invokes_evaluate(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            temp_path = Path(tmpdir)
+            fake_repo = temp_path / "repo"
+            fake_repo.mkdir()
+            (fake_repo / "SLURM").mkdir()
+            (fake_repo / "src" / "training").mkdir(parents=True)
+            (fake_repo / "src" / "evaluation").mkdir(parents=True)
+
+            prepare_env = fake_repo / "SLURM" / "prepare_env.sh"
+            prepare_env.write_text("#!/bin/bash\n:\n", encoding="utf-8")
+
+            spool_script = temp_path / "test_unet_patches.sh"
+            spool_script.write_text(
+                UNET_TEST_PATCHES_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
+            )
+
+            fake_bin = temp_path / "bin"
+            fake_bin.mkdir()
+            uv_log = temp_path / "uv_calls.txt"
+            uv_path = fake_bin / "uv"
+            uv_path.write_text(
+                """#!/bin/bash
+printf "%s\\n" "$@" >> "$UV_LOG"
+args=("$@")
+script=""
+for ((i=0; i<${#args[@]}; i++)); do
+  if [[ "${args[$i]}" == *.py ]]; then
+    script="${args[$i]}"
+    break
+  fi
+done
+if [[ "$script" == *"evaluate.py"* ]]; then
+  output_json=""
+  pred_dir=""
+  image_dir=""
+  mask_dir=""
+  model_path=""
+  for ((i=0; i<${#args[@]}; i++)); do
+    case "${args[$i]}" in
+      --output-json) output_json="${args[$((i+1))]}" ;;
+      --save-predictions-dir) pred_dir="${args[$((i+1))]}" ;;
+      --image-dir) image_dir="${args[$((i+1))]}" ;;
+      --mask-dir) mask_dir="${args[$((i+1))]}" ;;
+      --model-path) model_path="${args[$((i+1))]}" ;;
+    esac
+  done
+  mkdir -p "$(dirname "$output_json")" "$pred_dir"
+  printf '{"mean":{"aji":0.3}}' > "$output_json"
+fi
+exit 0
+""",
+                encoding="utf-8",
+            )
+            uv_path.chmod(
+                uv_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
+
+            scratch_root = temp_path / "scratch"
+            unet_images = (
+                scratch_root
+                / "GrainSeg"
+                / "dataset"
+                / "test"
+                / "unet_from_yolo"
+                / "PPL"
+                / "images"
+            )
+            unet_masks = (
+                scratch_root
+                / "GrainSeg"
+                / "dataset"
+                / "test"
+                / "unet_from_yolo"
+                / "PPL"
+                / "masks"
+            )
+            unet_images.mkdir(parents=True)
+            unet_masks.mkdir(parents=True)
+            (unet_images / "tile1_PPL.tif").write_bytes(b"")
+            (unet_masks / "tile1_labels.tif").write_bytes(b"")
+
+            model_path = scratch_root / "GrainSeg" / "models" / "unet_PPL.keras"
+            model_path.parent.mkdir(parents=True)
+            model_path.write_text("", encoding="utf-8")
+
+            wheels_dir = scratch_root / "GrainSeg" / "wheels"
+            wheels_dir.mkdir(parents=True)
+            (
+                wheels_dir / "tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
+            ).write_text("", encoding="utf-8")
+
+            runtime_tmp = temp_path / "runtime_tmp"
+            runtime_tmp.mkdir()
+
+            env = os.environ.copy()
+            env["PATH"] = f"{fake_bin}:{env['PATH']}"
+            env["UV_LOG"] = str(uv_log)
+            env["SLURM_SUBMIT_DIR"] = str(fake_repo)
+            env["TMPDIR"] = str(runtime_tmp)
+            env["SCRATCH"] = str(scratch_root)
+            env["VARIANT"] = "PPL"
+            env["SLURM_JOB_ID"] = "contract_test"
+
+            result = subprocess.run(
+                ["bash", str(spool_script)],
+                cwd=fake_repo,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            uv_calls = uv_log.read_text(encoding="utf-8")
+            staged_root = runtime_tmp / "unet_patch_eval_PPL_contract_test"
+            self.assertIn(str(staged_root / "images"), uv_calls)
+            self.assertIn(str(staged_root / "masks"), uv_calls)
+            local_model = staged_root / "model" / "unet_PPL.keras"
+            self.assertIn(str(local_model), uv_calls)
+            self.assertIn("../evaluation/evaluate.py", uv_calls)
+            self.assertIn("--image-dir", uv_calls)
+            self.assertIn("--mask-dir", uv_calls)
+            self.assertIn("--patch-size", uv_calls)
+            self.assertIn("--stride", uv_calls)
+            self.assertIn("1024", uv_calls)
+            self.assertIn("--mask-stem-suffix", uv_calls)
+            self.assertIn("_labels", uv_calls)
+
+            out_metrics = (
+                scratch_root
+                / "GrainSeg"
+                / "eval"
+                / "unet_patches"
+                / "PPL"
+                / "contract_test"
+                / "metrics.json"
+            )
+            self.assertTrue(out_metrics.exists())
+
     def test_yolo_sahi_script_uses_variant_tiff_and_eval_output_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
@@ -400,7 +544,7 @@ exit 0
             self.assertIn(str(expected_out / "metrics-PPL+PPXblend-12345.json"), uv_calls)
             self.assertIn(str(expected_out), uv_calls)
 
-    def test_submit_yolo_experiments_forwards_verbose_flag(self) -> None:
+    def test_train_yolo_submit_forwards_verbose_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
             fake_bin = temp_path / "bin"
@@ -430,10 +574,10 @@ exit 0
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             sbatch_args = sbatch_args_log.read_text(encoding="utf-8")
-            self.assertIn("train_yolo26x_seg.sh", sbatch_args)
+            self.assertIn("train_yolo.sh", sbatch_args)
             self.assertIn("--verbose", sbatch_args)
 
-    def test_submit_yolo_experiments_forwards_resume_flag(self) -> None:
+    def test_train_yolo_submit_forwards_resume_flag(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
             fake_bin = temp_path / "bin"
@@ -464,7 +608,7 @@ exit 0
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertIn("--resume", sbatch_args_log.read_text(encoding="utf-8"))
 
-    def test_submit_yolo_experiments_returns_failure_when_sbatch_fails(self) -> None:
+    def test_train_yolo_submit_returns_failure_when_sbatch_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             temp_path = Path(tmpdir)
             fake_bin = temp_path / "bin"
@@ -496,7 +640,7 @@ exit 0
                 "Selected YOLO jobs submitted successfully!", result.stdout
             )
 
-    def test_submit_yolo_experiments_rolls_back_queued_jobs_after_later_failure(
+    def test_train_yolo_submit_rolls_back_queued_jobs_after_later_failure(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -571,7 +715,7 @@ exit 2
 
             spool_dir = temp_path / "spool"
             spool_dir.mkdir()
-            spool_script = spool_dir / "train_yolo26x_seg.sh"
+            spool_script = spool_dir / "train_yolo.sh"
             spool_script.write_text(
                 YOLO_TRAIN_SCRIPT.read_text(encoding="utf-8"), encoding="utf-8"
             )

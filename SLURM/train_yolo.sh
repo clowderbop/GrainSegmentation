@@ -24,7 +24,7 @@ function usage {
     echo "  --batch <value>: Batch size forwarded to src/yolo/train.py"
     echo "  --device <value>: Ultralytics device value for training and tuning runs"
     echo "  --verbose: Keep shell tracing messages enabled for troubleshooting"
-    echo "  For variant-specific memory requests, prefer SLURM/submit_yolo_experiments.sh or override sbatch --mem."
+    echo "  For variant-specific memory requests, prefer SLURM/train_yolo_submit.sh or override sbatch --mem."
     echo "  Per the indexed @Yolo docs, resume restores saved training state; unsupported resume-time overrides are rejected."
     exit 1
 }

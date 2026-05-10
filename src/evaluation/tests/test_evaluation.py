@@ -247,6 +247,54 @@ class InferenceTests(unittest.TestCase):
 
         self.assertEqual(recorded_starts, [0, 1, 5, 6])
 
+    def test_predict_full_image_matches_direct_predict_for_single_window(self) -> None:
+        """One tile covering the padded image: blended path matches a single ``model.predict``."""
+        _install_tensorflow_stub()
+        inference = _reload_module("evaluation.inference")
+
+        num_classes = 3
+
+        class LogitsModel:
+            output_shape = (None, None, None, num_classes)
+
+            def predict(self, batch, verbose=0):
+                _, h, w, _ = batch.shape
+                yg, xg = np.mgrid[0:h, 0:w]
+                cls = (yg + xg) % num_classes
+                out = np.zeros(
+                    (batch.shape[0], h, w, num_classes), dtype=np.float32
+                )
+                for b in range(batch.shape[0]):
+                    for k in range(num_classes):
+                        out[b, :, :, k] = (cls == k).astype(np.float32) * 10.0
+                return out
+
+        patch_size = 8
+        h, w, c = 4, 4, 3
+        rng = np.random.default_rng(0)
+        image = rng.normal(size=(h, w, c)).astype(np.float32)
+        model = LogitsModel()
+        padded_h = max(h, patch_size)
+        padded_w = max(w, patch_size)
+        padded = np.pad(
+            image,
+            ((0, padded_h - h), (0, padded_w - w), (0, 0)),
+            mode="constant",
+        )
+        direct = np.argmax(
+            model.predict(padded[np.newaxis, ...], verbose=0)[0], axis=-1
+        )
+        direct_crop = direct[:h, :w]
+
+        full_pred, _ = inference.predict_full_image(
+            model=model,
+            inputs=(image,),
+            patch_size=patch_size,
+            stride=patch_size,
+            batch_size=1,
+        )
+        np.testing.assert_array_equal(full_pred, direct_crop)
+
 
 def _eval_validate_args_ns(**kwargs):
     defaults = {
@@ -594,6 +642,86 @@ class EvaluateMainTests(unittest.TestCase):
             self.assertEqual(saved["heldout_section"]["aji"], 1.0)
             self.assertTrue((pred_dir / "heldout_section_pred.png").exists())
             self.assertIn("descriptive", stdout.getvalue().lower())
+
+    def test_main_includes_mean_metrics_for_two_samples(self) -> None:
+        _install_evaluate_import_stubs()
+        evaluate = _reload_module("evaluation.evaluate")
+
+        def _metric_bundle(f1: float) -> dict[str, float]:
+            return {
+                "precision_iou50": 1.0,
+                "recall_iou50": 1.0,
+                "f1_iou50": f1,
+                "precision_iou75": 1.0,
+                "recall_iou75": 1.0,
+                "f1_iou75": f1,
+                "mP_iou50_95": f1,
+                "mR_iou50_95": f1,
+                "mF1_iou50_95": f1,
+            }
+
+        samples = [
+            {"id": "patch_a", "images": ["a.png"], "mask": "a_m.png"},
+            {"id": "patch_b", "images": ["b.png"], "mask": "b_m.png"},
+        ]
+        mask = np.array([[0, 1], [2, 1]], dtype=np.int32)
+        pred = np.array([[0, 1], [2, 1]], dtype=np.int32)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_json = Path(tmpdir) / "metrics.json"
+            pred_dir = Path(tmpdir) / "preds"
+            argv = [
+                "evaluate.py",
+                "--model-path",
+                "model.keras",
+                "--image-dir",
+                "images",
+                "--mask-dir",
+                "masks",
+                "--output-json",
+                str(output_json),
+                "--save-predictions-dir",
+                str(pred_dir),
+                "--num-inputs",
+                "1",
+                "--image-suffixes",
+                "_PPL",
+            ]
+
+            with patch.object(sys, "argv", argv):
+                with patch.object(evaluate, "list_samples", return_value=samples):
+                    with patch.object(
+                        evaluate, "_load_rgb_image", return_value=np.zeros((2, 2, 3))
+                    ):
+                        with patch.object(
+                            evaluate, "_load_raster_mask", return_value=mask
+                        ):
+                            with patch.object(
+                                evaluate,
+                                "predict_full_image",
+                                return_value=(pred, np.zeros((2, 2, 3))),
+                            ):
+                                with patch.object(
+                                    evaluate, "compute_aji", side_effect=[0.2, 0.6]
+                                ):
+                                    with patch.object(
+                                        evaluate,
+                                        "compute_instance_metrics_dict",
+                                        side_effect=[
+                                            _metric_bundle(0.4),
+                                            _metric_bundle(0.8),
+                                        ],
+                                    ):
+                                        evaluate.main()
+
+            saved = json.loads(output_json.read_text())
+            self.assertIn("patch_a", saved)
+            self.assertIn("patch_b", saved)
+            self.assertIn("mean", saved)
+            self.assertAlmostEqual(saved["patch_a"]["aji"], 0.2)
+            self.assertAlmostEqual(saved["patch_b"]["aji"], 0.6)
+            self.assertAlmostEqual(saved["mean"]["aji"], 0.4)
+            self.assertAlmostEqual(saved["mean"]["f1_iou50"], 0.6)
 
     def test_main_reuses_cached_prediction_skips_inference_and_model_load(self) -> None:
         _install_evaluate_import_stubs()

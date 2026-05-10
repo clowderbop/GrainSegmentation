@@ -9,4 +9,5 @@ __pycache__/
 .worktrees/
 docs/
 *.pt
-plans
+.cursor/plans/
+docs/plans/

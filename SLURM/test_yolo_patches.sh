@@ -8,7 +8,10 @@
 
 set -euo pipefail
 
-# Edit these paths / hyperparameters as needed (Ultralytics val on the YOLO dataset test split).
+# Patch-level instance metrics (AJI + IoU-sweep P/R/F1) on the YOLO dataset test split,
+# aligned with UNet patch evaluation. Optional: RUN_ULTRALYTICS_VAL=1 also runs native
+# Ultralytics val and stores summaries under extras.ultralytics in the same JSON.
+#
 # Override per job: sbatch --export=ALL,VARIANT=PPL+AllPPX SLURM/test_yolo_patches.sh
 VARIANT="${VARIANT:-PPL}"
 DEVICE="0"
@@ -16,6 +19,10 @@ IMGSZ=1024
 BATCH=16
 RUN_NAME="test"
 PROJECT_DIR="$SCRATCH/GrainSeg/runs/yolo26-seg-val/$VARIANT"
+JOB_TAG="${SLURM_JOB_ID:-local}"
+OUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/GrainSeg/eval/yolo_patches/$VARIANT/$JOB_TAG}"
+OUTPUT_JSON="$OUT_ROOT/metrics.json"
+RUN_ULTRALYTICS_VAL="${RUN_ULTRALYTICS_VAL:-0}"
 # Leave empty to stage from $SCRATCH into TMPDIR (same layout as train_yolo.sh).
 DATA_YAML=""
 
@@ -47,7 +54,7 @@ esac
 WEIGHTS="$SCRATCH/GrainSeg/runs/yolo26-seg/$VARIANT/weights/best.pt"
 
 if [[ -z "$DATA_YAML" ]]; then
-    echo "Staging YOLO dataset to TMPDIR for validation..."
+    echo "Staging YOLO dataset to TMPDIR for patch evaluation..."
     TMP_YOLO_ROOT="$TMPDIR/yolo"
     TMP_DATASET_DIR="$TMP_YOLO_ROOT/$DATASET_SUBDIR"
     mkdir -p "$TMP_YOLO_ROOT"
@@ -87,12 +94,21 @@ uv sync
 
 export YOLO_DISABLE_TQDM=True
 
-uv run python -u evaluate.py \
-    --mode val \
-    --weights "$WEIGHTS" \
-    --data "$DATA_YAML" \
-    --device "$DEVICE" \
-    --imgsz "$IMGSZ" \
-    --batch "$BATCH" \
-    --name "$RUN_NAME" \
-    --project "$PROJECT_DIR"
+mkdir -p "$OUT_ROOT"
+
+PATCH_EVAL_FLAGS=(
+    --mode patches
+    --weights "$WEIGHTS"
+    --variant "$VARIANT"
+    --data "$DATA_YAML"
+    --device "$DEVICE"
+    --imgsz "$IMGSZ"
+    --conf "${CONF:-0.25}"
+    --output-json "$OUTPUT_JSON"
+)
+
+if [[ "$RUN_ULTRALYTICS_VAL" == "1" ]]; then
+    PATCH_EVAL_FLAGS+=(--run-ultralytics-val --batch "$BATCH" --name "$RUN_NAME" --project "$PROJECT_DIR")
+fi
+
+uv run python -u evaluate.py "${PATCH_EVAL_FLAGS[@]}"

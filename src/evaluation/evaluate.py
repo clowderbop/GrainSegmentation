@@ -23,6 +23,12 @@ from evaluation.metrics import (
     compute_instance_metrics_dict,
     get_instances,
 )
+from evaluation.reporting import (
+    build_instance_eval_report,
+    build_sample_row,
+    count_instances,
+    json_safe_for_dump,
+)
 
 
 def parse_args():
@@ -102,6 +108,21 @@ def parse_args():
         help=(
             "Ridge elevation for boundary; omit for automatic (matches tuning JSON ridge_level null)."
         ),
+    )
+    parser.add_argument(
+        "--model-type",
+        default="unet",
+        help="Tag for metrics.json (shared schema with YOLO patch eval).",
+    )
+    parser.add_argument(
+        "--variant",
+        default=None,
+        help="Optional variant label recorded in metrics.json.",
+    )
+    parser.add_argument(
+        "--unit",
+        default="patch",
+        help="Evaluation unit label in metrics.json (e.g. patch).",
     )
     args = parser.parse_args()
     _validate_args(args, parser)
@@ -196,33 +217,6 @@ def _validate_sample_data(
     return mask_int
 
 
-def _compute_mean_metrics(all_metrics: list[dict[str, float]]) -> dict[str, float]:
-    mean_metrics = {}
-    for key in all_metrics[0].keys():
-        values: list[float] = []
-        for metrics in all_metrics:
-            v = metrics.get(key)
-            if v is None or isinstance(v, (list, dict)):
-                continue
-            if isinstance(v, bool):
-                continue
-            if isinstance(v, (int, float, np.floating, np.integer)):
-                fv = float(v)
-                if not np.isnan(fv):
-                    values.append(fv)
-        mean_metrics[key] = float(np.mean(values)) if values else float("nan")
-    return mean_metrics
-
-
-def _build_results_payload(
-    sample_results: dict[str, dict[str, float]], all_metrics: list[dict[str, float]]
-) -> dict[str, dict[str, float]]:
-    results = dict(sample_results)
-    if len(all_metrics) > 1:
-        results["mean"] = _compute_mean_metrics(all_metrics)
-    return results
-
-
 def _pred_instances_for_metrics(
     pred_classes: np.ndarray, args: argparse.Namespace
 ) -> np.ndarray:
@@ -240,7 +234,7 @@ def _pred_instances_for_metrics(
     )
 
 
-def _print_summary(results: dict[str, dict[str, float]], sample_count: int) -> None:
+def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> None:
     if sample_count == 1:
         print("\n--- Single-Sample Evaluation ---")
         print(
@@ -248,7 +242,8 @@ def _print_summary(results: dict[str, dict[str, float]], sample_count: int) -> N
         )
         return
 
-    mean_metrics = results["mean"]
+    if mean_metrics is None:
+        return
     print("\n--- Mean Metrics ---")
     for key, value in mean_metrics.items():
         print(f"{key}: {value:.4f}")
@@ -267,7 +262,10 @@ def main():
     )
 
     if not samples:
-        print("No samples found. Exiting.")
+        print(
+            "ERROR: No samples matched the given image/mask directories; nothing to evaluate.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print(f"Found {len(samples)} samples to evaluate.")
@@ -287,8 +285,7 @@ def main():
             )
         return model
 
-    results = {}
-    all_metrics = []
+    sample_rows: list[dict] = []
 
     for sample in samples:
         sample_id = sample["id"]
@@ -349,8 +346,17 @@ def main():
         metrics.update(compute_instance_metrics_dict(true_instances, pred_instances))
         print(f"  Instance PR/F1 (IoU sweep): {time.perf_counter() - t_prf:.2f}s")
 
-        results[sample_id] = metrics
-        all_metrics.append(metrics)
+        gt_n = count_instances(true_instances)
+        pred_n = count_instances(pred_instances)
+        sample_rows.append(
+            build_sample_row(
+                sample_id,
+                metrics=metrics,
+                gt_instances=gt_n,
+                pred_instances=pred_n,
+                empty_gt=gt_n == 0,
+            )
+        )
 
         line = (
             f"Metrics for {sample_id}: AJI: {metrics['aji']:.4f}, "
@@ -360,12 +366,29 @@ def main():
         print(line)
         print(f"  Sample total (so far): {time.perf_counter() - t0:.2f}s")
 
-    results = _build_results_payload(results, all_metrics)
-    _print_summary(results, len(all_metrics))
+    if not sample_rows:
+        print(
+            "ERROR: Evaluation produced no metric rows (internal inconsistency).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    results = build_instance_eval_report(
+        model_type=args.model_type,
+        variant=args.variant,
+        unit=args.unit,
+        samples=sample_rows,
+    )
+    mean_for_print = results.get("mean")
+    _print_summary(mean_for_print, len(sample_rows))
 
     t_json = time.perf_counter()
-    with open(args.output_json, "w") as f:
-        json.dump(results, f, indent=4)
+    with open(args.output_json, "w", encoding="utf-8") as f:
+        f.write(
+            json.dumps(
+                json_safe_for_dump(results), indent=4, allow_nan=False, ensure_ascii=False
+            )
+        )
 
     print(f"Saved metrics to {args.output_json} ({time.perf_counter() - t_json:.2f}s)")
 

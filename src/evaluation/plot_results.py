@@ -93,6 +93,47 @@ def compute_ci(data, confidence=0.95):
     return h
 
 
+def _per_sample_metrics_from_eval_json(data: dict) -> dict[str, dict]:
+    """Support legacy flat evaluate.py JSON and schema_version 1 ``samples`` / ``extras.legacy``."""
+    extras = data.get("extras")
+    if isinstance(extras, dict):
+        leg = extras.get("legacy")
+        if isinstance(leg, dict):
+            flat = leg.get("per_sample_flat")
+            if isinstance(flat, dict):
+                return {
+                    k: v
+                    for k, v in flat.items()
+                    if k != "mean" and isinstance(v, dict)
+                }
+    samples = data.get("samples")
+    if isinstance(samples, list):
+        metric_keys = (
+            "aji",
+            "precision_iou50",
+            "recall_iou50",
+            "f1_iou50",
+            "precision_iou75",
+            "recall_iou75",
+            "f1_iou75",
+            "mP_iou50_95",
+            "mR_iou50_95",
+            "mF1_iou50_95",
+        )
+        out: dict[str, dict] = {}
+        for row in samples:
+            if not isinstance(row, dict):
+                continue
+            sid = str(row.get("sample_id", ""))
+            out[sid] = {k: float(row[k]) for k in metric_keys if k in row}
+        return out
+    return {
+        k: v
+        for k, v in data.items()
+        if k != "mean" and isinstance(v, dict) and "aji" in v
+    }
+
+
 def _load_quantitative_metrics(json_files, metrics_to_plot):
     means = {metric_name: [] for metric_name in metrics_to_plot}
     cis = {metric_name: [] for metric_name in metrics_to_plot}
@@ -102,17 +143,24 @@ def _load_quantitative_metrics(json_files, metrics_to_plot):
         with open(jf, "r") as f:
             data = json.load(f)
 
-        sample_keys = [k for k in data.keys() if k != "mean"]
+        per_sample = _per_sample_metrics_from_eval_json(data)
+        sample_keys = list(per_sample.keys())
         sample_counts.append(len(sample_keys))
 
         for metric_name, metric_key in metrics_to_plot.items():
             vals = [
-                data[sk][metric_key]
+                float(per_sample[sk][metric_key])
                 for sk in sample_keys
-                if not np.isnan(data[sk][metric_key])
+                if sk in per_sample
+                and metric_key in per_sample[sk]
+                and not np.isnan(float(per_sample[sk][metric_key]))
             ]
-            means[metric_name].append(np.mean(vals))
-            cis[metric_name].append(compute_ci(vals))
+            if not vals:
+                means[metric_name].append(float("nan"))
+                cis[metric_name].append(float("nan"))
+                continue
+            means[metric_name].append(float(np.mean(vals)))
+            cis[metric_name].append(float(compute_ci(vals)))
 
     return means, cis, sample_counts
 

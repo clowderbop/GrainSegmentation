@@ -116,6 +116,8 @@ uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~
 echo "Running evaluate.py on patch directories (TMPDIR)..."
 eval_cmd=(
     uv run --no-sync python -u ../evaluation/evaluate.py
+    --model-type unet
+    --variant "$VARIANT"
     --model-path "$LOCAL_MODEL_PATH"
     --image-dir "$LOCAL_IMAGES"
     --mask-dir "$LOCAL_MASKS"

@@ -45,12 +45,159 @@ class EvaluateHelpersTests(unittest.TestCase):
             self.assertEqual(ds_root, root.resolve())
             self.assertEqual(cfg["val"], "images/val")
 
+    def test_collect_yolo_patch_pairs_raises_when_label_missing(self) -> None:
+        from PIL import Image
+
+        ev = _reload_evaluate()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "images" / "val").mkdir(parents=True)
+            (root / "labels" / "val").mkdir(parents=True)
+            Image.fromarray(np.zeros((4, 4, 3), dtype=np.uint8)).save(
+                root / "images" / "val" / "tile.png"
+            )
+            yaml_path = root / "d.yaml"
+            yaml_path.write_text(f"path: {root}\ntest: images/val\n", encoding="utf-8")
+            dataset_root, cfg = ev.load_dataset_config_from_yaml(yaml_path)
+            with self.assertRaises(FileNotFoundError) as ctx:
+                ev.collect_yolo_patch_pairs(dataset_root, cfg)
+            self.assertIn("Missing YOLO segmentation label", str(ctx.exception))
+
+    def test_collect_yolo_patch_pairs_prefers_test_and_warns_if_val_present(self) -> None:
+        from contextlib import redirect_stderr
+        from io import StringIO
+        from PIL import Image
+
+        ev = _reload_evaluate()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for split in ("test", "val"):
+                (root / "images" / split).mkdir(parents=True)
+                (root / "labels" / split).mkdir(parents=True)
+            Image.fromarray(np.zeros((4, 4, 3), dtype=np.uint8)).save(
+                root / "images" / "test" / "a.png"
+            )
+            Image.fromarray(np.zeros((4, 4, 3), dtype=np.uint8)).save(
+                root / "images" / "val" / "b.png"
+            )
+            (root / "labels" / "test" / "a.txt").write_text(
+                "0 0.25 0.25 0.75 0.25 0.75 0.75 0.25 0.75\n", encoding="utf-8"
+            )
+            (root / "labels" / "val" / "b.txt").write_text(
+                "0 0.25 0.25 0.75 0.25 0.75 0.75 0.25 0.75\n", encoding="utf-8"
+            )
+            yaml_path = root / "d.yaml"
+            yaml_path.write_text(
+                f"path: {root}\ntest: images/test\nval: images/val\n",
+                encoding="utf-8",
+            )
+            dataset_root, cfg = ev.load_dataset_config_from_yaml(yaml_path)
+            err = StringIO()
+            with redirect_stderr(err):
+                pairs = ev.collect_yolo_patch_pairs(dataset_root, cfg)
+            self.assertEqual(len(pairs), 1)
+            self.assertEqual(pairs[0][0].stem, "a")
+            self.assertIn("using the `test` split only", err.getvalue())
+
 
 class EvaluateMainTests(unittest.TestCase):
     def test_parse_args_requires_mode_and_weights(self) -> None:
         ev = _reload_evaluate()
         with self.assertRaises(SystemExit):
             ev.parse_args([])
+
+    def test_parse_args_patches_requires_output_json(self) -> None:
+        ev = _reload_evaluate()
+        with tempfile.TemporaryDirectory() as tmp:
+            y = Path(tmp) / "d.yaml"
+            y.write_text("path: .\ntest: images/val\n", encoding="utf-8")
+            w = Path(tmp) / "w.pt"
+            w.write_bytes(b"")
+            with self.assertRaises(SystemExit):
+                ev.parse_args(
+                    [
+                        "--mode",
+                        "patches",
+                        "--weights",
+                        str(w),
+                        "--variant",
+                        "PPL",
+                        "--data",
+                        str(y),
+                    ]
+                )
+
+    @patch("ultralytics.YOLO")
+    def test_run_patches_writes_common_schema(self, mock_yolo_cls: MagicMock) -> None:
+        import torch
+        from PIL import Image
+
+        ev = _reload_evaluate()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "images" / "val").mkdir(parents=True)
+            (root / "labels" / "val").mkdir(parents=True)
+            Image.fromarray(np.zeros((16, 16, 3), dtype=np.uint8)).save(
+                root / "images" / "val" / "tile.png"
+            )
+            (root / "labels" / "val" / "tile.txt").write_text(
+                "0 0.25 0.25 0.75 0.25 0.75 0.75 0.25 0.75\n",
+                encoding="utf-8",
+            )
+            yaml_path = root / "d.yaml"
+            yaml_path.write_text(
+                f"path: {root}\ntest: images/val\nnames:\n  0: g\n",
+                encoding="utf-8",
+            )
+            (root / "w.pt").write_bytes(b"")
+
+            class FakeMasks:
+                def __init__(self) -> None:
+                    m = torch.zeros(16, 16)
+                    m[4:12, 4:12] = 1.0
+                    self.data = m.unsqueeze(0)
+
+                def __len__(self) -> int:
+                    return int(self.data.shape[0])
+
+            class FakeBoxes:
+                conf = torch.tensor([0.9])
+
+            class FakeResult:
+                masks = FakeMasks()
+                boxes = FakeBoxes()
+
+            model = MagicMock()
+            model.predict.return_value = [FakeResult()]
+            mock_yolo_cls.return_value = model
+
+            out = root / "metrics.json"
+            args = SimpleNamespace(
+                weights=str(root / "w.pt"),
+                device="cpu",
+                imgsz=16,
+                conf=0.25,
+                variant="PPL",
+                data=None,
+                output_json=out,
+                run_ultralytics_val=False,
+                batch=1,
+                project=None,
+                name="t",
+                workers=0,
+                plots=False,
+                half=False,
+                save_json=False,
+            )
+            ev.run_patches(args, yaml_path)
+            payload = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["schema_version"], 1)
+            self.assertEqual(payload["model_type"], "yolo")
+            self.assertEqual(payload["unit"], "patch")
+            self.assertEqual(len(payload["samples"]), 1)
+            self.assertEqual(payload["samples"][0]["sample_id"], "tile")
+            self.assertIn("aji", payload["samples"][0])
+            self.assertIn("extras", payload)
 
     @patch("ultralytics.YOLO")
     def test_run_val_forwards_kwargs(self, mock_yolo_cls: MagicMock) -> None:

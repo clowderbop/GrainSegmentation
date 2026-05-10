@@ -72,7 +72,93 @@ def _bruteforce_instance_iou_matrix(
     return mat, true_ids, pred_ids
 
 
-class MetricsTests(unittest.TestCase):
+class ReportingTests(unittest.TestCase):
+    def test_aggregate_mean_skips_non_finite(self) -> None:
+        reporting = _reload_module("evaluation.reporting")
+        rows = [
+            reporting.build_sample_row(
+                "a",
+                metrics={k: 1.0 for k in reporting.INSTANCE_METRIC_KEYS},
+                gt_instances=1,
+                pred_instances=1,
+                empty_gt=False,
+            ),
+            reporting.build_sample_row(
+                "b",
+                metrics={k: 0.0 for k in reporting.INSTANCE_METRIC_KEYS},
+                gt_instances=1,
+                pred_instances=1,
+                empty_gt=False,
+            ),
+        ]
+        rows[1]["aji"] = float("nan")
+        mean = reporting.aggregate_mean_metrics(rows)
+        self.assertAlmostEqual(mean["aji"], 1.0)
+        self.assertAlmostEqual(mean["f1_iou50"], 0.5)
+
+    def test_build_report_single_sample_omits_mean(self) -> None:
+        reporting = _reload_module("evaluation.reporting")
+        m = {k: 1.0 for k in reporting.INSTANCE_METRIC_KEYS}
+        row = reporting.build_sample_row(
+            "only",
+            metrics=m,
+            gt_instances=0,
+            pred_instances=0,
+            empty_gt=True,
+        )
+        r = reporting.build_instance_eval_report(
+            model_type="unet",
+            variant="PPL",
+            unit="patch",
+            samples=[row],
+        )
+        self.assertNotIn("mean", r)
+        self.assertEqual(len(r["samples"]), 1)
+        leg = r["extras"]["legacy"]["per_sample_flat"]
+        self.assertIn("only", leg)
+        self.assertNotIn("mean", leg)
+
+    def test_build_report_multi_sample_includes_mean_and_legacy(self) -> None:
+        reporting = _reload_module("evaluation.reporting")
+
+        def bundle(aji: float) -> dict[str, float]:
+            d = {k: 0.5 for k in reporting.INSTANCE_METRIC_KEYS}
+            d["aji"] = aji
+            return d
+
+        rows = [
+            reporting.build_sample_row(
+                "x",
+                metrics=bundle(0.2),
+                gt_instances=1,
+                pred_instances=1,
+                empty_gt=False,
+            ),
+            reporting.build_sample_row(
+                "y",
+                metrics=bundle(0.6),
+                gt_instances=2,
+                pred_instances=2,
+                empty_gt=False,
+            ),
+        ]
+        r = reporting.build_instance_eval_report(
+            model_type="yolo",
+            variant=None,
+            unit="patch",
+            samples=rows,
+        )
+        self.assertAlmostEqual(r["mean"]["aji"], 0.4)
+        leg = r["extras"]["legacy"]["per_sample_flat"]
+        self.assertAlmostEqual(leg["mean"]["aji"], 0.4)
+        self.assertAlmostEqual(leg["x"]["aji"], 0.2)
+
+    def test_json_safe_maps_non_finite_floats_for_strict_json(self) -> None:
+        reporting = _reload_module("evaluation.reporting")
+        raw = {"a": float("nan"), "b": [-1.0, float("inf"), 3.0]}
+        safe = reporting.json_safe_for_dump(raw)
+        text = json.dumps(safe, allow_nan=False)
+        self.assertIn("null", text)
     def test_compute_aji_penalizes_merged_predictions(self) -> None:
         metrics = _reload_module("evaluation.metrics")
 
@@ -443,12 +529,25 @@ class PlotResultsCliTests(unittest.TestCase):
             json_path.write_text(
                 json.dumps(
                     {
-                        "heldout_section": {
-                            "aji": 0.38,
-                            "f1_iou50": 0.41,
-                            "f1_iou75": 0.35,
-                            "mF1_iou50_95": 0.39,
-                        }
+                        "schema_version": 1,
+                        "samples": [
+                            {
+                                "sample_id": "heldout_section",
+                                "gt_instances": 1,
+                                "pred_instances": 1,
+                                "empty_gt": False,
+                                "aji": 0.38,
+                                "precision_iou50": 0.4,
+                                "recall_iou50": 0.42,
+                                "f1_iou50": 0.41,
+                                "precision_iou75": 0.36,
+                                "recall_iou75": 0.34,
+                                "f1_iou75": 0.35,
+                                "mP_iou50_95": 0.39,
+                                "mR_iou50_95": 0.37,
+                                "mF1_iou50_95": 0.39,
+                            }
+                        ],
                     }
                 )
             )
@@ -634,12 +733,17 @@ class EvaluateMainTests(unittest.TestCase):
                                     evaluate.main()
 
             saved = json.loads(output_json.read_text())
-            self.assertIn("heldout_section", saved)
+            self.assertEqual(saved["schema_version"], 1)
+            self.assertEqual(saved["model_type"], "unet")
+            self.assertEqual(len(saved["samples"]), 1)
+            self.assertEqual(saved["samples"][0]["sample_id"], "heldout_section")
             self.assertNotIn("mean", saved)
-            self.assertNotIn("AP", saved["heldout_section"])
-            self.assertNotIn("AP50", saved["heldout_section"])
-            self.assertEqual(saved["heldout_section"]["f1_iou50"], 1.0)
-            self.assertEqual(saved["heldout_section"]["aji"], 1.0)
+            flat = saved["extras"]["legacy"]["per_sample_flat"]
+            self.assertIn("heldout_section", flat)
+            self.assertNotIn("AP", flat["heldout_section"])
+            self.assertNotIn("AP50", flat["heldout_section"])
+            self.assertEqual(flat["heldout_section"]["f1_iou50"], 1.0)
+            self.assertEqual(flat["heldout_section"]["aji"], 1.0)
             self.assertTrue((pred_dir / "heldout_section_pred.png").exists())
             self.assertIn("descriptive", stdout.getvalue().lower())
 
@@ -715,11 +819,12 @@ class EvaluateMainTests(unittest.TestCase):
                                         evaluate.main()
 
             saved = json.loads(output_json.read_text())
-            self.assertIn("patch_a", saved)
-            self.assertIn("patch_b", saved)
+            flat = saved["extras"]["legacy"]["per_sample_flat"]
+            self.assertIn("patch_a", flat)
+            self.assertIn("patch_b", flat)
             self.assertIn("mean", saved)
-            self.assertAlmostEqual(saved["patch_a"]["aji"], 0.2)
-            self.assertAlmostEqual(saved["patch_b"]["aji"], 0.6)
+            self.assertAlmostEqual(flat["patch_a"]["aji"], 0.2)
+            self.assertAlmostEqual(flat["patch_b"]["aji"], 0.6)
             self.assertAlmostEqual(saved["mean"]["aji"], 0.4)
             self.assertAlmostEqual(saved["mean"]["f1_iou50"], 0.6)
 
@@ -788,9 +893,11 @@ class EvaluateMainTests(unittest.TestCase):
             self.assertIn("Reusing cached prediction", out)
             self.assertIn("Instance maps", out)
             self.assertIn("AJI:", out)
-            saved = json.loads(output_json.read_text())
-            self.assertEqual(saved["heldout_section"]["aji"], 1.0)
-            self.assertNotIn("AP", saved["heldout_section"])
+            flat = json.loads(output_json.read_text())["extras"]["legacy"][
+                "per_sample_flat"
+            ]
+            self.assertEqual(flat["heldout_section"]["aji"], 1.0)
+            self.assertNotIn("AP", flat["heldout_section"])
 
     def test_main_cache_miss_calls_predict_and_loads_model_once(self) -> None:
         _install_evaluate_import_stubs()

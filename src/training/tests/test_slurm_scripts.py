@@ -342,6 +342,9 @@ exit 0
             uv_calls = uv_log.read_text(encoding="utf-8")
             self.assertIn(str(copied_yaml), uv_calls)
             self.assertNotIn("PPL+AllPPX/PPL+AllPPX/PPL+AllPPX.yaml", uv_calls)
+            self.assertIn("--mode", uv_calls)
+            self.assertIn("patches", uv_calls)
+            self.assertIn("--output-json", uv_calls)
 
     def test_unet_patch_eval_script_stages_patch_roots_and_invokes_evaluate(
         self,
@@ -472,6 +475,10 @@ exit 0
             self.assertIn("1024", uv_calls)
             self.assertIn("--mask-stem-suffix", uv_calls)
             self.assertIn("_labels", uv_calls)
+            self.assertIn("--model-type", uv_calls)
+            self.assertIn("unet", uv_calls)
+            self.assertIn("--variant", uv_calls)
+            self.assertIn("PPL", uv_calls)
 
             out_metrics = (
                 scratch_root

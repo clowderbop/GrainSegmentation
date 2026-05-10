@@ -1,11 +1,16 @@
 """
-Evaluate trained YOLO segmentation models: Ultralytics val or SAHI tiled inference on held-out TIFFs (COCO mask AP).
+Evaluate trained YOLO segmentation models: Ultralytics val, SAHI on held-out TIFFs (COCO mask AP),
+or patch-level AJI + instance metrics on the dataset test/val split.
 
 Import path: this module imports ``evaluation.metrics`` from the sibling ``src/evaluation``
 package. The parent of this file's directory is ``src/yolo``, so ``src`` is prepended to
 ``sys.path`` once at import time. Any process that imports ``evaluate`` therefore resolves
 ``evaluation.*`` the same way as running from ``src/yolo`` with ``PYTHONPATH`` including
 ``src``. Prefer not importing this module solely to reuse that side effect in unrelated code.
+
+**Patches mode** reads images and YOLO ``.txt`` segmentation labels from the Ultralytics data
+YAML, runs ``model.predict`` per image, and writes a ``metrics`` JSON envelope shared with
+``evaluation.evaluate`` (``schema_version``, ``samples``, optional ``extras``).
 
 SAHI JSON semantics: COCO AP fields use ``-1`` / excluded means when GT is empty; instance
 metrics (AJI, IoU-sweep P/R/F1) follow ``evaluation.metrics`` and are still reported. Each
@@ -35,11 +40,20 @@ if str(_SRC_ROOT) not in sys.path:
 
 from evaluation.metrics import compute_aji, compute_instance_metrics_dict
 
+from evaluation.reporting import (
+    build_instance_eval_report,
+    build_sample_row,
+    count_instances,
+    json_safe_for_dump,
+)
+
 from config import variant_choices
 from instance_label_maps import (
+    binary_masks_to_instance_map_by_confidence,
     dt_annotations_to_instance_map,
     gt_annotations_to_instance_map,
     segmentation_to_binary_mask,
+    yolo_seg_label_txt_to_instance_map,
 )
 from pipeline import resolve_variant_paths
 from train import _parse_device
@@ -303,16 +317,21 @@ def _get_sliced_prediction_preserve_channels(
     return _NumpyPredictionResult(image=image, object_prediction_list=object_prediction_list)
 
 
+_PATCH_IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="YOLO26 segmentation evaluation: val or sahi (whole held-out TIFF + COCO mask AP)."
+        description="YOLO26 segmentation evaluation: val, sahi, or patch-level instance metrics."
     )
     parser.add_argument(
         "--mode",
-        choices=("val", "sahi"),
+        choices=("val", "sahi", "patches"),
         required=True,
         help=(
-            "val: Ultralytics validator on dataset test split; sahi: whole held-out TIFF + COCO mask AP vs GPKG."
+            "val: Ultralytics validator on dataset test split; "
+            "sahi: whole held-out TIFF + COCO mask AP vs GPKG; "
+            "patches: YOLO val/test images + label polygons vs dense instance metrics."
         ),
     )
     parser.add_argument(
@@ -391,7 +410,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--conf",
         type=float,
         default=0.25,
-        help="Confidence threshold for SAHI AutoDetectionModel.",
+        help="Confidence threshold (SAHI AutoDetectionModel; YOLO predict in patches mode).",
     )
     parser.add_argument(
         "--test-tiff",
@@ -415,13 +434,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output-json",
         type=Path,
         default=None,
-        help="Write sahi metrics JSON to this path.",
+        help="Write metrics JSON (required for patches; optional for sahi).",
     )
     parser.add_argument(
         "--sahi-out-dir",
         type=Path,
         default=None,
         help="Optional: save SAHI prediction_visual.png per dataset under this directory.",
+    )
+    parser.add_argument(
+        "--run-ultralytics-val",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "With --mode patches, also run Ultralytics test-split val and record summary "
+            "under extras.ultralytics."
+        ),
     )
 
     args = parser.parse_args(argv)
@@ -432,6 +460,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             pass
         else:
             parser.error("sahi requires --manifest or both --test-tiff and --test-gpkg")
+    elif args.mode == "patches":
+        if args.output_json is None:
+            parser.error("--mode patches requires --output-json")
+        if not args.variant and not args.data:
+            parser.error("one of --variant or --data is required")
     elif not args.variant and not args.data:
         parser.error("one of --variant or --data is required")
     if args.slice_height <= 0 or args.slice_width <= 0:
@@ -459,6 +492,85 @@ def load_dataset_config_from_yaml(data_yaml: Path) -> tuple[Path, dict[str, Any]
     if not dataset_root.is_absolute():
         dataset_root = (data_yaml.parent / dataset_root).resolve()
     return dataset_root, config
+
+
+def _default_label_dir_for_split(
+    dataset_root: Path, split_name: str, image_dir: Path
+) -> Path:
+    try:
+        relative_parts = list(image_dir.relative_to(dataset_root).parts)
+    except ValueError:
+        relative_parts = []
+    if "images" in relative_parts:
+        relative_parts[relative_parts.index("images")] = "labels"
+        return dataset_root.joinpath(*relative_parts)
+    return dataset_root / "labels" / split_name
+
+
+def _resolve_rel_split_dir(dataset_root: Path, split_path: str) -> Path:
+    path = Path(split_path)
+    if path.is_absolute():
+        return path.resolve()
+    return (dataset_root / path).resolve()
+
+
+def collect_yolo_patch_pairs(
+    dataset_root: Path, config: dict[str, Any]
+) -> list[tuple[Path, Path]]:
+    """Image paths and matching YOLO label paths (same stem under the split ``labels`` tree)."""
+    for split_name in ("test", "val"):
+        rel = config.get(split_name)
+        if not rel:
+            continue
+        if split_name == "test" and config.get("val"):
+            print(
+                "YOLO patch evaluation: using the `test` split only. "
+                "The dataset YAML also defines `val`, which is ignored for this run.",
+                file=sys.stderr,
+            )
+        image_dir = _resolve_rel_split_dir(dataset_root, str(rel))
+        if not image_dir.is_dir():
+            raise FileNotFoundError(
+                f"Missing image directory for split {split_name!r}: {image_dir}"
+            )
+        label_dir = _default_label_dir_for_split(dataset_root, split_name, image_dir)
+        samples: list[tuple[Path, Path]] = []
+        for image_path in sorted(image_dir.iterdir()):
+            if image_path.suffix.lower() not in _PATCH_IMAGE_SUFFIXES:
+                continue
+            label_path = label_dir / f"{image_path.stem}.txt"
+            if not label_path.is_file():
+                raise FileNotFoundError(
+                    f"Missing YOLO segmentation label for {image_path}: expected {label_path}"
+                )
+            samples.append((image_path, label_path))
+        return samples
+    raise ValueError(
+        "Dataset YAML must define a `test` or `val` split for patch evaluation"
+    )
+
+
+def ultralytics_result_to_instance_map(
+    result: Any, height: int, width: int
+) -> np.ndarray:
+    import cv2
+
+    if result.masks is None or len(result.masks) == 0:
+        return np.zeros((height, width), dtype=np.int32)
+    data = result.masks.data.cpu().numpy()
+    conf = result.boxes.conf.cpu().numpy()
+    masks_list: list[np.ndarray] = []
+    for i in range(data.shape[0]):
+        m = data[i]
+        if m.shape != (height, width):
+            m = cv2.resize(
+                m.astype(np.float32),
+                (width, height),
+                interpolation=cv2.INTER_NEAREST,
+            )
+        masks_list.append(m > 0.5)
+    stacked = np.stack(masks_list, axis=0)
+    return binary_masks_to_instance_map_by_confidence(stacked, conf)
 
 
 def device_for_sahi(device: int | str | list[int]) -> str:
@@ -519,22 +631,6 @@ def load_image_for_yolo(path: Path) -> np.ndarray:
     return np.clip(arr, 0, 255).astype(np.uint8, copy=False)
 
 
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if isinstance(value, Path):
-        return str(value)
-    if isinstance(value, dict):
-        return {str(k): _json_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_json_safe(v) for v in value]
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    return str(value)
-
-
 def _optional_metric_attr(obj: Any, name: str) -> Any:
     if obj is None:
         return None
@@ -562,7 +658,7 @@ def _metric_section(obj: Any) -> dict[str, Any]:
     for key in keys:
         value = _optional_metric_attr(obj, key)
         if value is not None:
-            out[key] = _json_safe(value)
+            out[key] = json_safe_for_dump(value)
     return out
 
 
@@ -575,7 +671,7 @@ def _collect_val_metrics(metrics: Any) -> dict[str, Any]:
     for key in ("speed", "results_dict", "fitness"):
         value = _optional_metric_attr(metrics, key)
         if value is not None:
-            payload[key] = _json_safe(value)
+            payload[key] = json_safe_for_dump(value)
     return payload
 
 
@@ -587,11 +683,90 @@ def write_val_metrics_json(
     out_path = project.resolve() / name / "metrics.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
-        json.dumps(_collect_val_metrics(metrics), indent=2, allow_nan=False),
+        json.dumps(json_safe_for_dump(_collect_val_metrics(metrics)), indent=2, allow_nan=False),
         encoding="utf-8",
     )
     print(f"Wrote val metrics JSON to {out_path}")
     return out_path
+
+
+def run_patches(args: argparse.Namespace, data_yaml: Path) -> dict[str, Any]:
+    from ultralytics import YOLO
+
+    dataset_root, config = load_dataset_config_from_yaml(data_yaml)
+    pairs = collect_yolo_patch_pairs(dataset_root, config)
+    if not pairs:
+        raise ValueError("No images found for YOLO patch evaluation")
+
+    device = _parse_device(args.device)
+    model = YOLO(str(Path(args.weights).resolve()))
+    sample_rows: list[dict[str, Any]] = []
+
+    for image_path, label_path in pairs:
+        image = load_image_for_yolo(image_path)
+        h, w = int(image.shape[0]), int(image.shape[1])
+        gt_map = yolo_seg_label_txt_to_instance_map(label_path, h, w)
+
+        results = model.predict(
+            source=np.ascontiguousarray(image),
+            imgsz=args.imgsz,
+            conf=args.conf,
+            device=device,
+            verbose=False,
+            retina_masks=True,
+        )
+        pred_map = ultralytics_result_to_instance_map(results[0], h, w)
+
+        aji = float(compute_aji(gt_map, pred_map))
+        inst = {
+            k: float(v)
+            for k, v in compute_instance_metrics_dict(gt_map, pred_map).items()
+        }
+        metrics: dict[str, float] = {"aji": aji, **inst}
+        gt_n = count_instances(gt_map)
+        pred_n = count_instances(pred_map)
+        sample_rows.append(
+            build_sample_row(
+                image_path.stem,
+                metrics=metrics,
+                gt_instances=gt_n,
+                pred_instances=pred_n,
+                empty_gt=gt_n == 0,
+                extra={"image_path": str(image_path.resolve())},
+            )
+        )
+        print(
+            f"{image_path.name}: AJI={aji:.4f} mF1@0.5:0.95="
+            f"{metrics['mF1_iou50_95']:.4f} GT={gt_n} Pred={pred_n}"
+        )
+
+    if not sample_rows:
+        print(
+            "ERROR: YOLO patch evaluation produced no per-image metric rows.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    extras: dict[str, Any] | None = None
+    if args.run_ultralytics_val:
+        val_metrics = run_val(args, data_yaml)
+        extras = {"ultralytics": _collect_val_metrics(val_metrics)}
+
+    report = build_instance_eval_report(
+        model_type="yolo",
+        variant=args.variant,
+        unit="patch",
+        samples=sample_rows,
+        extras=extras,
+    )
+    assert args.output_json is not None
+    args.output_json.parent.mkdir(parents=True, exist_ok=True)
+    args.output_json.write_text(
+        json.dumps(json_safe_for_dump(report), indent=2, allow_nan=False),
+        encoding="utf-8",
+    )
+    print(f"Wrote patch instance metrics to {args.output_json}")
+    return report
 
 
 def run_val(args: argparse.Namespace, data_yaml: Path) -> Any:
@@ -802,7 +977,7 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
     if args.output_json is not None:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.write_text(
-            json.dumps(aggregate, indent=2, allow_nan=False),
+            json.dumps(json_safe_for_dump(aggregate), indent=2, allow_nan=False),
             encoding="utf-8",
         )
         print(f"Wrote metrics JSON to {args.output_json}")
@@ -817,6 +992,10 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     data_yaml = _resolve_data_yaml(args)
+    if args.mode == "patches":
+        run_patches(args, data_yaml)
+        return
+
     run_val(args, data_yaml)
 
 

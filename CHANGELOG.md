@@ -1,6 +1,30 @@
 # CHANGELOG
 
 
+## v0.24.0 (2026-05-10)
+
+### Bug Fixes
+
+- **yolo**: Run SAHI eval via preserve-channel slicer always
+  ([`3a58a54`](https://github.com/clowderbop/GrainSegmentation/commit/3a58a54876c0052cf94f299ad8b9ece49cec62ee))
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+
+### Chores
+
+- Ignore plans directory
+  ([`1d57d8a`](https://github.com/clowderbop/GrainSegmentation/commit/1d57d8a9bcea8fd27a27ad10b03eaf4438963bdd))
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+
+### Features
+
+- Unify patch eval JSON for UNet and YOLO
+  ([`f8a1d1b`](https://github.com/clowderbop/GrainSegmentation/commit/f8a1d1be01c5c68a32e55fe40c94cd62aa70f27f))
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+
+
 ## v0.23.0 (2026-05-10)
 
 ### Bug Fixes

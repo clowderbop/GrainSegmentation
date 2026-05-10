@@ -53,12 +53,6 @@ from coco_instance_ap import (
 )
 
 
-def _is_pil_compatible_array(image: np.ndarray) -> bool:
-    if image.ndim < 3:
-        return True
-    return image.shape[2] in {1, 3, 4}
-
-
 def _visualization_image(image: np.ndarray) -> np.ndarray:
     if image.ndim == 2:
         return image
@@ -716,7 +710,6 @@ def aggregate_sahi_means(
 
 def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
     from sahi import AutoDetectionModel
-    from sahi.predict import get_sliced_prediction
 
     pairs = _load_sahi_pairs(args)
     device = device_for_sahi(_parse_device(args.device))
@@ -743,26 +736,15 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
             height=height,
             width=width,
         )
-        if _is_pil_compatible_array(image):
-            result = get_sliced_prediction(
-                image,
-                detection_model,
-                slice_height=args.slice_height,
-                slice_width=args.slice_width,
-                overlap_height_ratio=args.overlap_height_ratio,
-                overlap_width_ratio=args.overlap_width_ratio,
-                verbose=0,
-            )
-        else:
-            result = _get_sliced_prediction_preserve_channels(
-                image,
-                detection_model,
-                slice_height=args.slice_height,
-                slice_width=args.slice_width,
-                overlap_height_ratio=args.overlap_height_ratio,
-                overlap_width_ratio=args.overlap_width_ratio,
-                verbose=0,
-            )
+        result = _get_sliced_prediction_preserve_channels(
+            image,
+            detection_model,
+            slice_height=args.slice_height,
+            slice_width=args.slice_width,
+            overlap_height_ratio=args.overlap_height_ratio,
+            overlap_width_ratio=args.overlap_width_ratio,
+            verbose=0,
+        )
         dt_anns = object_predictions_to_coco_dt(
             result.object_prediction_list,
             image_id=image_id,

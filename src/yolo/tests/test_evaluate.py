@@ -197,51 +197,51 @@ class EvaluateMainTests(unittest.TestCase):
             self.assertEqual(pairs[0][0], (sub / "a.tif").resolve())
             self.assertEqual(pairs[0][1], (sub / "a.gpkg").resolve())
 
-    @patch("sahi.predict.get_sliced_prediction")
     @patch("sahi.AutoDetectionModel.from_pretrained")
     def test_run_sahi_creates_parent_dirs_for_output_json(
         self,
         mock_from_pretrained: MagicMock,
-        mock_sliced: MagicMock,
     ) -> None:
         ev = _reload_evaluate()
         mock_from_pretrained.return_value = MagicMock()
-        mock_sliced.return_value = MagicMock(object_prediction_list=[])
         fake_img = np.zeros((10, 10, 1), dtype=np.uint8)
-        with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
-            with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
-                with tempfile.TemporaryDirectory() as tmp:
-                    root = Path(tmp)
-                    tiff = root / "tile.tif"
-                    gpkg = root / "tile.gpkg"
-                    tiff.write_bytes(b"")
-                    gpkg.write_bytes(b"")
-                    out = root / "nested" / "deep" / "metrics.json"
-                    args = SimpleNamespace(
-                        weights=str(root / "w.pt"),
-                        device="cpu",
-                        conf=0.25,
-                        slice_height=64,
-                        slice_width=64,
-                        overlap_height_ratio=0.2,
-                        overlap_width_ratio=0.2,
-                        test_tiff=tiff,
-                        test_gpkg=gpkg,
-                        manifest=None,
-                        sahi_out_dir=None,
-                        output_json=out,
-                    )
-                    (root / "w.pt").write_bytes(b"")
-                    ev.run_sahi(args)
-                    self.assertTrue(out.is_file())
-                    self.assertTrue(out.parent.is_dir())
+        with patch.object(
+            ev,
+            "_get_sliced_prediction_preserve_channels",
+            return_value=MagicMock(object_prediction_list=[]),
+        ):
+            with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
+                with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
+                    with tempfile.TemporaryDirectory() as tmp:
+                        root = Path(tmp)
+                        tiff = root / "tile.tif"
+                        gpkg = root / "tile.gpkg"
+                        tiff.write_bytes(b"")
+                        gpkg.write_bytes(b"")
+                        out = root / "nested" / "deep" / "metrics.json"
+                        args = SimpleNamespace(
+                            weights=str(root / "w.pt"),
+                            device="cpu",
+                            conf=0.25,
+                            slice_height=64,
+                            slice_width=64,
+                            overlap_height_ratio=0.2,
+                            overlap_width_ratio=0.2,
+                            test_tiff=tiff,
+                            test_gpkg=gpkg,
+                            manifest=None,
+                            sahi_out_dir=None,
+                            output_json=out,
+                        )
+                        (root / "w.pt").write_bytes(b"")
+                        ev.run_sahi(args)
+                        self.assertTrue(out.is_file())
+                        self.assertTrue(out.parent.is_dir())
 
-    @patch("sahi.predict.get_sliced_prediction")
     @patch("sahi.AutoDetectionModel.from_pretrained")
     def test_run_sahi_writes_mask_only_visual_and_gpkg_under_out_dir(
         self,
         mock_from_pretrained: MagicMock,
-        mock_sliced: MagicMock,
     ) -> None:
         ev = _reload_evaluate()
         mock_from_pretrained.return_value = MagicMock()
@@ -251,41 +251,45 @@ class EvaluateMainTests(unittest.TestCase):
             Path(export_dir, f"{file_name}.png").write_bytes(b"visual")
 
         result.export_visuals.side_effect = export_visuals
-        mock_sliced.return_value = result
         fake_img = np.zeros((10, 10, 1), dtype=np.uint8)
-        with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
-            with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
-                with tempfile.TemporaryDirectory() as tmp:
-                    root = Path(tmp)
-                    tiff = root / "tile.tif"
-                    gpkg = root / "tile.gpkg"
-                    tiff.write_bytes(b"")
-                    gpkg.write_bytes(b"")
-                    out_dir = root / "sahi_out"
-                    args = SimpleNamespace(
-                        weights=str(root / "w.pt"),
-                        device="cpu",
-                        conf=0.25,
-                        slice_height=64,
-                        slice_width=64,
-                        overlap_height_ratio=0.2,
-                        overlap_width_ratio=0.2,
-                        test_tiff=tiff,
-                        test_gpkg=gpkg,
-                        manifest=None,
-                        sahi_out_dir=out_dir,
-                        output_json=root / "metrics.json",
-                    )
-                    (root / "w.pt").write_bytes(b"")
-                    ev.run_sahi(args)
+        with patch.object(
+            ev,
+            "_get_sliced_prediction_preserve_channels",
+            return_value=result,
+        ):
+            with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
+                with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
+                    with tempfile.TemporaryDirectory() as tmp:
+                        root = Path(tmp)
+                        tiff = root / "tile.tif"
+                        gpkg = root / "tile.gpkg"
+                        tiff.write_bytes(b"")
+                        gpkg.write_bytes(b"")
+                        out_dir = root / "sahi_out"
+                        args = SimpleNamespace(
+                            weights=str(root / "w.pt"),
+                            device="cpu",
+                            conf=0.25,
+                            slice_height=64,
+                            slice_width=64,
+                            overlap_height_ratio=0.2,
+                            overlap_width_ratio=0.2,
+                            test_tiff=tiff,
+                            test_gpkg=gpkg,
+                            manifest=None,
+                            sahi_out_dir=out_dir,
+                            output_json=root / "metrics.json",
+                        )
+                        (root / "w.pt").write_bytes(b"")
+                        ev.run_sahi(args)
 
-                    visual = out_dir / "tile" / "prediction_visual.png"
-                    mask = out_dir / "tile" / "predicted_masks.gpkg"
-                    self.assertTrue(visual.is_file())
-                    self.assertTrue(mask.is_file())
-                    self.assertFalse((out_dir / "tile" / "predicted_masks.tif").exists())
-                    result.export_visuals.assert_not_called()
-                    self.assertEqual(len(gpd.read_file(mask)), 0)
+                        visual = out_dir / "tile" / "prediction_visual.png"
+                        mask = out_dir / "tile" / "predicted_masks.gpkg"
+                        self.assertTrue(visual.is_file())
+                        self.assertTrue(mask.is_file())
+                        self.assertFalse((out_dir / "tile" / "predicted_masks.tif").exists())
+                        result.export_visuals.assert_not_called()
+                        self.assertEqual(len(gpd.read_file(mask)), 0)
 
     def test_write_predicted_masks_gpkg_saves_prediction_polygons(self) -> None:
         ev = _reload_evaluate()
@@ -312,20 +316,21 @@ class EvaluateMainTests(unittest.TestCase):
 
     @patch("sahi.predict.get_sliced_prediction")
     @patch("sahi.AutoDetectionModel.from_pretrained")
-    def test_run_sahi_uses_multichannel_slicer_without_pil_route(
+    def test_run_sahi_always_uses_preserve_channels_slicer(
         self,
         mock_from_pretrained: MagicMock,
-        mock_sliced: MagicMock,
+        mock_get_sliced_prediction: MagicMock,
     ) -> None:
+        """SAHI get_sliced_prediction is unused; all channel layouts use the custom slicer."""
         ev = _reload_evaluate()
         mock_from_pretrained.return_value = MagicMock()
         result = MagicMock(object_prediction_list=[])
-        fake_img = np.zeros((10, 10, 6), dtype=np.uint8)
+        fake_img = np.zeros((10, 10, 3), dtype=np.uint8)
         with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
             with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
                 with patch.object(
                     ev, "_get_sliced_prediction_preserve_channels", return_value=result
-                ) as mock_multichannel:
+                ) as mock_preserve:
                     with tempfile.TemporaryDirectory() as tmp:
                         root = Path(tmp)
                         tiff = root / "tile.tif"
@@ -349,8 +354,8 @@ class EvaluateMainTests(unittest.TestCase):
                         (root / "w.pt").write_bytes(b"")
                         ev.run_sahi(args)
 
-        mock_sliced.assert_not_called()
-        mock_multichannel.assert_called_once()
+        mock_get_sliced_prediction.assert_not_called()
+        mock_preserve.assert_called_once()
 
     def test_aggregate_sahi_means_excludes_undefined(self) -> None:
         ev = _reload_evaluate()
@@ -425,55 +430,57 @@ class EvaluateMainTests(unittest.TestCase):
         self.assertIsNone(means["mean_AP"])
         self.assertIsNone(means["mean_AP50"])
 
-    @patch("sahi.predict.get_sliced_prediction")
     @patch("sahi.AutoDetectionModel.from_pretrained")
     def test_run_sahi_output_json_uses_null_not_nan_for_undefined_means(
         self,
         mock_from_pretrained: MagicMock,
-        mock_sliced: MagicMock,
     ) -> None:
         """Written metrics.json must be strict JSON: null for undefined mean_*, no NaN."""
         ev = _reload_evaluate()
         mock_from_pretrained.return_value = MagicMock()
-        mock_sliced.return_value = MagicMock(object_prediction_list=[])
         fake_img = np.zeros((10, 10, 1), dtype=np.uint8)
-        with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
-            with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
-                with tempfile.TemporaryDirectory() as tmp:
-                    root = Path(tmp)
-                    tiff = root / "tile.tif"
-                    gpkg = root / "tile.gpkg"
-                    tiff.write_bytes(b"")
-                    gpkg.write_bytes(b"")
-                    out = root / "m.json"
-                    args = SimpleNamespace(
-                        weights=str(root / "w.pt"),
-                        device="cpu",
-                        conf=0.25,
-                        slice_height=64,
-                        slice_width=64,
-                        overlap_height_ratio=0.2,
-                        overlap_width_ratio=0.2,
-                        test_tiff=tiff,
-                        test_gpkg=gpkg,
-                        manifest=None,
-                        sahi_out_dir=None,
-                        output_json=out,
-                    )
-                    (root / "w.pt").write_bytes(b"")
-                    ev.run_sahi(args)
-                    text = out.read_text(encoding="utf-8")
-                    self.assertNotIn("NaN", text)
-                    self.assertNotIn("Infinity", text)
-                    loaded = json.loads(text)
-                    self.assertIsNone(loaded["mean_AP"])
-                    self.assertIsNone(loaded["mean_AP50"])
-                    self.assertAlmostEqual(loaded["mean_aji"], 1.0)
-                    self.assertAlmostEqual(loaded["mean_mF1_iou50_95"], 1.0)
-                    row0 = loaded["per_image"][0]
-                    self.assertTrue(row0["empty_gt"])
-                    self.assertAlmostEqual(row0["aji"], 1.0)
-                    self.assertAlmostEqual(row0["f1_iou50"], 1.0)
+        with patch.object(
+            ev,
+            "_get_sliced_prediction_preserve_channels",
+            return_value=MagicMock(object_prediction_list=[]),
+        ):
+            with patch.object(ev, "load_image_for_yolo", return_value=fake_img):
+                with patch.object(ev, "load_polygons_from_gpkg", return_value=[]):
+                    with tempfile.TemporaryDirectory() as tmp:
+                        root = Path(tmp)
+                        tiff = root / "tile.tif"
+                        gpkg = root / "tile.gpkg"
+                        tiff.write_bytes(b"")
+                        gpkg.write_bytes(b"")
+                        out = root / "m.json"
+                        args = SimpleNamespace(
+                            weights=str(root / "w.pt"),
+                            device="cpu",
+                            conf=0.25,
+                            slice_height=64,
+                            slice_width=64,
+                            overlap_height_ratio=0.2,
+                            overlap_width_ratio=0.2,
+                            test_tiff=tiff,
+                            test_gpkg=gpkg,
+                            manifest=None,
+                            sahi_out_dir=None,
+                            output_json=out,
+                        )
+                        (root / "w.pt").write_bytes(b"")
+                        ev.run_sahi(args)
+                        text = out.read_text(encoding="utf-8")
+                        self.assertNotIn("NaN", text)
+                        self.assertNotIn("Infinity", text)
+                        loaded = json.loads(text)
+                        self.assertIsNone(loaded["mean_AP"])
+                        self.assertIsNone(loaded["mean_AP50"])
+                        self.assertAlmostEqual(loaded["mean_aji"], 1.0)
+                        self.assertAlmostEqual(loaded["mean_mF1_iou50_95"], 1.0)
+                        row0 = loaded["per_image"][0]
+                        self.assertTrue(row0["empty_gt"])
+                        self.assertAlmostEqual(row0["aji"], 1.0)
+                        self.assertAlmostEqual(row0["f1_iou50"], 1.0)
 
 
 if __name__ == "__main__":

@@ -186,7 +186,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --polygons "$TEST_WORK/labels.gpkg" \
     --output-dir "$TEST_WORK/PPL+AllPPX" \
     --patch-size 1024 \
-    --patch-overlap 0.5 \
+    --patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \

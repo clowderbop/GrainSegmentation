@@ -8,7 +8,8 @@ set -euo pipefail
 
 # Crop full test_labels.tif to match YOLO val patches from patchify.
 # Copy inputs to $TMPDIR, run crop_unet_masks_from_yolo_patches.py there, then copy
-# results to $SCRATCH (.../unet_from_yolo/<VARIANT>/images|masks).
+# patch images to $SCRATCH (.../unet_from_yolo/<VARIANT>/images) and cropped mask
+# GeoTIFFs next to YOLO polygon labels (.../yolo/<VARIANT>/labels/val).
 #
 # Supported VARIANT values are single-input layouts only (one GeoTIFF per patch);
 # PPL+PPXblend and PPL+AllPPX need multiple files per stem for UNet—extend this
@@ -29,7 +30,7 @@ source SLURM/prepare_env.sh
 
 TEST_ROOT="$SCRATCH/GrainSeg/dataset/test"
 YOLO_ROOT="$TEST_ROOT/yolo"
-OUTPUT_ROOT="$TEST_ROOT/unet_from_yolo"
+UNET_PATCH_ROOT="$TEST_ROOT/unet_from_yolo"
 
 case "$VARIANT" in
     PPL)
@@ -53,13 +54,14 @@ esac
 
 REF_MASK="$TEST_ROOT/test_labels.tif"
 YOLO_IMAGES="$YOLO_ROOT/$VARIANT/images/val"
-OUT_IMAGES="$OUTPUT_ROOT/$VARIANT/images"
-OUT_MASKS="$OUTPUT_ROOT/$VARIANT/masks"
+YOLO_LABELS="$YOLO_ROOT/$VARIANT/labels/val"
+OUT_IMAGES="$UNET_PATCH_ROOT/$VARIANT/images"
 
 if [[ ! -d "$YOLO_IMAGES" ]]; then
     echo "YOLO val images not found (run patchify first?): $YOLO_IMAGES" >&2
     exit 1
 fi
+mkdir -p "$YOLO_LABELS"
 if [[ ! -f "$REF_TIFF" ]]; then
     echo "Reference TIFF missing: $REF_TIFF" >&2
     exit 1
@@ -71,16 +73,17 @@ fi
 
 WORK_ROOT="$TMPDIR/unet_yolo_masks_${VARIANT}_$JOB_TAG"
 LOCAL_YOLO_IMAGES="$WORK_ROOT/yolo_val_images"
+LOCAL_YOLO_LABELS="$WORK_ROOT/yolo_val_labels"
 LOCAL_REF_TIFF="$WORK_ROOT/$(basename "$REF_TIFF")"
 LOCAL_REF_MASK="$WORK_ROOT/$(basename "$REF_MASK")"
 LOCAL_OUT_IMAGES="$WORK_ROOT/out_images"
-LOCAL_OUT_MASKS="$WORK_ROOT/out_masks"
 
 rm -rf "$WORK_ROOT"
-mkdir -p "$LOCAL_YOLO_IMAGES" "$LOCAL_OUT_IMAGES" "$LOCAL_OUT_MASKS"
+mkdir -p "$LOCAL_YOLO_IMAGES" "$LOCAL_OUT_IMAGES" "$LOCAL_YOLO_LABELS"
 
 echo "Staging YOLO val patches + reference raster/mask to TMPDIR ($WORK_ROOT)..."
 cp -r "$YOLO_IMAGES"/. "$LOCAL_YOLO_IMAGES"/
+cp -r "$YOLO_LABELS"/. "$LOCAL_YOLO_LABELS"/ 2>/dev/null || true
 cp -f "$REF_TIFF" "$LOCAL_REF_TIFF"
 cp -f "$REF_MASK" "$LOCAL_REF_MASK"
 
@@ -93,15 +96,15 @@ uv run python -u crop_unet_masks_from_yolo_patches.py \
     --reference-mask "$LOCAL_REF_MASK" \
     --yolo-images-dir "$LOCAL_YOLO_IMAGES" \
     --output-images-dir "$LOCAL_OUT_IMAGES" \
-    --output-masks-dir "$LOCAL_OUT_MASKS" \
+    --output-masks-dir "$LOCAL_YOLO_LABELS" \
     --patch-size "$PATCH_SIZE" \
     --tile-size "$TILE_SIZE" \
     --image-suffix "$IMAGE_SUFFIX"
 
 echo "Copying cropped patch outputs to $SCRATCH..."
-mkdir -p "$OUT_IMAGES" "$OUT_MASKS"
+mkdir -p "$OUT_IMAGES" "$YOLO_LABELS"
 cp -r "$LOCAL_OUT_IMAGES"/. "$OUT_IMAGES"/
-cp -r "$LOCAL_OUT_MASKS"/. "$OUT_MASKS"/
+cp -r "$LOCAL_YOLO_LABELS"/. "$YOLO_LABELS"/
 
 echo "Done. UNet image-dir: $OUT_IMAGES"
-echo "             mask-dir: $OUT_MASKS"
+echo " raster masks + YOLO txts: $YOLO_LABELS"

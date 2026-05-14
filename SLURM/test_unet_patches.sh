@@ -9,7 +9,7 @@
 set -euo pipefail
 
 # Per-patch UNet evaluation on materialized trees from SLURM/unet_patch_masks_from_yolo.sh
-# ($SCRATCH/GrainSeg/dataset/test/unet_from_yolo/<VARIANT>/images|masks).
+# (images: .../unet_from_yolo/<VARIANT>/images; masks: .../yolo/<VARIANT>/labels/val).
 #
 # Pattern: copy patch images/masks + model to $TMPDIR, run evaluate.py there, then copy
 # metrics.json and preds/ back to $SCRATCH.
@@ -36,7 +36,7 @@ BATCH_SIZE="${BATCH_SIZE:-1}"
 TEST_ROOT="$SCRATCH/GrainSeg/dataset/test"
 UNET_SRC_ROOT="$TEST_ROOT/unet_from_yolo/$VARIANT"
 UNET_SRC_IMAGES="$UNET_SRC_ROOT/images"
-UNET_SRC_MASKS="$UNET_SRC_ROOT/masks"
+UNET_SRC_MASKS="$TEST_ROOT/yolo/$VARIANT/labels/val"
 
 OUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/GrainSeg/eval/unet_patches/$VARIANT/$JOB_TAG}"
 OUTPUT_JSON="$OUT_ROOT/metrics.json"

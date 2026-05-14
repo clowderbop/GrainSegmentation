@@ -8,9 +8,12 @@ package. The parent of this file's directory is ``src/yolo``, so ``src`` is prep
 ``evaluation.*`` the same way as running from ``src/yolo`` with ``PYTHONPATH`` including
 ``src``. Prefer not importing this module solely to reuse that side effect in unrelated code.
 
-**Patches mode** reads images and YOLO ``.txt`` segmentation labels from the Ultralytics data
-YAML, runs ``model.predict`` per image, and writes a ``metrics`` JSON envelope shared with
-``evaluation.evaluate`` (``schema_version``, ``samples``, optional ``extras``).
+**Patches mode** reads images from the Ultralytics data YAML, loads **pre-computed**
+semantic mask GeoTIFFs/PNGs in the split ``labels`` tree (``{stem}{mask_stem_suffix}{ext}``,
+same layout as ``crop_unet_masks_from_yolo_patches.py`` / ``unet_patch_masks_from_yolo.sh``),
+derives GT instances via connected components on class 1 (matching UNet ``evaluate.py``),
+runs ``model.predict`` per image, and writes a metrics JSON envelope shared with
+``evaluation.evaluate``.
 
 SAHI JSON semantics: COCO AP fields use ``-1`` / excluded means when GT is empty; instance
 metrics (AJI, IoU-sweep P/R/F1) follow ``evaluation.metrics`` and are still reported. Each
@@ -38,7 +41,11 @@ _SRC_ROOT = _YOLO_ROOT.parent
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from evaluation.metrics import compute_aji, compute_instance_metrics_dict
+from evaluation.metrics import (
+    compute_aji,
+    compute_instance_metrics_dict,
+    get_instances,
+)
 
 from evaluation.reporting import (
     build_instance_eval_report,
@@ -53,7 +60,6 @@ from instance_label_maps import (
     dt_annotations_to_instance_map,
     gt_annotations_to_instance_map,
     segmentation_to_binary_mask,
-    yolo_seg_label_txt_to_instance_map,
 )
 from pipeline import resolve_variant_paths
 from train import _parse_device
@@ -331,7 +337,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "val: Ultralytics validator on dataset test split; "
             "sahi: whole held-out TIFF + COCO mask AP vs GPKG; "
-            "patches: YOLO val/test images + label polygons vs dense instance metrics."
+            "patches: YOLO split images + pre-computed semantic masks in labels/ (UNet-aligned"
+            " rasters, not polygon txt) for instance metrics."
         ),
     )
     parser.add_argument(
@@ -431,6 +438,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="JSON list of {test_tiff, test_gpkg} pairs for batch sahi evaluation.",
     )
     parser.add_argument(
+        "--mask-stem-suffix",
+        default="_labels",
+        help=(
+            "Patches mode: stem fragment before the image extension for GT mask files "
+            "in the labels/ tree (default _labels, matches crop_unet_masks_from_yolo_patches.py)."
+        ),
+    )
+    parser.add_argument(
         "--output-json",
         type=Path,
         default=None,
@@ -516,8 +531,14 @@ def _resolve_rel_split_dir(dataset_root: Path, split_path: str) -> Path:
 
 def collect_yolo_patch_pairs(
     dataset_root: Path, config: dict[str, Any]
-) -> list[tuple[Path, Path]]:
-    """Image paths and matching YOLO label paths (same stem under the split ``labels`` tree)."""
+) -> tuple[Path, list[Path]]:
+    """
+    Return ``(label_dir, image_paths)`` for the first configured split among ``test``, ``val``.
+
+    Patches evaluation does **not** read YOLO polygon ``.txt`` files. It requires
+    pre-computed semantic masks ``{stem}{mask_stem_suffix}{image.suffix}`` under
+    ``label_dir`` (see ``crop_unet_masks_from_yolo_patches.py``).
+    """
     for split_name in ("test", "val"):
         rel = config.get(split_name)
         if not rel:
@@ -534,17 +555,14 @@ def collect_yolo_patch_pairs(
                 f"Missing image directory for split {split_name!r}: {image_dir}"
             )
         label_dir = _default_label_dir_for_split(dataset_root, split_name, image_dir)
-        samples: list[tuple[Path, Path]] = []
+        image_paths: list[Path] = []
         for image_path in sorted(image_dir.iterdir()):
             if image_path.suffix.lower() not in _PATCH_IMAGE_SUFFIXES:
                 continue
-            label_path = label_dir / f"{image_path.stem}.txt"
-            if not label_path.is_file():
-                raise FileNotFoundError(
-                    f"Missing YOLO segmentation label for {image_path}: expected {label_path}"
-                )
-            samples.append((image_path, label_path))
-        return samples
+            image_paths.append(image_path)
+        if not image_paths:
+            raise ValueError(f"No patch images found under {image_dir}")
+        return label_dir, image_paths
     raise ValueError(
         "Dataset YAML must define a `test` or `val` split for patch evaluation"
     )
@@ -631,6 +649,44 @@ def load_image_for_yolo(path: Path) -> np.ndarray:
     return np.clip(arr, 0, 255).astype(np.uint8, copy=False)
 
 
+def load_semantic_patch_mask(path: Path) -> np.ndarray:
+    """
+    Load a single-channel UNet-style semantic mask with integer labels in ``[0, 2]``.
+    """
+    suffix = path.suffix.lower()
+    if suffix in {".tif", ".tiff"}:
+        with TiffFile(path) as tif:
+            arr = tif.series[0].asarray()
+        if arr.ndim == 3:
+            if arr.shape[0] == 1:
+                arr = arr[0]
+            elif arr.shape[2] == 1:
+                arr = arr[:, :, 0]
+            else:
+                raise ValueError(f"Mask TIFF must be single-channel: {path}")
+    else:
+        from PIL import Image
+
+        with Image.open(path) as im:
+            if im.mode not in ("L", "I", "I;16", "F"):
+                im = im.convert("L")
+            arr = np.asarray(im)
+    if arr.ndim != 2:
+        raise ValueError(f"Mask must be 2D: {path}")
+    if np.issubdtype(arr.dtype, np.floating):
+        if not np.all(np.isfinite(arr)):
+            raise ValueError(f"Mask must be finite: {path}")
+        rounded = np.rint(arr)
+        if not np.allclose(arr, rounded, rtol=0.0, atol=1e-4):
+            raise ValueError(f"Mask must have integer labels in [0, 2]: {path}")
+        mask_int = rounded.astype(np.int32)
+    else:
+        mask_int = arr.astype(np.int32)
+    if np.any((mask_int < 0) | (mask_int > 2)):
+        raise ValueError(f"Mask values must be in [0, 2]: {path}")
+    return mask_int
+
+
 def _optional_metric_attr(obj: Any, name: str) -> Any:
     if obj is None:
         return None
@@ -694,18 +750,34 @@ def run_patches(args: argparse.Namespace, data_yaml: Path) -> dict[str, Any]:
     from ultralytics import YOLO
 
     dataset_root, config = load_dataset_config_from_yaml(data_yaml)
-    pairs = collect_yolo_patch_pairs(dataset_root, config)
-    if not pairs:
-        raise ValueError("No images found for YOLO patch evaluation")
+    label_dir, image_paths = collect_yolo_patch_pairs(dataset_root, config)
 
     device = _parse_device(args.device)
     model = YOLO(str(Path(args.weights).resolve()))
     sample_rows: list[dict[str, Any]] = []
 
-    for image_path, label_path in pairs:
+    mask_suffix = str(args.mask_stem_suffix)
+
+    for image_path in image_paths:
         image = load_image_for_yolo(image_path)
         h, w = int(image.shape[0]), int(image.shape[1])
-        gt_map = yolo_seg_label_txt_to_instance_map(label_path, h, w)
+        mask_path = label_dir / (
+            f"{image_path.stem}{mask_suffix}{image_path.suffix}"
+        )
+        if not mask_path.is_file():
+            raise FileNotFoundError(
+                f"Pre-computed semantic mask not found for {image_path}: expected {mask_path}. "
+                "Write UNet-aligned `{stem}_labels.<ext>` rasters next to YOLO labels "
+                "(see SLURM/unet_patch_masks_from_yolo.sh or "
+                "src/data_prep/crop_unet_masks_from_yolo_patches.py). "
+                "Polygon .txt labels are not used for patch metrics."
+            )
+        sem = load_semantic_patch_mask(mask_path)
+        if sem.shape != (h, w):
+            raise ValueError(
+                f"Mask shape {sem.shape} does not match image shape {(h, w)} for {mask_path}"
+            )
+        gt_map = get_instances(sem, interior_class=1)
 
         results = model.predict(
             source=np.ascontiguousarray(image),

@@ -421,9 +421,10 @@ exit 0
                 / "GrainSeg"
                 / "dataset"
                 / "test"
-                / "unet_from_yolo"
+                / "yolo"
                 / "PPL"
-                / "masks"
+                / "labels"
+                / "val"
             )
             unet_images.mkdir(parents=True)
             unet_masks.mkdir(parents=True)

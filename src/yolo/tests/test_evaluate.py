@@ -45,7 +45,7 @@ class EvaluateHelpersTests(unittest.TestCase):
             self.assertEqual(ds_root, root.resolve())
             self.assertEqual(cfg["val"], "images/val")
 
-    def test_collect_yolo_patch_pairs_raises_when_label_missing(self) -> None:
+    def test_collect_yolo_patch_pairs_lists_images_without_polygon_txt(self) -> None:
         from PIL import Image
 
         ev = _reload_evaluate()
@@ -59,9 +59,10 @@ class EvaluateHelpersTests(unittest.TestCase):
             yaml_path = root / "d.yaml"
             yaml_path.write_text(f"path: {root}\ntest: images/val\n", encoding="utf-8")
             dataset_root, cfg = ev.load_dataset_config_from_yaml(yaml_path)
-            with self.assertRaises(FileNotFoundError) as ctx:
-                ev.collect_yolo_patch_pairs(dataset_root, cfg)
-            self.assertIn("Missing YOLO segmentation label", str(ctx.exception))
+            label_dir, paths = ev.collect_yolo_patch_pairs(dataset_root, cfg)
+            self.assertTrue(label_dir.is_dir())
+            self.assertEqual(len(paths), 1)
+            self.assertEqual(paths[0].stem, "tile")
 
     def test_collect_yolo_patch_pairs_prefers_test_and_warns_if_val_present(self) -> None:
         from contextlib import redirect_stderr
@@ -80,12 +81,10 @@ class EvaluateHelpersTests(unittest.TestCase):
             Image.fromarray(np.zeros((4, 4, 3), dtype=np.uint8)).save(
                 root / "images" / "val" / "b.png"
             )
-            (root / "labels" / "test" / "a.txt").write_text(
-                "0 0.25 0.25 0.75 0.25 0.75 0.75 0.25 0.75\n", encoding="utf-8"
-            )
-            (root / "labels" / "val" / "b.txt").write_text(
-                "0 0.25 0.25 0.75 0.25 0.75 0.75 0.25 0.75\n", encoding="utf-8"
-            )
+            mask_a = np.zeros((4, 4), dtype=np.uint8)
+            Image.fromarray(mask_a, mode="L").save(root / "labels" / "test" / "a_labels.png")
+            mask_b = np.zeros((4, 4), dtype=np.uint8)
+            Image.fromarray(mask_b, mode="L").save(root / "labels" / "val" / "b_labels.png")
             yaml_path = root / "d.yaml"
             yaml_path.write_text(
                 f"path: {root}\ntest: images/test\nval: images/val\n",
@@ -94,10 +93,10 @@ class EvaluateHelpersTests(unittest.TestCase):
             dataset_root, cfg = ev.load_dataset_config_from_yaml(yaml_path)
             err = StringIO()
             with redirect_stderr(err):
-                pairs = ev.collect_yolo_patch_pairs(dataset_root, cfg)
-            self.assertEqual(len(pairs), 1)
-            self.assertEqual(pairs[0][0].stem, "a")
-            self.assertIn("using the `test` split only", err.getvalue())
+                label_dir, paths = ev.collect_yolo_patch_pairs(dataset_root, cfg)
+            self.assertEqual(len(paths), 1)
+            self.assertEqual(paths[0].stem, "a")
+            self.assertEqual(label_dir.resolve(), (root / "labels" / "test").resolve())
 
 
 class EvaluateMainTests(unittest.TestCase):
@@ -140,9 +139,10 @@ class EvaluateMainTests(unittest.TestCase):
             Image.fromarray(np.zeros((16, 16, 3), dtype=np.uint8)).save(
                 root / "images" / "val" / "tile.png"
             )
-            (root / "labels" / "val" / "tile.txt").write_text(
-                "0 0.25 0.25 0.75 0.25 0.75 0.75 0.25 0.75\n",
-                encoding="utf-8",
+            mask = np.zeros((16, 16), dtype=np.uint8)
+            mask[4:12, 4:12] = 1
+            Image.fromarray(mask, mode="L").save(
+                root / "labels" / "val" / "tile_labels.png"
             )
             yaml_path = root / "d.yaml"
             yaml_path.write_text(
@@ -188,6 +188,7 @@ class EvaluateMainTests(unittest.TestCase):
                 plots=False,
                 half=False,
                 save_json=False,
+                mask_stem_suffix="_labels",
             )
             ev.run_patches(args, yaml_path)
             payload = json.loads(out.read_text(encoding="utf-8"))
@@ -198,6 +199,49 @@ class EvaluateMainTests(unittest.TestCase):
             self.assertEqual(payload["samples"][0]["sample_id"], "tile")
             self.assertIn("aji", payload["samples"][0])
             self.assertIn("extras", payload)
+
+    @patch("ultralytics.YOLO")
+    def test_run_patches_raises_without_precomputed_mask(
+        self, mock_yolo_cls: MagicMock
+    ) -> None:
+        from PIL import Image
+
+        ev = _reload_evaluate()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "images" / "val").mkdir(parents=True)
+            (root / "labels" / "val").mkdir(parents=True)
+            Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(
+                root / "images" / "val" / "tile.png"
+            )
+            yaml_path = root / "d.yaml"
+            yaml_path.write_text(
+                f"path: {root}\ntest: images/val\nnames:\n  0: g\n",
+                encoding="utf-8",
+            )
+            (root / "w.pt").write_bytes(b"")
+            mock_yolo_cls.return_value = MagicMock()
+            args = SimpleNamespace(
+                weights=str(root / "w.pt"),
+                device="cpu",
+                imgsz=8,
+                conf=0.25,
+                variant="PPL",
+                data=None,
+                output_json=root / "out.json",
+                run_ultralytics_val=False,
+                batch=1,
+                project=None,
+                name="t",
+                workers=0,
+                plots=False,
+                half=False,
+                save_json=False,
+                mask_stem_suffix="_labels",
+            )
+            with self.assertRaises(FileNotFoundError) as ctx:
+                ev.run_patches(args, yaml_path)
+            self.assertIn("Pre-computed semantic mask", str(ctx.exception))
 
     @patch("ultralytics.YOLO")
     def test_run_val_forwards_kwargs(self, mock_yolo_cls: MagicMock) -> None:

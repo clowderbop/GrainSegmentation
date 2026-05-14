@@ -1,4 +1,4 @@
-sbatch SLURM/evaluate_models_and_plot.sh \
+sbatch SLURM/test_unet_whole.sh \
   --model-dir /scratch/s4361687/GrainSeg/models \
   --image-dir /scratch/s4361687/GrainSeg/dataset/test/ \
   --mask-dir /scratch/s4361687/GrainSeg/dataset/test/ \

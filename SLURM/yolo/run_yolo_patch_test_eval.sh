@@ -8,11 +8,16 @@
 
 set -euo pipefail
 
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
+cd "$REPO_ROOT"
+
 # Patch-level instance metrics (AJI + IoU-sweep P/R/F1) on the YOLO dataset test split,
 # aligned with UNet patch evaluation. Optional: RUN_ULTRALYTICS_VAL=1 also runs native
 # Ultralytics val and stores summaries under extras.ultralytics in the same JSON.
 #
-# Override per job: sbatch --export=ALL,VARIANT=PPL+AllPPX SLURM/test_yolo_patches.sh
+# Override per job: sbatch --export=ALL,VARIANT=PPL+AllPPX SLURM/yolo/run_yolo_patch_test_eval.sh
 VARIANT="${VARIANT:-PPL}"
 DEVICE="0"
 IMGSZ=1024
@@ -23,10 +28,10 @@ JOB_TAG="${SLURM_JOB_ID:-local}"
 OUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/GrainSeg/eval/yolo_patches/$VARIANT/$JOB_TAG}"
 OUTPUT_JSON="$OUT_ROOT/metrics.json"
 RUN_ULTRALYTICS_VAL="${RUN_ULTRALYTICS_VAL:-0}"
-# Leave empty to stage from $SCRATCH into TMPDIR (same layout as train_yolo.sh).
+# Leave empty to stage from $SCRATCH into TMPDIR (same layout as run_yolo_tune_or_train_variant.sh).
 DATA_YAML=""
 
-source SLURM/prepare_env.sh
+source "$SLURM_ROOT/prepare_env.sh"
 
 case "$VARIANT" in
     PPL)
@@ -63,7 +68,7 @@ if [[ -z "$DATA_YAML" ]]; then
 
     # Run from src/yolo so uv binds to that project's environment (no pyproject at repo root).
     (
-        cd src/yolo
+        cd "$REPO_ROOT/src/yolo"
         uv run python - "$DATA_YAML" "$TMP_DATASET_DIR" <<'PY'
 from pathlib import Path
 import sys
@@ -89,7 +94,7 @@ PY
 fi
 
 echo "Syncing YOLO environment..."
-cd src/yolo
+cd "$REPO_ROOT/src/yolo"
 uv sync
 
 export YOLO_DISABLE_TQDM=True

@@ -2,10 +2,12 @@
 
 set -euo pipefail
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$REPO_ROOT"
+
 function usage {
     echo "Usage: $0 [--ppl] [--ppl-ppx-composite] [--ppl-plus-ppx-composite] [--all-ppx] [--all] [--resume] [--tune] [--verbose] [--help]"
     echo "  --ppl: submit PPL-only YOLO job"
-    echo "  --ppl-ppx-composite: submit PPLPPXblend YOLO job"
     echo "  --ppl-plus-ppx-composite: submit PPL+PPXblend YOLO job"
     echo "  --all-ppx: submit PPL+AllPPX YOLO job"
     echo "  --all: submit all YOLO jobs"
@@ -48,7 +50,7 @@ submit_job() {
         sbatch \
             --mem="$mem" \
             --job-name="$job_name" \
-            SLURM/train_yolo.sh \
+            SLURM/yolo/run_yolo_tune_or_train_variant.sh \
             --variant "$variant" \
             --run-name "$run_name" \
             "${resume_args[@]}" \

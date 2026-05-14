@@ -7,8 +7,11 @@
 
 set -euo pipefail
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-source "$REPO_ROOT/SLURM/prepare_env.sh"
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
+cd "$REPO_ROOT"
+source "$SLURM_ROOT/prepare_env.sh"
 
 EVAL_DIR="${EVAL_DIR:-}"
 INPUT_RASTER="${INPUT_RASTER:-}"

@@ -7,7 +7,11 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
 
-source SLURM/prepare_env.sh
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
+cd "$REPO_ROOT"
+source "$SLURM_ROOT/prepare_env.sh"
 
 echo "Copying input files to fast local storage ($TMPDIR)..."
 WORK_DIR="$TMPDIR/split_overlaps_$SLURM_JOB_ID"
@@ -24,7 +28,7 @@ cp $SCRATCH/GrainSeg/dataset/test/test_raw.gpkg "$TEST_DIR/"
 cp $SCRATCH/GrainSeg/dataset/uncropped/PPL.tif "$WORK_DIR/"
 cp $SCRATCH/GrainSeg/dataset/uncropped/PPX*.tif "$WORK_DIR/"
 
-cd src/data_prep
+cd "$REPO_ROOT/src/data_prep"
 echo "Running split overlaps script on train..."
 uv run split_overlaps -u split_overlaps.py \
     --input "$TRAIN_DIR/train_raw.gpkg" \

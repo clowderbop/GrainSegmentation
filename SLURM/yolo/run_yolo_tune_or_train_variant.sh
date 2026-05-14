@@ -8,7 +8,9 @@
 
 set -euo pipefail
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
 
 function usage {
     echo "Usage: $0 [--variant <name>] [--data-yaml <path>] [--run-name <name>] [--project <path>] [--resume [checkpoint]] [--epochs <count>] [--tune] [--tune-epochs <count>] [--tune-iterations <count>] [--device <value>] [--verbose]"
@@ -24,7 +26,7 @@ function usage {
     echo "  --batch <value>: Batch size forwarded to src/yolo/train.py"
     echo "  --device <value>: Ultralytics device value for training and tuning runs"
     echo "  --verbose: Keep shell tracing messages enabled for troubleshooting"
-    echo "  For variant-specific memory requests, prefer SLURM/train_yolo_submit.sh or override sbatch --mem."
+    echo "  For variant-specific memory requests, prefer SLURM/yolo/submit_yolo_tune_or_train_variants.sh or override sbatch --mem."
     echo "  Per the indexed @Yolo docs, resume restores saved training state; unsupported resume-time overrides are rejected."
     exit 1
 }
@@ -121,7 +123,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-source "$REPO_ROOT/SLURM/prepare_env.sh"
+source "$SLURM_ROOT/prepare_env.sh"
 
 if [[ -z "$RUN_NAME" ]]; then
     if [[ "$DATA_OVERRIDE" == true && "$VARIANT_EXPLICIT" == false ]]; then

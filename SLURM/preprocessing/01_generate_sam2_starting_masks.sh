@@ -11,7 +11,11 @@ module load cuDNN/9.10.1.4-CUDA-12.8.0
 module load SciPy-bundle/2025.06-gfbf-2025a
 module list
 
-source SLURM/prepare_env.sh
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
+cd "$REPO_ROOT"
+source "$SLURM_ROOT/prepare_env.sh"
 
 
 INPUT_PATH="${1:-$SCRATCH/GrainSeg/dataset/MWD-1#121_s0c0.tif}"
@@ -25,7 +29,7 @@ mkdir -p "$WORK_DIR/out"
 cp "$INPUT_PATH" "$WORK_DIR/"
 
 echo "Syncing data prep environment..."
-cd src/data_prep
+cd "$REPO_ROOT/src/data_prep"
 uv sync
 
 echo "Running starting masks script on local storage..."

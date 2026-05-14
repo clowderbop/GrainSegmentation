@@ -5,7 +5,11 @@
 #SBATCH --time=00:30:00
 set -euo pipefail
 
-source SLURM/prepare_env.sh
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
+cd "$REPO_ROOT"
+source "$SLURM_ROOT/prepare_env.sh"
 
 WORK_DIR="$TMPDIR/merge_multichannel_tiff_$SLURM_JOB_ID"
 TRAIN_DEST="$SCRATCH/GrainSeg/dataset/train"
@@ -16,7 +20,7 @@ mkdir -p "$TRAIN_WORK"
 mkdir -p "$TEST_WORK"
 
 echo "Syncing data prep environment..."
-cd src/data_prep
+cd "$REPO_ROOT/src/data_prep"
 uv sync
 
 echo "Merging PPL and PPX blend into multichannel TIFFs (train)..."

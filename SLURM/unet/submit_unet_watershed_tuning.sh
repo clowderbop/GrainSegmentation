@@ -1,11 +1,11 @@
 #!/bin/bash
 # Submit one TuneWatershed job per U-Net input configuration (parallel).
-# Presets match infer_model_config in SLURM/evaluate_models_and_plot.sh.
-# Align model basenames with train_unet_multi_input.sh --run-name outputs under $GRAINSEG_ROOT/models/.
+# Presets match infer_model_config in SLURM/unet/run_unet_whole_test_eval.sh.
+# Align model basenames with SLURM/unet/run_unet_tune_and_train_variant.sh --run-name outputs under $GRAINSEG_ROOT/models/.
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
 DRY_RUN=false
 
@@ -46,7 +46,7 @@ submit_one() {
     local -a cmd=(
         sbatch
         "--job-name=$job_name"
-        "$REPO_ROOT/SLURM/tune_watershed.sh"
+        "$REPO_ROOT/SLURM/unet/run_unet_watershed_tuning.sh"
         --model-path "$model_path"
         --num-inputs "$num_inputs"
         --image-suffixes "$suffixes"

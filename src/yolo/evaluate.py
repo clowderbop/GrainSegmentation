@@ -10,7 +10,7 @@ package. The parent of this file's directory is ``src/yolo``, so ``src`` is prep
 
 **Patches mode** reads images from the Ultralytics data YAML, loads **pre-computed**
 semantic mask GeoTIFFs/PNGs in the split ``labels`` tree (``{stem}{mask_stem_suffix}{ext}``,
-same layout as ``crop_unet_masks_from_yolo_patches.py`` / ``unet_patch_masks_from_yolo.sh``),
+same layout as ``crop_unet_masks_from_yolo_patches.py`` / ``SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh``),
 derives GT instances via connected components on class 1 (matching UNet ``evaluate.py``),
 runs ``model.predict`` per image, and writes a metrics JSON envelope shared with
 ``evaluation.evaluate``.
@@ -404,13 +404,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--overlap-height-ratio",
         type=float,
-        default=0.2,
+        default=0.5,
         help="Slice overlap ratio (sahi mode).",
     )
     parser.add_argument(
         "--overlap-width-ratio",
         type=float,
-        default=0.2,
+        default=0.5,
         help="Slice overlap ratio (sahi mode).",
     )
     parser.add_argument(
@@ -768,7 +768,7 @@ def run_patches(args: argparse.Namespace, data_yaml: Path) -> dict[str, Any]:
             raise FileNotFoundError(
                 f"Pre-computed semantic mask not found for {image_path}: expected {mask_path}. "
                 "Write UNet-aligned `{stem}_labels.<ext>` rasters next to YOLO labels "
-                "(see SLURM/unet_patch_masks_from_yolo.sh or "
+                "(see SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh or "
                 "src/data_prep/crop_unet_masks_from_yolo_patches.py). "
                 "Polygon .txt labels are not used for patch metrics."
             )

@@ -97,36 +97,36 @@ For full validation or whole-tiff **sahi** runs, use the SLURM wrapper (preferre
 
 ```bash
 srun --partition=gpu --gpus=1 uv run python evaluate.py --mode val --weights ./best.pt --variant PPL
-sbatch --export=ALL,VARIANT=PPL SLURM/test_yolo_patches.sh   # Ultralytics val on the held-out patch dataset (weights path in script)
-sbatch --export=ALL,VARIANT=PPL SLURM/test_yolo.sh            # SAHI whole-tiff eval (weights, TIFF, GPKG paths in script; optional MANIFEST)
+sbatch --export=ALL,VARIANT=PPL SLURM/yolo/run_yolo_patch_test_eval.sh   # Ultralytics val on the held-out patch dataset (weights path in script)
+sbatch --export=ALL,VARIANT=PPL SLURM/yolo/run_yolo_sahi_test_eval.sh            # SAHI whole-tiff eval (weights, TIFF, GPKG paths in script; optional MANIFEST)
 ```
 
-`test_yolo_patches.sh` stages the YOLO validation dataset into `TMPDIR` using the same layout conventions as `train_yolo.sh`. **`test_yolo.sh` (SAHI)** stages the held-out test TIFF into `TMPDIR` by default. **`sahi` does not use the training YAML** — it only needs weights and held-out TIFF/GPKG (or `--manifest`).
+`run_yolo_patch_test_eval.sh` stages the YOLO validation dataset into `TMPDIR` using the same layout conventions as `run_yolo_tune_or_train_variant.sh`. **`run_yolo_sahi_test_eval.sh` (SAHI)** stages the held-out test TIFF into `TMPDIR` by default. **`sahi` does not use the training YAML** — it only needs weights and held-out TIFF/GPKG (or `--manifest`).
 
 ## Cluster Usage
 
 Run a single SLURM job directly:
 
 ```bash
-sbatch SLURM/train_yolo.sh --variant PPL --run-name PPL
+sbatch SLURM/yolo/run_yolo_tune_or_train_variant.sh --variant PPL --run-name PPL
 ```
 
 For larger variants, either use the preset submit wrapper or override memory explicitly, for example:
 
 ```bash
-sbatch --mem=950G SLURM/train_yolo.sh --variant "PPL+AllPPX" --run-name "PPL+AllPPX"
+sbatch --mem=950G SLURM/yolo/run_yolo_tune_or_train_variant.sh --variant "PPL+AllPPX" --run-name "PPL+AllPPX"
 ```
 
 Submit preset experiment jobs:
 
 ```bash
-bash SLURM/train_yolo_submit.sh --all
+bash SLURM/yolo/submit_yolo_tune_or_train_variants.sh --all
 ```
 
 Resume preset jobs from their latest checkpoints:
 
 ```bash
-bash SLURM/train_yolo_submit.sh --all --resume
+bash SLURM/yolo/submit_yolo_tune_or_train_variants.sh --all --resume
 ```
 
 ## Notes

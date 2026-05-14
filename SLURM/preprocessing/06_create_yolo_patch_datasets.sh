@@ -5,7 +5,11 @@
 #SBATCH --time=02:00:00
 set -euo pipefail
 
-source SLURM/prepare_env.sh
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
+cd "$REPO_ROOT"
+source "$SLURM_ROOT/prepare_env.sh"
 
 WORK_DIR="$TMPDIR/patchify_$SLURM_JOB_ID"
 TRAIN_DEST="$SCRATCH/GrainSeg/dataset/train"

@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-# Crop full test_labels.tif to match YOLO val patches from patchify.
+# Crop full test_labels.tif to match YOLO val patches from 06_create_yolo_patch_datasets.sh.
 # Copy inputs to $TMPDIR, run crop_unet_masks_from_yolo_patches.py there, then copy
 # patch images to $SCRATCH (.../unet_from_yolo/<VARIANT>/images) and cropped mask
 # GeoTIFFs next to YOLO polygon labels (.../yolo/<VARIANT>/labels/val).
@@ -15,9 +15,11 @@ set -euo pipefail
 # PPL+PPXblend and PPL+AllPPX need multiple files per stem for UNet—extend this
 # script or split channels before using list_samples.
 #
-# Override: sbatch --export=ALL,VARIANT=PPLPPXblend SLURM/unet_patch_masks_from_yolo.sh
+# Override: sbatch --export=ALL,VARIANT=PPLPPXblend SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
 cd "$REPO_ROOT"
 
 VARIANT="${VARIANT:-PPL}"
@@ -26,7 +28,7 @@ TILE_SIZE=4096
 IMAGE_SUFFIX="_PPL"
 JOB_TAG="${SLURM_JOB_ID:-local}"
 
-source SLURM/prepare_env.sh
+source "$SLURM_ROOT/prepare_env.sh"
 
 TEST_ROOT="$SCRATCH/GrainSeg/dataset/test"
 YOLO_ROOT="$TEST_ROOT/yolo"
@@ -58,7 +60,7 @@ YOLO_LABELS="$YOLO_ROOT/$VARIANT/labels/val"
 OUT_IMAGES="$UNET_PATCH_ROOT/$VARIANT/images"
 
 if [[ ! -d "$YOLO_IMAGES" ]]; then
-    echo "YOLO val images not found (run patchify first?): $YOLO_IMAGES" >&2
+    echo "YOLO val images not found (run SLURM/preprocessing/06_create_yolo_patch_datasets.sh first?): $YOLO_IMAGES" >&2
     exit 1
 fi
 mkdir -p "$YOLO_LABELS"
@@ -67,7 +69,7 @@ if [[ ! -f "$REF_TIFF" ]]; then
     exit 1
 fi
 if [[ ! -f "$REF_MASK" ]]; then
-    echo "Reference mask missing: $REF_MASK (see SLURM/test_unet_prepare_labels.sh)" >&2
+    echo "Reference mask missing: $REF_MASK (see SLURM/preprocessing/07_rasterize_test_labels_for_unet.sh)" >&2
     exit 1
 fi
 
@@ -87,7 +89,7 @@ cp -r "$YOLO_LABELS"/. "$LOCAL_YOLO_LABELS"/ 2>/dev/null || true
 cp -f "$REF_TIFF" "$LOCAL_REF_TIFF"
 cp -f "$REF_MASK" "$LOCAL_REF_MASK"
 
-cd src/data_prep
+cd "$REPO_ROOT/src/data_prep"
 echo "Syncing data prep environment..."
 uv sync
 

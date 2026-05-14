@@ -6,7 +6,11 @@
 
 set -euo pipefail
 
-source SLURM/prepare_env.sh
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
+cd "$REPO_ROOT"
+source "$SLURM_ROOT/prepare_env.sh"
 
 # Inputs and outputs can be overridden via environment variables
 INPUT_GPKG="${INPUT_GPKG:-$SCRATCH/GrainSeg/dataset/MWD-1#121/labels_cropped.gpkg}"
@@ -33,7 +37,7 @@ cp "$INPUT_GPKG" "$WORK_DIR/"
 cp "$REFERENCE_TIFF" "$WORK_DIR/"
 
 echo "Syncing data prep environment..."
-cd src/data_prep
+cd "$REPO_ROOT/src/data_prep"
 uv sync
 
 CMD=(uv run --no-sync python -u gpkg_to_raster.py

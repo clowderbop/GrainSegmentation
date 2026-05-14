@@ -8,21 +8,26 @@
 
 set -euo pipefail
 
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
+cd "$REPO_ROOT"
+
 # Edit variant / SAHI tiling as needed (whole held-out TIFF + COCO mask AP vs GPKG).
 # Multichannel test TIFFs: test_PPL*.tif under $SCRATCH/GrainSeg/dataset/test/
 # (single PPL+PPX channels in that tree use test_PPL / test_PPX*; uncropped/ stays unprefixed)
-# Override per job: sbatch --export=ALL,VARIANT=PPL+AllPPX SLURM/test_yolo.sh
+# Override per job: sbatch --export=ALL,VARIANT=PPL+AllPPX SLURM/yolo/run_yolo_sahi_test_eval.sh
 VARIANT="${VARIANT:-PPL}"
 DEVICE="0"
 SLICE_H=1024
 SLICE_W=1024
-OV_H=0.2
-OV_W=0.2
+OV_H=0.5
+OV_W=0.5
 # Use either MANIFEST (JSON list of pairs) or default TEST_TIFF + TEST_GPKG per variant (leave MANIFEST empty).
 MANIFEST=""
 TEST_GPKG="$SCRATCH/GrainSeg/dataset/test/test_labels.gpkg"
 
-source SLURM/prepare_env.sh
+source "$SLURM_ROOT/prepare_env.sh"
 
 case "$VARIANT" in
     PPL)
@@ -65,7 +70,7 @@ if [[ -z "$MANIFEST" ]]; then
 fi
 
 echo "Syncing YOLO environment..."
-cd src/yolo
+cd "$REPO_ROOT/src/yolo"
 uv sync
 
 export YOLO_DISABLE_TQDM=True

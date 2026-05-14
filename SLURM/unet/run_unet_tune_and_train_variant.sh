@@ -8,7 +8,9 @@
 
 set -euo pipefail
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
 TF_STDERR_FILTER="$REPO_ROOT/SLURM/filter_tensorflow_stderr.py"
 
 # Only attempt to cancel if running as a SLURM job
@@ -95,7 +97,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-source "$REPO_ROOT/SLURM/prepare_env.sh"
+source "$SLURM_ROOT/prepare_env.sh"
 
 if [ -z "$OUTPUT_MODEL" ]; then
     OUTPUT_MODEL="$SCRATCH/GrainSeg/models/unet_finetuned_${RUN_NAME}.keras"

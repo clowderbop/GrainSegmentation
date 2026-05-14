@@ -8,7 +8,9 @@
 
 set -euo pipefail
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
 TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
 
 MODEL_DIR=""
@@ -140,7 +142,7 @@ function infer_model_config {
     return 1
 }
 
-# Subdir names match SLURM/submit_tune_watershed_variants.sh --output-dir basename.
+# Subdir names match SLURM/unet/submit_unet_watershed_tuning.sh output basenames (--watershed-tune-root).
 function infer_watershed_tune_subdir_from_stem {
     local model_stem="$1"
 
@@ -354,7 +356,7 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-source "$REPO_ROOT/SLURM/prepare_env.sh"
+source "$SLURM_ROOT/prepare_env.sh"
 export TF_CPP_MIN_LOG_LEVEL=2
 
 WORK_DIR="$TMPDIR/eval_models_${SLURM_JOB_ID:-$$}"

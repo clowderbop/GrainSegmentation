@@ -8,7 +8,7 @@
 
 set -euo pipefail
 
-# Per-patch UNet evaluation on materialized trees from SLURM/unet_patch_masks_from_yolo.sh
+# Per-patch UNet evaluation on materialized trees from SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh
 # (images: .../unet_from_yolo/<VARIANT>/images; masks: .../yolo/<VARIANT>/labels/val).
 #
 # Pattern: copy patch images/masks + model to $TMPDIR, run evaluate.py there, then copy
@@ -17,11 +17,19 @@ set -euo pipefail
 # True per-patch tiles: use stride == patch size (default 1024) so each patch file is one
 # non-overlapping sliding window (matches typical 1024 YOLO crops).
 #
+# Instance metrics: GT and predictions use watershed (--instance-method) with the same
+# hyperparameters. Optional WATERSHED_JSON=/path/to/watershed_best_*.json passes tune_watershed
+# params via src/evaluation/watershed_json_to_eval_args.py; if unset, evaluate.py watershed
+# defaults apply.
+#
 # Override examples:
-#   sbatch --export=ALL,VARIANT=PPLPPXblend SLURM/test_unet_patches.sh
-#   sbatch --export=ALL,VARIANT=PPL,MODEL_PATH=/path/to/model.keras,PATCH_SIZE=1024 SLURM/test_unet_patches.sh
+#   sbatch --export=ALL,VARIANT=PPLPPXblend SLURM/unet/run_unet_patch_test_eval.sh
+#   sbatch --export=ALL,VARIANT=PPL,MODEL_PATH=/path/to/model.keras,PATCH_SIZE=1024 SLURM/unet/run_unet_patch_test_eval.sh
+#   sbatch --export=ALL,VARIANT=PPL,WATERSHED_JSON=/path/to/watershed_best_123.json SLURM/unet/run_unet_patch_test_eval.sh
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
 cd "$REPO_ROOT"
 
 VARIANT="${VARIANT:-PPL}"
@@ -81,11 +89,11 @@ esac
 
 MODEL_PATH="${MODEL_PATH:-$SCRATCH/GrainSeg/models/$DEFAULT_MODEL_BASENAME}"
 
-require_dir "$UNET_SRC_IMAGES" "Patch image directory not found (run unet_patch_masks_from_yolo.sh?)"
-require_dir "$UNET_SRC_MASKS" "Patch mask directory not found (run unet_patch_masks_from_yolo.sh?)"
+require_dir "$UNET_SRC_IMAGES" "Patch image directory not found (run 08_create_unet_test_patches_from_yolo_patches.sh?)"
+require_dir "$UNET_SRC_MASKS" "Patch mask directory not found (run 08_create_unet_test_patches_from_yolo_patches.sh?)"
 require_file "$MODEL_PATH" "Model not found"
 
-source SLURM/prepare_env.sh
+source "$SLURM_ROOT/prepare_env.sh"
 export TF_CPP_MIN_LOG_LEVEL=2
 
 WORK_ROOT="$TMPDIR/unet_patch_eval_${VARIANT}_$JOB_TAG"
@@ -132,6 +140,15 @@ eval_cmd=(
     --mask-ext ".tif"
     --mask-stem-suffix "_labels"
 )
+
+WATERSHED_JSON_HELPER="$REPO_ROOT/src/evaluation/watershed_json_to_eval_args.py"
+if [[ -n "${WATERSHED_JSON:-}" ]]; then
+    require_file "$WATERSHED_JSON" "WATERSHED_JSON not found"
+    mapfile -t _watershed_eval_args < <(python3 "$WATERSHED_JSON_HELPER" "$WATERSHED_JSON")
+    eval_cmd+=("${_watershed_eval_args[@]}")
+else
+    eval_cmd+=(--instance-method watershed)
+fi
 
 "${eval_cmd[@]}"
 

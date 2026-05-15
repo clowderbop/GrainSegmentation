@@ -28,33 +28,27 @@ def _print_start_message(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Fine-tune multi-input U-Net from raster masks."
-    )
+        )
     parser.add_argument(
         "--image-dir",
         required=True,
-        help="Directory of input images",
-    )
+        )
     parser.add_argument(
         "--mask-dir",
         required=True,
-        help="Directory containing raster masks",
-    )
+        )
     parser.add_argument(
         "--checkpoint",
         default=None,
-        help="Path to a checkpoint to initialize weights (.keras).",
-    )
+        )
     parser.add_argument(
         "--resume",
         default=None,
-        help="Path to a saved final-training checkpoint to resume (.keras).",
-    )
+        )
     parser.add_argument(
         "--output-model",
         required=True,
-        help="Path to save the fine-tuned model",
-    )
+        )
     parser.add_argument(
         "--patch-size",
         type=int,
@@ -64,90 +58,72 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--patch-overlap",
         type=float,
         default=0.5,
-        help="Percentage to overlap patches (0 to 1)",
-    )
+        )
     parser.add_argument(
         "--epochs",
         type=int,
         default=200,
-        help=(
-            "Maximum epochs for training with validation-based stopping on the "
-            "fixed spatial validation holdout."
-        ),
-    )
+        )
     parser.add_argument(
         "--tune-epochs",
         type=int,
         default=30,
-        help="Max epochs per tuning trial on the fixed spatial validation holdout",
-    )
+        )
     parser.add_argument(
         "--run-name",
         default="default_run",
-        help="Stable run name used for output naming and tuner state directories.",
-    )
+        )
     parser.add_argument(
         "--tuning-dir",
         default="tuning_dir",
-        help="Base directory for hyperparameter tuning logs.",
-    )
+        )
     parser.add_argument(
         "--image-suffixes",
         nargs="+",
         default=["_PPL", "_PPX1", "_PPX2", "_PPX3", "_PPX4", "_PPX5", "_PPX6"],
-        help="List of space-separated image suffixes to load",
-    )
+        )
     parser.add_argument(
         "--mask-ext",
         default=None,
-        help="Raster mask file extension (e.g. .png). Defaults to common types.",
-    )
+        )
     parser.add_argument(
         "--mask-stem-suffix",
         default="",
-        help="Optional extra suffix before the raster mask extension",
-    )
+        )
     parser.add_argument(
         "--num-inputs",
         type=int,
         default=7,
-        help="Number of input images (1=PPL, 2=PPL+composite, 7=PPL+all PPX).",
-    )
+        )
     parser.add_argument(
         "--validation-fraction",
         type=float,
         default=0.2,
-        help="Fraction of spatial regions reserved for the validation holdout.",
-    )
+        )
     parser.add_argument(
         "--max-trials",
         type=int,
         default=20,
-        help="Maximum number of hyperparameter tuning trials",
-    )
+        )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--split-tile-size",
         type=int,
         default=4096,
-        help="Grid tile size for spatial split (defaults to 4x patch size).",
-    )
+        )
     parser.add_argument(
         "--split-coverage-bins",
         type=int,
         default=8,
-        help="Number of coverage bins for spatial stratification.",
-    )
+        )
     parser.add_argument(
         "--no-mixed-precision",
         action="store_true",
-        help="Disable mixed precision training",
-    )
+        )
     parser.add_argument(
         "--skip-tuning",
         action="store_true",
-        help="Skip hyperparameter search and use defaults on the same validation holdout",
-    )
+        )
     return parser.parse_args(argv)
 
 

@@ -66,18 +66,13 @@ def split_tiff_channels(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Split a stacked TIFF with shape (channel, height, width) or "
-            "(height, width, channel) into one RGB TIFF per channel triplet."
         )
-    )
-    parser.add_argument("input_file", help="Input stacked TIFF path (.tif or .tiff).")
-    parser.add_argument("output_dir", help="Directory for output RGB TIFF files.")
+    parser.add_argument("input_file", )
+    parser.add_argument("output_dir", )
     parser.add_argument(
         "--prefix",
         default=None,
-        help="Optional output filename prefix. Defaults to the input TIFF stem.",
-    )
+        )
     args = parser.parse_args()
 
     try:

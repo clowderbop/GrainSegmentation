@@ -13,20 +13,14 @@ SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
 mkdir -p "$REPO_ROOT/logs"
 
-# -----------------------------------------------------------------------------
-# Hardcoded paths — edit GRAINSEG_ROOT or individual paths for your dataset/model.
-# Uses the same cropped thin-section layout as SLURM/unet/run_unet_tune_and_train_variant.sh.
-# -----------------------------------------------------------------------------
 GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
 DATASET_CROPPED="$GRAINSEG_ROOT/dataset/MWD-1#121/cropped"
 GT_GPKG="$GRAINSEG_ROOT/dataset/MWD-1#121/labels_cropped.gpkg"
 MODEL_PATH="$GRAINSEG_ROOT/models/unet_finetuned_PPL+AllPPX.keras"
 OUTPUT_DIR="$GRAINSEG_ROOT/runs/watershed_tune"
 
-# If non-empty, skip the model and pass --preds-dir (directory of {sample_id}_pred.png).
 PREDS_DIR=""
 
-# Inference / mask pairing (match SLURM/unet/run_unet_whole_test_eval.sh defaults)
 NUM_INPUTS=7
 PATCH_SIZE=1024
 STRIDE=512
@@ -36,7 +30,6 @@ MASK_STEM_SUFFIX="_labels"
 IMAGE_SUFFIXES=(_PPL _PPX1 _PPX2 _PPX3 _PPX4 _PPX5 _PPX6)
 IMAGE_SUFFIXES_CLI=""
 
-# Default watershed grid (override by editing the array expansions below)
 MIN_DISTANCE=(1 3 5)
 BOUNDARY_DILATE_ITER=(0 1)
 WATERSHED_CONNECTIVITY=(1 2)
@@ -46,16 +39,7 @@ EXCLUDE_BORDER=(0 1)
 TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
 
 function usage {
-    echo "Usage: $0 [--model-path <path>] [--num-inputs <n>] [--image-suffixes <string>]"
-    echo "         [--dataset-cropped <path>] [--gt-gpkg <path>] [--output-dir <path>] [--help]"
-    echo "  --model-path <path>       U-Net .keras (ignored if PREDS_DIR is set in script)"
-    echo "  --num-inputs <n>          Number of input channels (default: 7)"
-    echo "  --image-suffixes <str>    Space-separated suffixes, e.g. '_PPL _PPX1 ...'"
-    echo "  --dataset-cropped <path>  Cropped dataset directory"
-    echo "  --gt-gpkg <path>          Golden grain instance GeoPackage for AJI tuning"
-    echo "  --output-dir <path>       Directory for CSV/JSON outputs"
-    echo "  PREDS_DIR: edit script to use cached preds instead of the model"
-    exit "${1:-1}"
+    exit 1
 }
 
 while [[ $# -gt 0 ]]; do

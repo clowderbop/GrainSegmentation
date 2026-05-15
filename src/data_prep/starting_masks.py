@@ -18,10 +18,10 @@ from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from tqdm import tqdm
 
-# Handle very large images
+
 Image.MAX_IMAGE_PIXELS = None
 
-# Set random seed
+
 np.random.seed(3)
 
 
@@ -97,7 +97,7 @@ def show_anns(anns, borders=True):
             contours, _ = cv2.findContours(
                 m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
             )
-            # Try to smooth contours
+
             contours = [
                 cv2.approxPolyDP(contour, epsilon=0.01, closed=True)
                 for contour in contours
@@ -108,14 +108,10 @@ def show_anns(anns, borders=True):
 
 
 def encode_rle(mask: np.ndarray) -> dict:
-    """
-    Encode a binary mask (HxW) to simple RLE with row-major order.
-    Returns a dict: { "size": [H, W], "counts": [runs...], "order": "C" }
-    """
     if mask.ndim != 2:
         raise ValueError("Mask must be 2D HxW for RLE encoding.")
     h, w = mask.shape
-    # Vectorized implementation for speed
+
     flat = mask.ravel(order="C") > 0
     n = len(flat)
 
@@ -133,17 +129,13 @@ def encode_rle(mask: np.ndarray) -> dict:
 
 
 def decode_rle(rle_dict: Dict[str, Any]) -> np.ndarray:
-    """
-    Decodes a dictionary containing RLE encoded mask.
-    Expected format: { "size": [H, W], "counts": [c1, c2, ...], "order": "C" }
-    """
     if "size" not in rle_dict or "counts" not in rle_dict:
         raise ValueError("Invalid RLE dictionary: missing size or counts")
 
     h, w = rle_dict["size"]
     counts = rle_dict["counts"]
 
-    # Heuristic to fix double-zero starts in some legacy SAM-style RLE exports
+
     if len(counts) >= 2 and counts[0] == 0 and counts[1] == 0:
         counts = counts[1:]
 
@@ -558,13 +550,13 @@ def segment_image(
     if tile_size is None:
         try:
             meta = img.getMetadata()
-            # Use the largest dimension to ensure the whole image is one tile
+
             tile_size = max(meta["sizeX"], meta["sizeY"])
             print(f"No tile size specified. Using full image size: {tile_size}")
         except Exception as e:
             print(f"Warning: Could not determine image size for default tile_size: {e}")
 
-    # get name of file from image_path
+
     file_name = os.path.basename(image_path)
     file_name = os.path.splitext(file_name)[0]
     os.makedirs(output_dir, exist_ok=True)
@@ -591,7 +583,7 @@ def segment_image(
             raise ValueError("mask_generator is required when not loading cache.")
         masks = []
 
-        # Auto-calculate overlap if not specified
+
         current_overlap = tile_overlap
         if tile_overlap is None and tile_size is not None:
             current_overlap = int(tile_size * 0.25)
@@ -614,7 +606,7 @@ def segment_image(
                 miniters=1,
             )
         ):
-            # generate masks for tile
+
             with torch.inference_mode():
                 masks = mask_generator.generate(tile["tile"])
 
@@ -634,14 +626,14 @@ def segment_image(
                         f"Filtered {before - len(masks)} masks by area", refresh=False
                     )
 
-            # current = tile["tile_position"]["position"] + 1
-            # total = tile["iterator_range"]["position"]
+
+
             pbar.set_description(f"Found {len(masks)} grains", refresh=False)
 
             if np.random.random() < visualize_probability:
                 visualize_masks(masks, tile, output_dir, file_name)
 
-            # adjust coordinates to global
+
             masks = [mask_local_to_global(mask, tile) for mask in masks]
 
             all_masks.extend(masks_to_rle(masks))
@@ -664,12 +656,12 @@ def segment_image(
         all_masks = merge_overlapping_masks(all_masks, merge_iom_thresh, verbose=True)
         print(f"Output {len(all_masks)} masks after overlap merge.")
 
-    # save masks to RLE
+
     with open(os.path.join(output_dir, f"{file_name}.json"), "w") as f:
         json.dump(all_masks, f)
-    # save masks to pickle
-    # with open(os.path.join(output_dir, f"{file_name}.pkl"), "wb") as f:
-    #     pickle.dump(all_masks, f)
+
+
+
 
 
 def visualize_masks(
@@ -693,12 +685,12 @@ def mask_local_to_global(mask: dict, tile: dict) -> dict:
     mask["tile_x"] = tile["x"]
     mask["tile_y"] = tile["y"]
 
-    # Adjust bbox [x, y, w, h] to global
+
     if "bbox" in mask:
         mask["bbox"][0] += tile["x"]
         mask["bbox"][1] += tile["y"]
 
-    # Adjust point_coords to global
+
     if "point_coords" in mask:
         if isinstance(mask["point_coords"], (list, np.ndarray)):
             pcs = np.array(mask["point_coords"])
@@ -706,7 +698,7 @@ def mask_local_to_global(mask: dict, tile: dict) -> dict:
             pcs[:, 1] += tile["y"]
             mask["point_coords"] = pcs.tolist()
 
-    # Adjust crop_box [x, y, w, h] to global
+
     if "crop_box" in mask:
         mask["crop_box"][0] += tile["x"]
         mask["crop_box"][1] += tile["y"]
@@ -749,112 +741,88 @@ def download_checkpoint(url: str, output_path: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Segment images using SAM 2 and export overlays + RLE."
-    )
+        )
     parser.add_argument(
         "-i",
         "--input",
         required=True,
-        help="Path to an image file or a directory of images.",
-    )
+        )
     parser.add_argument(
         "-o",
         "--output",
         default="results",
-        help="Directory to write results to. Default: results",
-    )
+        )
     parser.add_argument(
         "--checkpoint",
         default=DEFAULT_SAM2_CHECKPOINT,
-        help=(
-            "Path to the SAM 2 checkpoint (.pt) to load. "
-            f"Default: {DEFAULT_SAM2_CHECKPOINT}"
-        ),
-    )
+        )
     parser.add_argument(
         "--device",
         choices=["auto", "cpu", "cuda", "gpu", "mps"],
         default="auto",
-        help="Device to run inference on. Default: auto (prefers GPU, falls back to CPU).",
-    )
+        )
     parser.add_argument(
         "--overlay-max-side",
         type=int,
         default=1200,
-        help="Max side length for saved overlay image (visualization only). Default: 1200",
-    )
+        )
     parser.add_argument(
         "--tile-size",
         type=int,
         default=None,
-        help="Tile size for processing large images (e.g. 1024). Default: None (no tiling)",
-    )
+        )
     parser.add_argument(
         "--tile-overlap",
         type=int,
         default=None,
-        help="Overlap between tiles in pixels. Default: None (auto-calculate 25% of tile size)",
-    )
+        )
     parser.add_argument(
         "--visualize-probability",
         type=float,
         default=0.1,
-        help="Probability of visualizing masks. Default: 0.1",
-    )
+        )
     parser.add_argument(
         "--nms-thresh",
         type=float,
         default=0.5,
-        help="Mask IoU threshold for NMS. Default: 0.5",
-    )
+        )
     parser.add_argument(
         "--no-nms",
         action="store_true",
-        help="Disable NMS post-processing.",
-    )
+        )
     parser.add_argument(
         "--merge-overlap",
         action="store_true",
-        help="Merge overlapping masks after NMS (if enabled).",
-    )
+        )
     parser.add_argument(
         "--merge-iom-thresh",
         "--merge-iou-thresh",
         dest="merge_iom_thresh",
         type=float,
         default=0.0,
-        help=(
-            "Minimum IoM (intersection over minimum) required to merge overlaps "
-            "(0-1). Default: 0.0. Alias: --merge-iou-thresh."
-        ),
-    )
+        )
     parser.add_argument(
         "--max-mask-coverage",
         type=float,
         default=None,
-        help="Drop masks covering >= this fraction of a tile (0-1).",
-    )
+        )
     parser.add_argument(
         "--max-mask-area",
         type=int,
         default=None,
-        help="Drop masks covering >= this many pixels (applied before NMS/merge).",
-    )
+        )
     parser.add_argument(
         "--save-mask-cache",
         action="store_true",
-        help="Save raw masks to a pickle before NMS/merge.",
-    )
+        )
     parser.add_argument(
         "--load-mask-cache",
         action="store_true",
-        help="Load raw masks from a pickle and skip segmentation.",
-    )
+        )
     parser.add_argument(
         "--mask-cache-dir",
         default=None,
-        help="Directory for mask cache pickles (default: output directory).",
-    )
+        )
     args = parser.parse_args()
 
     if args.checkpoint == DEFAULT_SAM2_CHECKPOINT and not os.path.exists(

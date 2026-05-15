@@ -117,11 +117,11 @@ def build_unet(patch_size, num_inputs=1, hp=None, base_filters=None):
 
     optimizer = Adam(learning_rate=learning_rate)
 
-    # We will compile it in the tuning loop or train function,
-    # but we could also return the model uncompiled or let train.py compile it.
-    # Actually, Keras Tuner requires the model to be compiled inside the builder function.
-    # But since the caller compiles it with mixed precision if needed, we'll leave it uncompiled here,
-    # or let the tuner wrap this function.
+
+
+
+
+
     return model
 
 
@@ -130,7 +130,7 @@ def initialize_from_checkpoint(checkpoint_path, patch_size, num_inputs=7, hp=Non
         checkpoint_path, custom_objects={"weighted_crossentropy": weighted_crossentropy}
     )
 
-    # Infer base_filters from the first Conv2D layer of the checkpoint
+
     first_conv = next(l for l in source_model.layers if isinstance(l, Conv2D))
     ckpt_base_filters = first_conv.filters
 
@@ -160,7 +160,7 @@ def _transfer_weights(source_model, target_model, num_inputs):
             kernel, bias = src_weights
             tgt_channels = tgt.get_weights()[0].shape[2]
 
-            # If the checkpoint already matches the target input channels, just copy it directly
+
             if kernel.shape[2] == tgt_channels:
                 tgt.set_weights(src_weights)
                 continue

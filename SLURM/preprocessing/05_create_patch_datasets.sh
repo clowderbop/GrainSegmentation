@@ -19,9 +19,6 @@ TEST_WORK="$WORK_DIR/test"
 mkdir -p "$TRAIN_WORK"
 mkdir -p "$TEST_WORK"
 
-# YOLO data YAMLs (path relative to this file; multichannel only where the TIFF has extra bands).
-# held_out=1: all patches live under images/test/ only (--test test mosaics); point train/val/test
-# there so Ultralytics model.val(..., split="test") resolves paths without an empty train/ split.
 write_yolo_dataset_yamls() {
     local yolo_root=$1
     local held_out="${2:-0}"
@@ -42,7 +39,6 @@ train: $train_p
 val: $val_p
 test: $test_p
 
-# Classes
 names:
   0: grain
 EOF
@@ -54,7 +50,6 @@ test: $test_p
 
 channels: 21
 
-# Classes
 names:
   0: grain
 EOF
@@ -66,7 +61,6 @@ test: $test_p
 
 channels: 6
 
-# Classes
 names:
   0: grain
 EOF
@@ -76,7 +70,6 @@ train: $train_p
 val: $val_p
 test: $test_p
 
-# Classes
 names:
   0: grain
 EOF

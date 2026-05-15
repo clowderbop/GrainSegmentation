@@ -2,12 +2,11 @@ import numpy as np
 
 from evaluation.instance_masks import semantic_to_instance_label_map
 
-# IoU thresholds for mP/mR/mF1@0.5:0.95 (same grid as common instance-segmentation sweeps).
+
 IOU_THRESHOLDS_50_95 = tuple(np.arange(0.50, 1.0, 0.05))
 
 
 def _index_for_reported_threshold(threshold: float) -> int:
-    """Index of ``threshold`` in ``IOU_THRESHOLDS_50_95`` (e.g. 0.75 for F1@0.75)."""
     for i, t in enumerate(IOU_THRESHOLDS_50_95):
         if np.isclose(t, threshold, rtol=0.0, atol=1e-9):
             return i
@@ -17,9 +16,6 @@ def _index_for_reported_threshold(threshold: float) -> int:
 
 
 def get_instances(semantic_mask: np.ndarray, interior_class: int = 1):
-    """
-    Extracts instance masks from semantic masks by finding connected components of the interior class.
-    """
     return semantic_to_instance_label_map(
         semantic_mask, interior_class=interior_class, connectivity=1, min_area_px=0
     )
@@ -32,12 +28,6 @@ def _instance_ids(instance_map: np.ndarray) -> list[int]:
 def build_instance_iou_matrix(
     true_instances: np.ndarray, pred_instances: np.ndarray
 ) -> tuple[np.ndarray, list[int], list[int]]:
-    """
-    Pairwise IoU between each GT instance and each predicted instance (0 = background).
-    Rows: true_ids order, columns: pred_ids order.
-
-    Uses a single pixel contingency histogram (same idea as AJI) instead of per-pair boolean masks.
-    """
     true_ids = _instance_ids(true_instances)
     pred_ids = _instance_ids(pred_instances)
     nt, np_ = len(true_ids), len(pred_ids)
@@ -65,10 +55,6 @@ def build_instance_iou_matrix(
 
 
 def greedy_one_to_one_tp_count(iou_matrix: np.ndarray, iou_threshold: float) -> int:
-    """
-    Greedy maximum matching: sort candidate pairs by IoU descending, assign disjoint pairs.
-    Returns the number of matched pairs (TP count).
-    """
     if iou_matrix.size == 0:
         return 0
     nt, np_ = iou_matrix.shape
@@ -94,7 +80,6 @@ def greedy_one_to_one_tp_count(iou_matrix: np.ndarray, iou_threshold: float) -> 
 def precision_recall_f1_from_iou_matrix(
     iou_matrix: np.ndarray, iou_threshold: float
 ) -> tuple[float, float, float]:
-    """Precision, recall, F1 from a precomputed IoU matrix (rows=GT, cols=pred)."""
     nt, np_ = iou_matrix.shape
     if nt == 0 and np_ == 0:
         return 1.0, 1.0, 1.0
@@ -119,9 +104,6 @@ def compute_instance_precision_recall_f1(
     pred_instances: np.ndarray,
     iou_threshold: float,
 ) -> tuple[float, float, float]:
-    """
-    One-to-one instance matching at ``iou_threshold``; precision / recall / F1 from TP / FP / FN.
-    """
     true_ids = _instance_ids(true_instances)
     pred_ids = _instance_ids(pred_instances)
     nt, np_ = len(true_ids), len(pred_ids)
@@ -142,9 +124,6 @@ def compute_instance_prf_mean_iou_sweep(
     pred_instances: np.ndarray,
     thresholds: tuple[float, ...] = IOU_THRESHOLDS_50_95,
 ) -> tuple[float, float, float]:
-    """
-    Mean precision, recall, and F1 over ``thresholds`` (default 0.50, 0.55, ..., 0.95).
-    """
     if not thresholds:
         return float("nan"), float("nan"), float("nan")
 
@@ -174,9 +153,6 @@ def compute_instance_prf_mean_iou_sweep(
 def compute_instance_metrics_dict(
     true_instances: np.ndarray, pred_instances: np.ndarray
 ) -> dict[str, float]:
-    """
-    All instance PR/F1 metrics for ``evaluate.py`` in one pass (one IoU matrix, one greedy pass per threshold).
-    """
     true_ids = _instance_ids(true_instances)
     pred_ids = _instance_ids(pred_instances)
     nt, np_ = len(true_ids), len(pred_ids)
@@ -233,11 +209,6 @@ def compute_instance_metrics_dict(
 
 
 def compute_aji(true_instances: np.ndarray, pred_instances: np.ndarray):
-    """
-    Computes Aggregated Jaccard Index (AJI).
-    true_instances: 2D array of true instance labels (0 = background)
-    pred_instances: 2D array of predicted instance labels (0 = background)
-    """
     true_id_list = list(np.unique(true_instances))
     pred_id_list = list(np.unique(pred_instances))
 

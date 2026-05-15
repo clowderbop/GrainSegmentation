@@ -1,10 +1,4 @@
-#!/usr/bin/env python3
-"""
-Emit one argv token per line for evaluate.py from tune_watershed --output-json.
 
-Reads best_params (same schema as tune_watershed.py) and prints flags matching
-semantic_to_instance_label_map_watershed / evaluate.py watershed CLI.
-"""
 
 from __future__ import annotations
 

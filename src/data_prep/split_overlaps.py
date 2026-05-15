@@ -21,7 +21,6 @@ CENTERLINE_SMOOTH_ITERS = 3
 
 
 def _as_polygon_parts(geom) -> List[Polygon]:
-    """Normalize Polygon/MultiPolygon/GeometryCollection to polygon parts."""
     if geom.is_empty:
         return []
     if geom.geom_type == "Polygon":
@@ -37,7 +36,7 @@ def _as_polygon_parts(geom) -> List[Polygon]:
 
 
 def _centerline(poly: Polygon) -> Optional[LineString]:
-    # Simplify the polygon a bit to speed up pygeoops centerline computation
+
     poly_simp = poly.simplify(0.5, preserve_topology=True)
     if (
         poly_simp.is_empty
@@ -46,7 +45,7 @@ def _centerline(poly: Polygon) -> Optional[LineString]:
     ):
         poly_simp = poly
 
-    # Use pygeoops to compute a centerline, extending it to boundary.
+
     line = pygeoops.centerline(poly_simp, extend=True)
     if line is None or line.is_empty:
         return None
@@ -61,7 +60,7 @@ def _smooth_centerline(line: LineString) -> LineString:
     if line.is_empty:
         return line
 
-    # Smoothing: Taubin for remove voronoi zigzags, Chaikin for sharp corners
+
     smoothed = taubin_smooth(line, steps=int(CENTERLINE_SMOOTH_ITERS / 2))
     smoothed = chaikin_smooth(smoothed, CENTERLINE_SMOOTH_ITERS, keep_ends=True)
 
@@ -75,7 +74,7 @@ def _smooth_centerline(line: LineString) -> LineString:
 def _force_endpoints_to_geom(
     line: LineString, geom: MultiPoint, replace: bool = True
 ) -> LineString:
-    # Snap the line's endpoints onto the polygon-boundary intersection geometry.
+
     if line.is_empty or geom is None or geom.is_empty:
         print("Line or geom is empty, skipping force_endpoints_to_geom")
         return line
@@ -90,8 +89,8 @@ def _force_endpoints_to_geom(
     snapped_start = nearest_points(start, geom)[1]
     snapped_end = nearest_points(end, geom)[1]
 
-    # If the endpoints are the same and the geometry is a multipoint,
-    # try to find another point to snap the furthest point to.
+
+
     if (
         snapped_start.distance(snapped_end) <= HARD_SNAP_TOL
         and geom.geom_type == "MultiPoint"
@@ -109,7 +108,7 @@ def _force_endpoints_to_geom(
             target = start
             is_start = True
 
-        # Vector from the target endpoint to the kept point
+
         vk_x = kept.x - target.x
         vk_y = kept.y - target.y
 
@@ -117,11 +116,11 @@ def _force_endpoints_to_geom(
         while True:
             candidate = nearest_points(target, remaining)[1]
 
-            # Vector from the target endpoint to the candidate point
+
             vc_x = candidate.x - target.x
             vc_y = candidate.y - target.y
 
-            # Dot product < 0 means the angle is > 90 degrees (opposite directions)
+
             if (vk_x * vc_x + vk_y * vc_y) < 0:
                 snapped_point = candidate
                 break
@@ -184,20 +183,20 @@ def _force_endpoints_to_geom(
 def _split_by_centerline(
     poly: Polygon, boundary_intersection
 ) -> Tuple[List[Polygon], Optional[LineString], Optional[LineString]]:
-    # Split the overlap polygon using the centerline after endpoint snapping.
+
     line = _centerline(poly)
     raw_line = line
     if line is None:
         return [poly], None, None
 
-    # Add endpoints to the boundary intersection and then
-    # the polygon boundary (hopefully these are the same)
+
+
     line = _force_endpoints_to_geom(line, boundary_intersection)
     line = _force_endpoints_to_geom(line, poly.boundary)
 
     line = line.segmentize(line.length / 16.0)
 
-    # Smooth the centerline and then ensure it still touches the polygon boundary
+
     line = _smooth_centerline(line)
     line = _force_endpoints_to_geom(line, poly.boundary)
     line = set_precision(line, grid_size=HARD_SNAP_TOL)
@@ -213,7 +212,7 @@ def _split_by_centerline(
 def _assign_piece(pieces_list: List[Polygon], transect: LineString):
     intercepted_pieces = []
     for piece in pieces_list:
-        # 1. Get the intersection between the piece's boundary and the transect
+
         boundary_intersection = piece.boundary.intersection(
             transect, grid_size=HARD_SNAP_TOL
         )
@@ -256,8 +255,8 @@ def _assign_halves(
     transect_a = []
     transect_b = []
 
-    # To avoid problems in which the centerline is not fully contained in the pieces_list,
-    # we clip it to the pieces_list. We get a midpoint for each piece.
+
+
     pieces_list_union = unary_union(pieces_list)
     clipped_centerline = centerline.intersection(pieces_list_union)
 
@@ -277,7 +276,7 @@ def _assign_halves(
             if geom is not None and not geom.is_empty and geom.geom_type == "LineString"
         )
 
-    # If any of the midpoints fall on the boundary of the pieces_list, we remove them
+
     midpoints = [
         midpoint
         for midpoint in midpoints
@@ -287,9 +286,9 @@ def _assign_halves(
     if len(midpoints) == 0:
         return None
 
-    # For each midpoint, we get the transects by getting the shortest line
-    # between the midpoint and the exclusive_a and exclusive_b boundaries
-    # We extend the lines by a small amount to avoid problems with precision.
+
+
+
     for midpoint in midpoints:
         a = shortest_line(midpoint, exclusive_a.boundary)
         if a is not None and not a.is_empty and a.length > HARD_SNAP_TOL:
@@ -305,7 +304,7 @@ def _assign_halves(
             )
             transect_b.append(b)
 
-    # Assign pieces to sides based on their intersection with the transects
+
     pieces_a = []
     pieces_b = []
     for transect in transect_a:
@@ -317,8 +316,8 @@ def _assign_halves(
         if hit_pieces is not None:
             pieces_b.extend(hit_pieces)
 
-    # Resolve conflicts between pieces assigned to both sides
-    # Assign the piece to the side closest to its representative point
+
+
     for piece in pieces_list:
         in_a = any(piece is p for p in pieces_a)
         in_b = any(piece is p for p in pieces_b)
@@ -329,8 +328,8 @@ def _assign_halves(
             else:
                 pieces_a.remove(piece)
 
-    # Simple heuristic to assign unassigned pieces to the other side
-    # If everything fails, add piece to unassigned
+
+
     a_union = unary_union(pieces_a)
     b_union = unary_union(pieces_b)
     unassigned = []
@@ -347,7 +346,7 @@ def _assign_halves(
                 else:
                     pieces_a.append(piece)
 
-    # Check if all pieces are assigned to only one side
+
     if len(pieces_a) == 0 or len(pieces_b) == 0:
         print("All pieces are assigned to only one side!!")
 
@@ -370,7 +369,7 @@ def _split_overlap(
     List[Point],
     List[LineString],
 ]:
-    # Make sure the polygons are valid
+
     poly_a = pygeoops.make_valid(poly_a, only_if_invalid=True, keep_collapsed=False)
     poly_b = pygeoops.make_valid(poly_b, only_if_invalid=True, keep_collapsed=False)
     poly_a = set_precision(poly_a, grid_size=HARD_SNAP_TOL)
@@ -388,7 +387,7 @@ def _split_overlap(
         print(f"Polygons {pair_i} and {pair_j} are invalid or empty, skipping")
         return poly_a, poly_b, False, [], [], [], [], []
 
-    # Compute the overlap to be split and reassigned.
+
     overlap = poly_a.intersection(poly_b)
     if overlap.is_empty:
         return poly_a, poly_b, False, [], [], [], [], []
@@ -403,7 +402,7 @@ def _split_overlap(
         part.area < min_area for part in overlap_parts
     )
 
-    # Areas exclusive to each polygon are used to anchor assignments.
+
     exclusive_a = pygeoops.make_valid(
         poly_a.difference(overlap), only_if_invalid=True, keep_collapsed=False
     )
@@ -557,11 +556,11 @@ def _split_overlap(
 
     poly_a, poly_b = _apply_assignment(base_a, base_b, overlap_a, overlap_b)
 
-    # Print a warning if the results are multipolygons
+
     if poly_a.geom_type == "MultiPolygon" or poly_b.geom_type == "MultiPolygon":
         print(f"New polygons are multipolygons! pair_i: {pair_i}, pair_j: {pair_j}")
 
-    # Check if the results overlap
+
     if poly_a.overlaps(poly_b):
         intersection = poly_a.intersection(poly_b)
         if (
@@ -597,7 +596,7 @@ def _split_overlap(
 
 
 def _build_candidates(geoms: List[Polygon], sindex) -> List[List[int]]:
-    # Build per-geometry candidate indices with spatial index compatibility.
+
     candidates = [[] for _ in range(len(geoms))]
     if hasattr(sindex, "query_bulk"):
         pair_ix = sindex.query_bulk(geoms)
@@ -631,14 +630,10 @@ def _build_candidates(geoms: List[Polygon], sindex) -> List[List[int]]:
 def _build_overlap_components(
     geoms: List[Polygon], candidates: List[List[int]]
 ) -> List[List[int]]:
-    """
-    Build a deterministic list of connected components of overlapping polygons.
-    Returns a list of components, where each component is a sorted list of polygon indices.
-    """
     G = nx.Graph()
     G.add_nodes_from(range(len(geoms)))
 
-    # Add edges only for actual intersections
+
     for i, geom in enumerate(geoms):
         if geom is None or geom.is_empty:
             continue
@@ -652,13 +647,13 @@ def _build_overlap_components(
             if prepared.intersects(other):
                 G.add_edge(i, j)
 
-    # Extract components and sort them deterministically
+
     components = []
     for comp in nx.connected_components(G):
         sorted_comp = sorted(list(comp))
         components.append(sorted_comp)
 
-    # Sort components by their first element to ensure deterministic order
+
     components.sort(key=lambda c: c[0])
     return components
 
@@ -671,10 +666,6 @@ def _process_component(
 ) -> Tuple[
     List[Polygon], int, List[dict], List[dict], List[dict], List[dict], List[dict]
 ]:
-    """
-    Process a single connected component of overlapping polygons.
-    Returns the updated geometries for the component, and debug records.
-    """
     changed = 0
     centerline_records: List[dict] = []
     overlap_records: List[dict] = []
@@ -682,7 +673,7 @@ def _process_component(
     midpoint_records: List[dict] = []
     transect_records: List[dict] = []
 
-    # Iterate through all pairs in the component
+
     for i_idx in range(len(component_indices)):
         i = component_indices[i_idx]
         geom = local_geoms[i]
@@ -742,7 +733,7 @@ def _process_component(
                 local_geoms[i] = new_i
                 local_geoms[j] = new_j
                 geom = new_i
-                prepared = prep(geom)  # Update prepared geometry
+                prepared = prep(geom)
                 changed += 1
 
             for line in centerlines:
@@ -752,7 +743,7 @@ def _process_component(
             for tr in transects:
                 transect_records.append({"pair_i": i, "pair_j": j, "geometry": tr})
 
-    # Return the updated geometries in the same order as component_indices
+
     updated_geoms = [local_geoms[idx] for idx in component_indices]
     return (
         updated_geoms,
@@ -777,10 +768,6 @@ def _process_component_worker(
     List[dict],
     List[dict],
 ]:
-    """
-    Worker function for processing a component in a separate process.
-    Unpacks arguments and calls _process_component.
-    """
     comp_indices, local_geoms, comp_candidates, min_area, debug_layers = args
     updated_geoms, changed, centerlines, overlaps, splits, midpoints, transects = (
         _process_component(comp_indices, local_geoms, comp_candidates, min_area)
@@ -814,10 +801,10 @@ def resolve_overlaps(
 ) -> Tuple[
     List[Polygon], int, List[dict], List[dict], List[dict], List[dict], List[dict]
 ]:
-    # Convert all geometries to a fixed precision grid to avoid topological errors
+
     geoms = set_precision(geoms, grid_size=HARD_SNAP_TOL, mode="valid_output").tolist()
 
-    # Iterate through pairs with a spatial index to resolve overlaps in-place.
+
     changed = 0
     centerline_records: List[dict] = []
     overlap_records: List[dict] = []
@@ -829,7 +816,7 @@ def resolve_overlaps(
 
     components = _build_overlap_components(geoms, candidates)
 
-    # Filter out components with size < 2
+
     components = [comp for comp in components if len(comp) >= 2]
 
     if not components:
@@ -844,7 +831,7 @@ def resolve_overlaps(
         )
 
     if workers <= 1:
-        # Sequential processing
+
         components_iter = tqdm(components, desc="Resolving overlaps sequentially")
         for comp_indices in components_iter:
             local_geoms = {idx: geoms[idx] for idx in comp_indices}
@@ -873,11 +860,11 @@ def resolve_overlaps(
                     midpoint_records.extend(comp_midpoints)
                     transect_records.extend(comp_transects)
 
-                # Update global geometries
+
                 for idx, new_geom in zip(comp_indices, updated_geoms):
                     geoms[idx] = new_geom
     else:
-        # Parallel processing
+
         large_components = []
         small_components = []
 
@@ -887,7 +874,7 @@ def resolve_overlaps(
             else:
                 small_components.append(comp)
 
-        # Process small components sequentially to avoid overhead
+
         if small_components:
             small_iter = tqdm(small_components, desc="Resolving small components")
             for comp_indices in small_iter:
@@ -920,15 +907,15 @@ def resolve_overlaps(
                     for idx, new_geom in zip(comp_indices, updated_geoms):
                         geoms[idx] = new_geom
 
-        # Process large components in parallel
+
         if large_components:
             print(
                 f"Processing {len(large_components)} large components with {workers} workers..."
             )
-            # Prepare arguments for workers. We only send the required geometries to minimize pickling.
+
             worker_args = []
             for comp_indices in large_components:
-                # We send a dict of exactly the required geometries
+
                 local_geoms = {idx: geoms[idx] for idx in comp_indices}
                 comp_candidates = {
                     idx: [j for j in candidates[idx] if j in local_geoms]
@@ -952,7 +939,7 @@ def resolve_overlaps(
                 ):
                     results.append((futures[future], future.result()))
 
-            # Sort results by original component order to ensure determinism
+
             results.sort(key=lambda x: x[0])
 
             for _, result in results:
@@ -991,48 +978,36 @@ def resolve_overlaps(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Split overlapping polygons by centerline so overlaps become shared boundaries."
         )
-    )
-    parser.add_argument("--input", required=True, help="Input GeoPackage path")
-    parser.add_argument("--output", required=True, help="Output GeoPackage path")
+    parser.add_argument("--input", required=True, )
+    parser.add_argument("--output", required=True, )
     parser.add_argument(
         "--layer",
         default=None,
-        help="Input layer name (default: first layer)",
-    )
+        )
     parser.add_argument(
         "--output-layer",
         default=None,
-        help="Output layer name (default: input layer name)",
-    )
+        )
     parser.add_argument(
         "--debug-layers",
         action="store_true",
-        help="Write debug layers (centerlines, overlaps, split overlaps)",
-    )
+        )
     parser.add_argument(
         "--min-area",
         type=float,
         default=0.0,
-        help=(
-            "Minimum overlap area to split by centerline; smaller overlaps are "
-            "assigned to the smaller polygon (default: 0.0)."
-        ),
-    )
+        )
     parser.add_argument(
         "--workers",
         type=int,
         default=1,
-        help="Number of worker processes for parallel execution (default: 1).",
-    )
+        )
     parser.add_argument(
         "--min-component-size",
         type=int,
         default=10,
-        help="Minimum component size to process in parallel (default: 10).",
-    )
+        )
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -1065,19 +1040,18 @@ def main() -> None:
     out_gdf = gdf.copy()
     out_gdf.geometry = geoms
 
-    # Filter out any that became fully empty/None
+
     out_gdf = out_gdf[out_gdf.geometry.notnull() & ~out_gdf.geometry.is_empty]
 
-    # Explode multipolygons into separate features so the output is strictly Polygon
+
     out_gdf = out_gdf.explode(index_parts=False, ignore_index=True)
 
-    # Filter again just to be sure we only have Polygons
+
     out_gdf = out_gdf[out_gdf.geometry.type == "Polygon"]
 
     out_gdf.to_file(output_path, layer=out_layer, driver="GPKG")
 
     def _write_debug_layer(records: List[dict], columns: List[str], layer: str) -> None:
-        """Write a debug layer with a stable schema even if empty."""
         if records:
             gdf_layer = gpd.GeoDataFrame(records, geometry="geometry", crs=gdf.crs)
         else:

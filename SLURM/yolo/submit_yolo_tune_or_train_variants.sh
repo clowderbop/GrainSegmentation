@@ -6,14 +6,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 function usage {
-    echo "Usage: $0 [--ppl] [--ppl-ppx-composite] [--ppl-plus-ppx-composite] [--all-ppx] [--all] [--resume] [--tune] [--verbose] [--help]"
-    echo "  --ppl: submit PPL-only YOLO job"
-    echo "  --ppl-plus-ppx-composite: submit PPL+PPXblend YOLO job"
-    echo "  --all-ppx: submit PPL+AllPPX YOLO job"
-    echo "  --all: submit all YOLO jobs"
-    echo "  --resume: resume selected jobs from their latest saved checkpoint"
-    echo "  --tune: run Ultralytics built-in hyperparameter tuning for the selected jobs"
-    echo "  --verbose: forward verbose logging to the train wrapper"
     exit 1
 }
 

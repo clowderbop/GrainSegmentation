@@ -9,20 +9,17 @@ if __name__ == "__main__":
         "-o",
         "--output",
         default="data/",
-        help="Download directory relative to the script location",
-    )
+        )
     parser.add_argument(
         "-u",
         "--url",
         default="https://drive.google.com/drive/folders/1yET56IAIAj616GR3cqACa1na1q2JASMF?usp=sharing",
-        help="The Google Drive url to download from",
-    )
+        )
     parser.add_argument(
         "-f",
         "--force",
         action="store_true",
-        help="Force the removal and re-download of the output directory if it exists",
-    )
+        )
     args = parser.parse_args()
 
     terminal_size = shutil.get_terminal_size().columns

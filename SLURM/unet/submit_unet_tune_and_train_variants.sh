@@ -5,18 +5,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-# Help function
 function usage {
-    echo "Usage: $0 [--ppl] [--ppl-ppx-composite] [--ppl-plus-ppx-composite] [--all-ppx] [--all] [--resume] [--skip-tuning] [--verbose] [--help]"
-    echo "  --ppl: submit PPL-only (1 input) job"
-    echo "  --ppl-ppx-composite: submit single PPL+PPX composite (1 input) job"
-    echo "  --ppl-plus-ppx-composite: submit PPL + PPX composite (2 inputs) job"
-    echo "  --all-ppx: submit PPL + all PPX images (7 inputs) job"
-    echo "  --all: submit all jobs"
-    echo "  --resume: resume selected jobs from their latest saved model if it exists"
-    echo "  --skip-tuning: skip tuning for selected jobs"
-    echo "  --verbose: disable stderr filtering in the selected jobs"
-    echo "  Combination of flags is allowed."
     exit 1
 }
 
@@ -76,7 +65,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# If no flags provided, show usage
 if [ "$run_ppl" = false ] && [ "$run_ppl_ppx_composite" = false ] && [ "$run_ppl_plus_ppx_composite" = false ] && [ "$run_all_ppx" = false ]; then
     usage
 fi

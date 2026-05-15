@@ -19,27 +19,16 @@ if [ -n "${SLURM_JOB_NAME:-}" ] && [ -n "${SLURM_JOB_ID:-}" ]; then
     
     if [ -n "$OLD_JOBS" ]; then
         echo "Canceling previous jobs with name $SLURM_JOB_NAME: $OLD_JOBS"
-        # Word-splitting automatically converts newlines to arguments
+
         scancel $OLD_JOBS
         
-        # Give the old job a few seconds to release file locks (logs, weights, etc.)
+
         sleep 10
     fi
 fi
 
-# Help function
 function usage {
-    echo "Usage: $0 [--num-inputs <num_inputs>] [--image-suffixes <image_suffixes>] [--run-name <run_name>] [--output-model <output_model>] [--resume [model_path]] [--skip-tuning] [--verbose]"
-    echo "  --num-inputs <number>: Number of inputs (default: 7)"
-    echo "  --image-suffixes <string>: Image suffixes separated by spaces (default: '_PPL _PPX1 _PPX2 _PPX3 _PPX4 _PPX5 _PPX6')"
-    echo "  --run-name <string>: Run name (default: '7in_PPL_AllPPX')"
-    echo "  --output-model <path>: Output model path (optional)"
-    echo "  --resume [path]: Resume final training from a saved checkpoint (defaults to *_latest.keras)"
-    echo "  --skip-tuning: Skip tuning"
-    echo "  --verbose: Disable stderr filtering and keep raw TensorFlow/XLA diagnostics"
-    echo "  Tuned runs use a fixed 20% spatial validation holdout for tuning and final training."
-    echo "  Re-running with the same run name and tuning dir automatically resumes tuner state."
-    exit 1
+        exit 1
 }
 
 NUM_INPUTS=7
@@ -109,7 +98,6 @@ cp -r "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped" "$TMPDIR/dataset/"
 
 LOCAL_DIR="$TMPDIR/dataset/cropped"
 
-# Suppress TensorFlow info logs
 export TF_CPP_MIN_LOG_LEVEL=2
 
 echo "Syncing training environment..."
@@ -117,8 +105,7 @@ cd "$REPO_ROOT/src/training"
 uv sync
 
 echo "Installing TensorFlow wheel..."
-# Install our custom TensorFlow wheel compiled for RTX 6000 Blackwell
-# and the necessary exact CUDA dependency versions it needs (per the workaround)
+
 WHEEL_PATH="$SCRATCH/GrainSeg/wheels/tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
 uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~=12.8.0 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-cusolver-cu12 nvidia-cuda-nvcc-cu12 nvidia-cuda-nvrtc-cu12 "$WHEEL_PATH"
 
@@ -173,7 +160,4 @@ else
     "${TRAIN_CMD[@]}" 2> >(python -u "$TF_STDERR_FILTER" >&2)
 fi
 
-# echo "Copying tuning logs back to SCRATCH..."
-# mkdir -p "$SCRATCH/GrainSeg/tuning_logs"
-# cp -r "$TMPDIR/tuning" "$SCRATCH/GrainSeg/tuning_logs/"
 echo "Done."

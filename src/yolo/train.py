@@ -68,35 +68,29 @@ def _argv_contains(argv: list[str], *options: str) -> bool:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train or tune a GrainSegmentation YOLO26 segmentation run."
-    )
+        )
     parser.add_argument(
         "--variant",
         choices=variant_choices(),
-        help="Named dataset variant to train (for example PPL or PPL+AllPPX).",
-    )
+        )
     parser.add_argument(
         "--data",
         default=None,
-        help="Optional explicit path to a YOLO dataset YAML override.",
-    )
+        )
     parser.add_argument(
         "--name",
         "--run-name",
         dest="name",
         default=None,
-        help="Training run name under the project directory.",
-    )
+        )
     parser.add_argument(
         "--project",
         default=None,
-        help="Output project directory for Ultralytics training artifacts.",
-    )
+        )
     parser.add_argument(
         "--weights",
         default="yolo26l-seg.pt",
-        help="Model weights or YAML to load for a fresh run.",
-    )
+        )
     parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--imgsz", type=int, default=1024)
     parser.add_argument("--batch", type=float, default=32)
@@ -104,62 +98,43 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--lr",
         type=float,
         default=0.001,
-        help="Initial learning rate (lr0).",
-    )
+        )
     parser.add_argument(
         "--dropout",
         type=float,
         default=0.05,
-        help="Dropout rate.",
-    )
+        )
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument(
         "--device",
         default="0,1",
-        help=(
-            "Ultralytics device value for training and tuning runs, for example "
-            "0, 0,1, cpu, or -1."
-        ),
-    )
+        )
     parser.add_argument("--cache", default="disk")
     parser.add_argument("--exist-ok", action="store_true")
     parser.add_argument(
         "--tune",
         action="store_true",
-        help="Run Ultralytics built-in hyperparameter tuning instead of training.",
-    )
+        )
     parser.add_argument(
         "--resume",
         action="store_true",
-        help=(
-            "Resume from the default last.pt under project/name. Per the indexed "
-            "@Yolo docs, saved Ultralytics training state is restored and some "
-            "fresh-run overrides may be ignored."
-        ),
-    )
+        )
     parser.add_argument(
         "--resume-checkpoint",
         default=None,
-        help=(
-            "Explicit checkpoint path to resume from. Per the indexed @Yolo docs, "
-            "resume restores saved training state and some fresh-run overrides may "
-            "be ignored."
-        ),
-    )
+        )
     parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--plots", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--tune-epochs",
         type=int,
         default=20,
-        help="Epochs per tuning iteration.",
-    )
+        )
     parser.add_argument(
         "--tune-iterations",
         type=int,
         default=100,
-        help="Number of tuning iterations to evaluate.",
-    )
+        )
 
     args = parser.parse_args(argv)
     if not args.variant and not args.data:

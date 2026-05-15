@@ -1,69 +1,53 @@
-#!/usr/bin/env python3
+
 import argparse
 import csv
 import os
 from pathlib import Path
 from dataclasses import dataclass
 
-import matplotlib  # type: ignore[import-not-found]
-import numpy as np  # type: ignore[import-not-found]
+import matplotlib
+import numpy as np
 
-import matplotlib.pyplot as plt  # type: ignore[import-not-found]
-from matplotlib import colors  # type: ignore[import-not-found]
-from matplotlib.ticker import ScalarFormatter  # type: ignore[import-not-found]
+import matplotlib.pyplot as plt
+from matplotlib import colors
+from matplotlib.ticker import ScalarFormatter
 
 matplotlib.use("Agg")
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description=(
-            "Combine tune_results.csv files from multiple runs and plot "
-            "smoothed fitness over iteration."
         )
-    )
     parser.add_argument(
         "--runs-root",
         default="/scratch/s4361687/GrainSeg/runs/yolo26-seg-tuning",
-        help="Root directory containing run folders with tune_results.csv files.",
-    )
+        )
     parser.add_argument(
         "--glob-pattern",
         default="*/ */tune_results.csv".replace(" ", ""),
-        help=(
-            "Glob pattern (relative to --runs-root) for locating tune_results.csv files. "
-            "Default matches layouts like RUN/RUN/tune_results.csv."
-        ),
-    )
+        )
     parser.add_argument(
         "--fitness-col",
         default="fitness",
-        help="Column name containing fitness values.",
-    )
+        )
     parser.add_argument(
         "--smooth-window",
         type=int,
         default=11,
-        help="Centered Gaussian smoothing kernel length (odd positive integer).",
-    )
+        )
     parser.add_argument(
         "--show-raw",
         action="store_true",
-        help="Also draw unsmoothed series as faint lines.",
-    )
+        )
     parser.add_argument(
         "--dpi",
         type=int,
         default=300,
-        help="Output image DPI.",
-    )
+        )
     parser.add_argument(
         "--output",
         default=None,
-        help=(
-            "Output PNG path. Defaults to '<runs-root>/tune_fitness_over_iteration_all_runs.png'."
-        ),
-    )
+        )
     return parser
 
 
@@ -102,10 +86,6 @@ def _read_fitness_series(csv_path: Path, fitness_col: str) -> np.ndarray:
 
 
 def _gaussian_smooth_centered(values: np.ndarray, window: int) -> np.ndarray:
-    """Smooth values with a centered Gaussian kernel.
-
-    We interpret `window` as the kernel length (must be odd for a centered kernel).
-    """
     if window <= 1:
         return values.copy()
     if window % 2 == 0:
@@ -113,8 +93,8 @@ def _gaussian_smooth_centered(values: np.ndarray, window: int) -> np.ndarray:
     if window > values.size:
         return np.full_like(values, float(np.mean(values)))
 
-    # Use a wider Gaussian so the result is visibly smoother than a moving
-    # average, then apply the filter twice for stronger smoothing.
+
+
     sigma = float(window) / 7.0
 
     pad = window // 2
@@ -154,13 +134,13 @@ def _plot_fitness_vs_iterations(csv_paths, runs_root, args, output_path):
 
         ax.plot(iterations, smoothed, linewidth=2.2, label=run_name)
 
-        # Mark the iteration of the best smoothed fitness for each run.
+
         best_idx = int(np.argmax(smoothed))
         best_idx_raw = int(np.argmax(raw))
         best_iter_raw = int(iterations[best_idx_raw])
         best_iter = int(iterations[best_idx])
         best_fit_smoothed = float(smoothed[best_idx])
-        # Label the raw fitness, not the smoothed value.
+
         best_fit_raw = float(raw[best_idx_raw])
         ax.scatter(
             best_iter,
@@ -172,8 +152,8 @@ def _plot_fitness_vs_iterations(csv_paths, runs_root, args, output_path):
             alpha=0.8,
             zorder=10,
         )
-        # Label the best point next to the "+" marker.
-        # For specific runs, place the label below the "+" to avoid overlap.
+
+
         place_below = run_name in {"PPL", "PPL+XPL-Comp"}
         xytext = (4, -15) if place_below else (0, 12)
 
@@ -197,9 +177,9 @@ def _plot_fitness_vs_iterations(csv_paths, runs_root, args, output_path):
         ymax = max(ymax, float(max(smoothed)))
 
     ax.set_xlim(xmin, xmax + 6)
-    # ax.set_ylim(ymin, ymax)
 
-    # ax.set_title("Smoothed Fitness over Tuning Iteration (All Variants)")
+
+
     ax.set_xlabel("Trial Number")
     ax.set_ylabel("Smoothed Fitness")
     ax.grid(True, alpha=0.25)
@@ -226,7 +206,7 @@ def _read_tune_csv(csv_path: str) -> list[TunePoint]:
                 f"CSV missing required columns {missing}. Found columns: {reader.fieldnames}"
             )
 
-        for row_idx, row in enumerate(reader, start=2):  # header is line 1
+        for row_idx, row in enumerate(reader, start=2):
             try:
                 lr0 = float(row["lr0"])
                 dropout = float(row["dropout"])
@@ -238,11 +218,11 @@ def _read_tune_csv(csv_path: str) -> list[TunePoint]:
 
             if not (
                 os.path.exists(csv_path) and fitness == fitness
-            ):  # fitness is NaN-safe
-                # Keep behavior simple; NaN filtered below.
+            ):
+
                 pass
 
-            if any(v != v for v in (lr0, dropout, fitness)):  # NaN check
+            if any(v != v for v in (lr0, dropout, fitness)):
                 continue
 
             points.append(TunePoint(lr0=lr0, dropout=dropout, fitness=fitness))
@@ -253,7 +233,6 @@ def _read_tune_csv(csv_path: str) -> list[TunePoint]:
 def _global_scatter_fitness_limits(
     csv_paths: list[Path], percentile_lo: float = 5, percentile_hi: float = 95
 ) -> tuple[float, float]:
-    """Fitness vmin/vmax for scatter colormap, shared across all runs."""
     all_z: list[float] = []
     for p in csv_paths:
         pts = _read_tune_csv(str(p))
@@ -287,7 +266,7 @@ def _plot_tune_scatter(
     x_min, x_max = float(min(xs)), float(max(xs))
     y_min, y_max = float(min(ys)), float(max(ys))
 
-    # x: dropout, y: lr0, color intensity: fitness.
+
     fig, ax = plt.subplots(figsize=(10, 7))
 
     norm = colors.Normalize(vmin=z_lo, vmax=z_hi)
@@ -296,13 +275,13 @@ def _plot_tune_scatter(
         ys,
         xs,
         c=zs,
-        # cmap=args.cmap,
+
         norm=norm,
         alpha=min(1.0, 0.8),
         s=70,
         linewidths=0,
     )
-    # Pad axes so markers sitting at the exact data min/max are not clipped.
+
     dropout_span = y_max - y_min
     lr0_span = x_max - x_min
     dropout_pad = max(1e-12, dropout_span) * 0.02
@@ -311,33 +290,33 @@ def _plot_tune_scatter(
     ax.set_ylim(x_min - lr0_pad, x_max + lr0_pad)
     ax.set_xlabel("Dropout Rate")
     ax.set_ylabel("Initial Learning Rate")
-    # Use scientific notation for lr0 tick labels (e.g., 1.5e-3).
-    # Render the exponent using mathtext so ticks look like "x10-3"
-    # (Matplotlib's "×10^{-3}" representation).
+
+
+
     lr0_formatter = ScalarFormatter(useMathText=True)
     lr0_formatter.set_scientific(True)
-    lr0_formatter.set_powerlimits((0, 0))  # force scientific notation
+    lr0_formatter.set_powerlimits((0, 0))
     ax.yaxis.set_major_formatter(lr0_formatter)
-    # ax.set_title(f"{run_name} Hyperparameter Tuning Landscape ('+' = best fitness)")
+
 
     cbar = fig.colorbar(sc, ax=ax)
     cbar.set_label("Fitness")
-    # # Ensure the colorbar has explicit ticks at the very bottom and top
-    # # of the normalized fitness range.
-    # existing_ticks = list(cbar.get_ticks())
-    # eps = (z_hi - z_lo) * 1e-6 + 1e-12
-    # has_z_lo = any(abs(t - z_lo) <= eps for t in existing_ticks)
-    # has_z_hi = any(abs(t - z_hi) <= eps for t in existing_ticks)
-    # if not has_z_lo:
-    #     existing_ticks.append(z_lo)
-    # if not has_z_hi:
-    #     existing_ticks.append(z_hi)
-    # existing_ticks = sorted(t for t in existing_ticks if z_lo - eps <= t <= z_hi + eps)
 
-    # divide the fitness range into 5 equal parts
+
+
+
+
+
+
+
+
+
+
+
+
     cbar.set_ticks(np.linspace(z_lo, z_hi, 7))
 
-    # Mark first max (ties -> first max only).
+
     best_idx = int(np.argmax(np.asarray(zs, dtype=float)))
     best_fitness = float(np.asarray(zs, dtype=float)[best_idx])
     ax.scatter(
@@ -350,8 +329,8 @@ def _plot_tune_scatter(
         alpha=0.8,
         zorder=10,
     )
-    # Label the best point value next to the "+" marker.
-    # Offset in points to keep the label readable without affecting data scaling.
+
+
     ax.annotate(
         f"fitness={best_fitness:.4g}",
         xy=(ys[best_idx], xs[best_idx]),
@@ -372,7 +351,7 @@ def _plot_tune_scatter(
 
 def _infer_run_name(csv_path: Path, runs_root: Path) -> str:
     rel = csv_path.relative_to(runs_root)
-    # For paths like RUN/RUN/tune_results.csv use the top-level folder as the run name.
+
     name = rel.parts[0] if len(rel.parts) >= 2 else csv_path.parent.name
     name = (
         name.replace("PPL+AllPPX", "PPL+XPL-Stack")

@@ -79,13 +79,9 @@ def stack_tiff_channels(input_dir: str | Path, output_file: str | Path) -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description=(
-            "Stack all RGB TIFF images in a directory into one TIFF with "
-            "shape (channel, height, width)."
         )
-    )
-    parser.add_argument("input_dir", help="Directory containing input TIFF images.")
-    parser.add_argument("output_file", help="Output TIFF path (.tif or .tiff).")
+    parser.add_argument("input_dir", )
+    parser.add_argument("output_file", )
     args = parser.parse_args()
 
     try:

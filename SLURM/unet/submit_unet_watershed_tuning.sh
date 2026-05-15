@@ -1,7 +1,4 @@
 #!/bin/bash
-# Submit one TuneWatershed job per U-Net input configuration (parallel).
-# Presets match infer_model_config in SLURM/unet/run_unet_whole_test_eval.sh.
-# Align model basenames with SLURM/unet/run_unet_tune_and_train_variant.sh --run-name outputs under $GRAINSEG_ROOT/models/.
 
 set -euo pipefail
 
@@ -10,11 +7,7 @@ GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
 DRY_RUN=false
 
 function usage {
-    echo "Usage: $0 [--dry-run] [--help]"
-    echo "  Submits four sbatch jobs (PPL, PPLPPXblend, PPL+PPXblend, PPL+AllPPX)."
-    echo "  Edit model basenames in this script if your unet_finetuned_*.keras names differ."
-    echo "  --dry-run   Print sbatch commands without submitting"
-    exit "${1:-1}"
+    exit 1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -61,7 +54,6 @@ submit_one() {
     fi
 }
 
-# Model basenames must match unet_finetuned_${RUN_NAME}.keras from training.
 submit_one "TuneWatershed_PPL" "unet_finetuned_PPL.keras" 1 "_PPL" "PPL"
 submit_one "TuneWatershed_PPLPPXblend" "unet_finetuned_PPLPPXblend.keras" 1 "_PPLPPXblend" "PPLPPXblend"
 submit_one "TuneWatershed_PPL_PPXblend" "unet_finetuned_PPL+PPXblend.keras" 2 "_PPL _PPXblend" "PPL_PlusPPXblend"

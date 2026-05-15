@@ -13,7 +13,7 @@ Image.MAX_IMAGE_PIXELS = None
 def process_polygons(gdf, height, width, boundary_width, flip_y):
     mask = np.zeros((height, width), dtype=np.uint8)
 
-    # We need to extract outer rings and inner rings (holes)
+
     def _get_rings(polygon):
         rings = [list(polygon.exterior.coords)]
         for interior in polygon.interiors:
@@ -29,18 +29,18 @@ def process_polygons(gdf, height, width, boundary_width, flip_y):
                     p[:, 1] = -p[:, 1]
             cv2.fillPoly(m, [pts[0]], val)
             for hole in pts[1:]:
-                cv2.fillPoly(m, [hole], 0)  # clear holes
+                cv2.fillPoly(m, [hole], 0)
         elif poly.geom_type == "MultiPolygon":
             for p in poly.geoms:
                 _draw_poly(m, p, val)
 
-    # 1. Rasterize full polygons as boundary (class 2)
+
     for geom in gdf.geometry:
         if geom is None or geom.is_empty:
             continue
         _draw_poly(mask, geom, 2)
 
-    # 2. Rasterize inner polygons as interior (class 1)
+
     for geom in gdf.geometry:
         if geom is None or geom.is_empty:
             continue
@@ -54,30 +54,25 @@ def process_polygons(gdf, height, width, boundary_width, flip_y):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert GPKG polygons to 3-class raster masks."
-    )
-    parser.add_argument("-i", "--input", required=True, help="Input GPKG file")
+        )
+    parser.add_argument("-i", "--input", required=True, )
     parser.add_argument(
-        "-r", "--reference", required=True, help="Reference TIFF file for dimensions"
-    )
+        "-r", "--reference", required=True, )
     parser.add_argument(
-        "-o", "--output", required=True, help="Output raster file path (PNG or TIFF)"
-    )
+        "-o", "--output", required=True, )
     parser.add_argument(
         "--boundary-width",
         type=float,
         default=3.0,
-        help="Width of the interior boundary in pixels",
-    )
+        )
     parser.add_argument(
         "--no-flip-y",
         action="store_true",
-        help="Do not flip Y coordinates if they are negative",
-    )
+        )
 
     args = parser.parse_args()
 
-    # Read reference image to get dimensions
+
     try:
         with Image.open(args.reference) as img:
             width, height = img.size
@@ -85,17 +80,17 @@ def main():
         print(f"Error reading reference image: {e}")
         sys.exit(1)
 
-    # Read GPKG
+
     try:
         gdf = gpd.read_file(args.input)
     except Exception as e:
         print(f"Error reading GPKG file: {e}")
         sys.exit(1)
 
-    # Process
+
     mask = process_polygons(gdf, height, width, args.boundary_width, not args.no_flip_y)
 
-    # Save output
+
     output_path = args.output
     if not (
         output_path.lower().endswith(".tif") or output_path.lower().endswith(".tiff")

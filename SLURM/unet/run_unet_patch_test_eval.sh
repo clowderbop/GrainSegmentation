@@ -8,26 +8,6 @@
 
 set -euo pipefail
 
-# Per-patch UNet evaluation on patch images from SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh
-# (images: .../unet_from_yolo/<VARIANT>/images). Ground-truth instances come from --gt-gpkg (default test_labels.gpkg);
-# raster semantic masks are not used.
-#
-# Pattern: copy patch images + model to $TMPDIR, run evaluate.py there, then copy
-# metrics.json and preds/ back to $SCRATCH.
-#
-# True per-patch tiles: use stride == patch size (default 1024) so each patch file is one
-# non-overlapping sliding window (matches typical 1024 YOLO crops).
-#
-# Instance GT: polygons from GT_GPKG (patch offsets from region_*_y*_x* stems). Prediction instances:
-# use --instance-method from evaluate.py. Optional WATERSHED_JSON=/path/to/watershed_best_*.json passes tune_watershed
-# params via src/evaluation/watershed_json_to_eval_args.py; if unset, evaluate.py watershed
-# defaults apply.
-#
-# Override examples:
-#   sbatch --export=ALL,VARIANT=PPLPPXblend SLURM/unet/run_unet_patch_test_eval.sh
-#   sbatch --export=ALL,VARIANT=PPL,MODEL_PATH=/path/to/model.keras,PATCH_SIZE=1024 SLURM/unet/run_unet_patch_test_eval.sh
-#   sbatch --export=ALL,VARIANT=PPL,WATERSHED_JSON=/path/to/watershed_best_123.json SLURM/unet/run_unet_patch_test_eval.sh
-
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
@@ -38,7 +18,7 @@ TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
 JOB_TAG="${SLURM_JOB_ID:-local}"
 
 PATCH_SIZE="${PATCH_SIZE:-1024}"
-# One full window per patch file; keep STRIDE equal to PATCH_SIZE unless you intentionally overlap.
+
 STRIDE="${STRIDE:-$PATCH_SIZE}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 

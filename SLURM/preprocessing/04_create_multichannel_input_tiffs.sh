@@ -24,7 +24,7 @@ cd "$REPO_ROOT/src/data_prep"
 uv sync
 
 echo "Merging PPL and PPX blend into multichannel TIFFs (train)..."
-# train_PPL + train_PPXblend sort in the correct channel order.
+
 cp "$TRAIN_DEST/train_PPL.tif" "$TRAIN_WORK/"
 cp "$TRAIN_DEST/train_PPXblend.tif" "$TRAIN_WORK/"
 uv run --no-sync python -u stack_tiff_channels.py \

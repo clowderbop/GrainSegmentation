@@ -11,28 +11,31 @@ OVERLAY_MAX_DIM = 2048
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Generate quantitative plots and qualitative overlays."
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--json-files",
+        nargs="+",
     )
     parser.add_argument(
-        "--json-files", nargs="+", help="List of JSON files from evaluate.py"
+        "--labels",
+        nargs="+",
     )
     parser.add_argument(
-        "--labels", nargs="+", help="Labels for the models corresponding to json-files"
+        "--output-plot",
     )
-    parser.add_argument("--output-plot", help="Path to save the bar chart plot")
 
     parser.add_argument(
-        "--image-path", help="Original PPL input image path (for overlay)"
+        "--image-path",
     )
-    parser.add_argument("--gt-path", help="Ground truth mask path")
+    parser.add_argument(
+        "--gt-path",
+    )
     parser.add_argument(
         "--pred-paths",
         nargs="+",
-        help="Paths to predicted masks corresponding to labels",
     )
     parser.add_argument(
-        "--output-overlay", help="Path to save the overlay comparison image"
+        "--output-overlay",
     )
     args = parser.parse_args()
     _validate_args(args, parser)
@@ -102,9 +105,7 @@ def _per_sample_metrics_from_eval_json(data: dict) -> dict[str, dict]:
             flat = leg.get("per_sample_flat")
             if isinstance(flat, dict):
                 return {
-                    k: v
-                    for k, v in flat.items()
-                    if k != "mean" and isinstance(v, dict)
+                    k: v for k, v in flat.items() if k != "mean" and isinstance(v, dict)
                 }
     samples = data.get("samples")
     if isinstance(samples, list):
@@ -212,12 +213,10 @@ def generate_quantitative_plot(json_files, labels, output_path):
 
 
 def blend_overlay(image, mask):
-    # image: RGB [0, 1], mask: integer 0, 1, 2
-    # Use a single red tint for all foreground classes so overlays remain visible.
+
     color_mask = np.zeros_like(image)
     color_mask[mask > 0] = [1.0, 0.0, 0.0]
 
-    # Where mask > 0, blend image and color
     alpha = 0.4
     overlay = np.copy(image)
     active = mask > 0

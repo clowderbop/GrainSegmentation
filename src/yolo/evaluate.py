@@ -12,7 +12,7 @@ import numpy as np
 import yaml
 from tifffile import TiffFile
 
-# See module docstring: resolve ``evaluation`` from repo ``src/`` without a separate install.
+
 _YOLO_ROOT = Path(__file__).resolve().parent
 _SRC_ROOT = _YOLO_ROOT.parent
 if str(_SRC_ROOT) not in sys.path:
@@ -193,7 +193,6 @@ class _NumpyPredictionResult:
 def _perform_ultralytics_inference_preserve_channels(
     detection_model: Any, image: np.ndarray
 ) -> None:
-    """SAHI's Ultralytics wrapper reverses all channels; keep multichannel TIFF order."""
     import torch
     from ultralytics.engine.results import Masks
 
@@ -309,144 +308,109 @@ _PATCH_IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".web
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="YOLO26 segmentation evaluation: val, sahi, or patch-level instance metrics."
-    )
+        )
     parser.add_argument(
         "--mode",
         choices=("val", "sahi", "patches"),
         required=True,
-        help=(
-            "val: Ultralytics validator on dataset test split; "
-            "sahi: whole held-out TIFF + COCO mask AP vs GPKG; "
-            "patches: YOLO split images + pre-computed semantic masks in labels/ (UNet-aligned"
-            " rasters, not polygon txt) for instance metrics."
-        ),
-    )
+        )
     parser.add_argument(
         "--weights",
         required=True,
-        help="Path to trained weights (.pt), e.g. best.pt or last.pt.",
-    )
+        )
     parser.add_argument(
         "--variant",
         choices=variant_choices(),
         default=None,
-        help="Dataset variant (resolves dataset YAML under $SCRATCH/GrainSeg/...).",
-    )
+        )
     parser.add_argument(
         "--data",
         default=None,
         type=Path,
-        help="Explicit path to dataset YAML (overrides --variant).",
-    )
+        )
     parser.add_argument("--imgsz", type=int, default=1024)
     parser.add_argument("--batch", type=int, default=16)
     parser.add_argument(
         "--device",
         default="0",
-        help="Ultralytics device: 0, 0,1, cpu, etc.",
-    )
+        )
     parser.add_argument(
         "--project",
         type=Path,
         default=None,
-        help="Project directory for val artifacts (Ultralytics).",
-    )
+        )
     parser.add_argument(
         "--name",
         default="test",
-        help=(
-            "Ultralytics val run name (subdirectory under the val project; default "
-            "project if --project omitted). Val mode only; ignored in sahi."
-        ),
-    )
+        )
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument(
         "--half",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="FP16 for val (when supported).",
-    )
+        )
     parser.add_argument(
         "--plots",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Enable validation plots (val mode).",
-    )
+        )
     parser.add_argument(
         "--save-json",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Save predictions JSON (val mode).",
-    )
-    # sahi (tiled inference on whole TIFFs)
+        )
+
     parser.add_argument("--slice-height", type=int, default=1024)
     parser.add_argument("--slice-width", type=int, default=1024)
     parser.add_argument(
         "--overlap-height-ratio",
         type=float,
         default=0.5,
-        help="Slice overlap ratio (sahi mode).",
-    )
+        )
     parser.add_argument(
         "--overlap-width-ratio",
         type=float,
         default=0.5,
-        help="Slice overlap ratio (sahi mode).",
-    )
+        )
     parser.add_argument(
         "--conf",
         type=float,
         default=0.25,
-        help="Confidence threshold (SAHI AutoDetectionModel; YOLO predict in patches mode).",
-    )
+        )
     parser.add_argument(
         "--test-tiff",
         type=Path,
         default=None,
-        help="Held-out GeoTIFF path (required for sahi unless --manifest).",
-    )
+        )
     parser.add_argument(
         "--test-gpkg",
         type=Path,
         default=None,
-        help="Ground-truth GeoPackage with grain polygons (sahi mode).",
-    )
+        )
     parser.add_argument(
         "--manifest",
         type=Path,
         default=None,
-        help="JSON list of {test_tiff, test_gpkg} pairs for batch sahi evaluation.",
-    )
+        )
     parser.add_argument(
         "--mask-stem-suffix",
         default="_labels",
-        help=(
-            "Patches mode: stem fragment before the image extension for GT mask files "
-            "in the labels/ tree (default _labels, matches crop_unet_masks_from_yolo_patches.py)."
-        ),
-    )
+        )
     parser.add_argument(
         "--output-json",
         type=Path,
         default=None,
-        help="Write metrics JSON (required for patches; optional for sahi).",
-    )
+        )
     parser.add_argument(
         "--sahi-out-dir",
         type=Path,
         default=None,
-        help="Optional: save SAHI prediction_visual.png per dataset under this directory.",
-    )
+        )
     parser.add_argument(
         "--run-ultralytics-val",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help=(
-            "With --mode patches, also run Ultralytics test-split val and record summary "
-            "under extras.ultralytics."
-        ),
-    )
+        )
 
     args = parser.parse_args(argv)
     if args.mode == "sahi":
@@ -513,13 +477,6 @@ def _resolve_rel_split_dir(dataset_root: Path, split_path: str) -> Path:
 def collect_yolo_patch_pairs(
     dataset_root: Path, config: dict[str, Any]
 ) -> tuple[Path, list[Path]]:
-    """
-    Return ``(label_dir, image_paths)`` for the first configured split among ``test``, ``val``.
-
-    Patches evaluation does **not** read YOLO polygon ``.txt`` files. It requires
-    pre-computed semantic masks ``{stem}{mask_stem_suffix}{image.suffix}`` under
-    ``label_dir`` (see ``crop_unet_masks_from_yolo_patches.py``).
-    """
     for split_name in ("test", "val"):
         rel = config.get(split_name)
         if not rel:
@@ -596,10 +553,6 @@ def device_for_sahi(device: int | str | list[int]) -> str:
 
 
 def load_image_for_yolo(path: Path) -> np.ndarray:
-    """
-    Load image as uint8 HWC for inference. Matches YOLO dataset convention:
-    TIFF with CYX (channel-first) from tifffile; otherwise single-page array.
-    """
     suffix = path.suffix.lower()
     if suffix in {".tif", ".tiff"}:
         with TiffFile(path) as tif:
@@ -615,7 +568,7 @@ def load_image_for_yolo(path: Path) -> np.ndarray:
         elif axes == "YXC":
             pass
         elif image.ndim == 3 and image.shape[0] < min(image.shape[1], image.shape[2]):
-            # Heuristic: small leading dim treated as channels (e.g. SYX stored oddly)
+
             image = np.transpose(image, (1, 2, 0))
 
         image = np.clip(image, 0, 255).astype(np.uint8, copy=False)
@@ -631,9 +584,6 @@ def load_image_for_yolo(path: Path) -> np.ndarray:
 
 
 def load_semantic_patch_mask(path: Path) -> np.ndarray:
-    """
-    Load a single-channel UNet-style semantic mask with integer labels in ``[0, 2]``.
-    """
     suffix = path.suffix.lower()
     if suffix in {".tif", ".tiff"}:
         with TiffFile(path) as tif:
@@ -848,7 +798,6 @@ def run_val(args: argparse.Namespace, data_yaml: Path) -> Any:
 
 
 def _resolve_manifest_path(raw: str, manifest_dir: Path) -> Path:
-    """Resolve a manifest entry path relative to the manifest file when relative."""
     p = Path(raw)
     if p.is_absolute():
         return p.resolve()
@@ -883,18 +832,6 @@ def _load_sahi_pairs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
 def aggregate_sahi_means(
     per_image: list[dict[str, Any]],
 ) -> dict[str, float | None]:
-    """
-    Mean of per-image COCO summary fields. Excludes undefined sentinels (-1) and NaNs
-    so empty-GT images do not bias means toward zero.
-    Same rule for single-image and multi-image runs.
-    When no image contributes a valid value for a metric, the aggregate is None
-    (JSON null), not NaN.
-
-    U-Net-style instance metrics (``aji``, ``f1_iou50``, …) use the same mean rule
-    excluding non-finite values. Rows may omit these keys (legacy JSON); only rows
-    that contain a key contribute to its ``mean_*``. Use per-image ``empty_gt`` to
-    interpret COCO ``-1`` vs instance metrics on empty tiles.
-    """
     coco_mean_keys = (
         "AP",
         "AP50",

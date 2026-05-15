@@ -10,7 +10,7 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 
-# Add src to sys.path to import from training
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from training.data import list_samples, _load_rgb_image, _load_raster_mask
@@ -31,40 +31,26 @@ from evaluation.reporting import (
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Evaluate a trained U-Net model on test images."
-    )
+        )
     parser.add_argument(
-        "--model-path", required=True, help="Path to the trained .keras model"
-    )
+        "--model-path", required=True, )
     parser.add_argument(
-        "--image-dir", required=True, help="Directory containing test images"
-    )
+        "--image-dir", required=True, )
     parser.add_argument(
         "--mask-dir",
         default=None,
-        help=(
-            "Optional directory of raster semantic masks (values 0–2). "
-            "If omitted, only image-dir is used to list samples; GT instances still come from --gt-gpkg."
-        ),
-    )
+        )
     parser.add_argument(
         "--gt-gpkg",
         required=True,
-        help=(
-            "GeoPackage with ground-truth grain polygons in image pixel space. "
-            "Instance metrics always use these polygons as GT."
-        ),
-    )
+        )
     parser.add_argument(
-        "--output-json", required=True, help="Path to save evaluation metrics JSON"
-    )
+        "--output-json", required=True, )
     parser.add_argument(
         "--save-predictions-dir",
-        help="Optional directory to save predicted mask images",
-    )
+        )
     parser.add_argument(
-        "--num-inputs", type=int, default=7, help="Number of inputs (1, 2, or 7)"
-    )
+        "--num-inputs", type=int, default=7, )
     parser.add_argument(
         "--image-suffixes",
         nargs="+",
@@ -79,62 +65,50 @@ def parse_args():
         "--instance-method",
         choices=("cc", "watershed"),
         default="cc",
-        help="How to derive GT and predicted instances for instance metrics (AJI, PR/F1).",
-    )
+        )
     parser.add_argument(
         "--watershed-min-distance",
         type=int,
         default=1,
-        help="peak_local_max min_distance when --instance-method watershed (GT and pred).",
-    )
+        )
     parser.add_argument(
         "--watershed-boundary-dilate-iter",
         type=int,
         default=0,
-        help="Binary dilation iterations on boundary mask for watershed ridge.",
-    )
+        )
     parser.add_argument(
         "--watershed-connectivity",
         type=int,
         choices=(1, 2),
         default=1,
-        help="skimage watershed connectivity (1 or 2) when --instance-method watershed.",
-    )
+        )
     parser.add_argument(
         "--watershed-min-area-px",
         type=int,
         default=0,
-        help="Drop instances smaller than this many pixels (0 disables).",
-    )
+        )
     parser.add_argument(
         "--watershed-exclude-border",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="peak_local_max exclude_border when --instance-method watershed.",
-    )
+        )
     parser.add_argument(
         "--watershed-ridge-level",
         type=float,
         default=None,
-        help=(
-            "Ridge elevation for boundary; omit for automatic (matches tuning JSON ridge_level null)."
-        ),
-    )
+        )
     parser.add_argument(
         "--model-type",
         default="unet",
-        help="Tag for metrics.json (shared schema with YOLO patch eval).",
-    )
+        )
     parser.add_argument(
         "--variant",
         default=None,
-        help="Optional variant label recorded in metrics.json.",
-    )
+        )
     parser.add_argument(
         "--unit",
         default="patch",
-        help="Evaluation unit label in metrics.json (e.g. patch).",
-    )
+        )
     args = parser.parse_args()
     _validate_args(args, parser)
     return args
@@ -182,7 +156,6 @@ def _prediction_png_path(save_dir: str, sample_id: str) -> str:
 
 
 def _load_cached_prediction_png(path: str, expected_hw: tuple[int, int]) -> np.ndarray:
-    """Load a saved class mask PNG; shape must match ``expected_hw`` (H, W)."""
     with Image.open(path) as img:
         arr = np.asarray(img)
     if arr.ndim == 3:
@@ -235,7 +208,6 @@ def _validate_sample_data(
 def _instances_for_metrics(
     semantic: np.ndarray, args: argparse.Namespace
 ) -> np.ndarray:
-    """Instance IDs from GT or predicted semantic mask (class 0/1/2) for AJI / PR-F1."""
     if args.instance_method == "cc":
         return semantic_to_instance_label_map(semantic, min_area_px=0)
     return semantic_to_instance_label_map_watershed(
@@ -355,7 +327,7 @@ def main():
         print(f"Evaluating sample: {sample_id}")
         t0 = time.perf_counter()
 
-        # Load images
+
         images = [_load_rgb_image(p) for p in sample["images"]]
         if len(images) != args.num_inputs:
             raise ValueError("Mismatch between num_inputs and loaded images.")

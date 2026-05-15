@@ -26,29 +26,10 @@ STRIDE=512
 BATCH_SIZE=1
 MASK_EXT=".tif"
 MASK_STEM_SUFFIX="_labels"
-# If set, auto-resolve watershed_best_*.json under <root>/<variant_subdir>/ per model stem.
+
 WATERSHED_TUNE_ROOT=""
 
 function usage {
-    echo "Usage: $0 --model-dir <dir> --image-dir <dir> --mask-dir <dir> --output-dir <dir> [options]"
-    echo "  --model-dir <dir>         Directory containing .keras models to evaluate"
-    echo "  --image-dir <dir>         Directory containing evaluation images"
-    echo "  --mask-dir <dir>          Directory containing raster masks"
-    echo "  --gt-gpkg <path>          GeoPackage with ground-truth grain polygons for instance metrics"
-    echo "  --output-dir <dir>        Directory for JSONs, predictions, and plots"
-    echo "  --config-file <path>      Optional TSV: label, model, num_inputs, suffix_csv [, watershed_json]"
-    echo "  --ppl-image <path>        Optional PPL image to use for overlay generation"
-    echo "  --gt-path <path>          Optional mask path to use for overlay generation"
-    echo "  --patch-size <int>        Evaluation patch size (default: 1024)"
-    echo "  --stride <int>            Evaluation stride (default: 512)"
-    echo "  --batch-size <int>        Evaluation batch size (default: 1)"
-    echo "  --mask-ext <ext>          Optional mask extension override (default: .tif)"
-    echo "  --mask-stem-suffix <s>    Optional suffix before the mask extension (default: '_labels')"
-    echo "  --watershed-tune-root <d> Optional: directory containing per-variant watershed_tune subdirs"
-    echo "                            (e.g. .../runs/watershed_tune). Picks latest watershed_best_*.json."
-    echo
-    echo "Config TSV columns: label, model, num_inputs, suffix_csv [, optional_watershed_json_path]"
-    echo "If --config-file is omitted, known model naming presets are inferred from filenames."
     exit 1
 }
 
@@ -144,7 +125,6 @@ function infer_model_config {
     return 1
 }
 
-# Subdir names match SLURM/unet/submit_unet_watershed_tuning.sh output basenames (--watershed-tune-root).
 function infer_watershed_tune_subdir_from_stem {
     local model_stem="$1"
 

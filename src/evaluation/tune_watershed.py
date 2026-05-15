@@ -1,12 +1,3 @@
-"""
-Grid-search watershed post-processing U-Net semantic predictions.
-
-Runs inference once per sample found under ``--image-dir`` / ``--mask-dir``
-(unless ``--preds-dir`` supplies cached masks), then searches watershed
-parameters to maximize mean AJI vs polygon instances rasterized from
-``--gt-gpkg`` (same layout as whole-image eval; commonly training-section
-patches, not the held-out test mosaic).
-"""
 
 from __future__ import annotations
 
@@ -121,7 +112,6 @@ def mean_aji_for_watershed_params(
     interior_class: int = 1,
     boundary_class: int = 2,
 ) -> tuple[float, list[float]]:
-    """Mean AJI and per-sample AJI for one watershed parameter set."""
     if len(true_instances_per_sample) != len(pred_semantic_per_sample):
         raise ValueError("true and pred lists must have the same length")
     kw: dict[str, Any] = dict(
@@ -129,7 +119,7 @@ def mean_aji_for_watershed_params(
         boundary_class=boundary_class,
         min_distance=params.min_distance,
         boundary_dilate_iter=params.boundary_dilate_iter,
-        watershed_connectivity=params.watershed_connectivity,  # type: ignore[arg-type]
+        watershed_connectivity=params.watershed_connectivity,
         min_area_px=params.min_area_px,
         exclude_border=params.exclude_border,
     )
@@ -145,37 +135,25 @@ def mean_aji_for_watershed_params(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Grid-search watershed parameters for max mean AJI on samples under "
-            "--image-dir / --mask-dir. Runs U-Net once per sample unless --preds-dir is set."
         )
-    )
     src = parser.add_mutually_exclusive_group(required=True)
     src.add_argument(
         "--model-path",
         default=None,
-        help="Path to trained .keras model (requires TensorFlow).",
-    )
+        )
     src.add_argument(
         "--preds-dir",
         default=None,
-        help="Directory of {sample_id}_pred.png semantic masks (skip inference).",
-    )
+        )
 
     parser.add_argument(
-        "--image-dir", required=True, help="Directory containing input images"
-    )
+        "--image-dir", required=True, )
     parser.add_argument(
-        "--mask-dir", required=True, help="Directory containing ground truth masks"
-    )
+        "--mask-dir", required=True, )
     parser.add_argument(
         "--gt-gpkg",
         required=True,
-        help=(
-            "Golden ground-truth GeoPackage with grain polygons in image pixel space. "
-            "AJI tuning is computed against these instances."
-        ),
-    )
+        )
     parser.add_argument("--num-inputs", type=int, default=7)
     parser.add_argument(
         "--image-suffixes",
@@ -193,65 +171,53 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         nargs="+",
         default=[1, 3, 5],
-        help="Grid values for peak_local_max min_distance.",
-    )
+        )
     parser.add_argument(
         "--boundary-dilate-iter",
         type=int,
         nargs="+",
         default=[0, 1],
-        help="Grid values for boundary dilation before ridge.",
-    )
+        )
     parser.add_argument(
         "--watershed-connectivity",
         type=int,
         nargs="+",
         default=[1, 2],
         choices=[1, 2],
-        help="Grid values for skimage watershed connectivity (1 or 2).",
-    )
+        )
     parser.add_argument(
         "--min-area-px",
         type=int,
         nargs="+",
         default=[0],
-        help="Grid values for dropping small instances (0 disables).",
-    )
+        )
     parser.add_argument(
         "--exclude-border",
         type=int,
         nargs="+",
         default=[0, 1],
         choices=[0, 1],
-        help="Grid: 0=false, 1=true for peak_local_max exclude_border.",
-    )
+        )
     parser.add_argument(
         "--ridge-level",
         type=float,
         nargs="*",
         default=None,
-        help=(
-            "If omitted, use automatic ridge height only. "
-            "If one or more floats are given, grid over these (and not 'auto')."
-        ),
-    )
+        )
 
     parser.add_argument(
         "--output-csv",
         required=True,
-        help="Write one CSV row per grid point (params + mean_aji + per-sample AJI).",
-    )
+        )
     parser.add_argument(
         "--output-json",
         default=None,
-        help="Optional JSON path for best parameters and mean AJI summary.",
-    )
+        )
     parser.add_argument(
         "--max-samples",
         type=int,
         default=None,
-        help="Use at most this many samples (order from list_samples).",
-    )
+        )
 
     args = parser.parse_args()
     _validate_tune_args(args, parser)

@@ -223,7 +223,7 @@ class CVTuner(kt.BayesianOptimization):
         val_dataset = build_dataset(
             val_samples,
             patch_size=patch_size,
-            stride=patch_size,  # Validation stride = patch_size for 0% overlap
+            stride=patch_size,
             batch_size=global_batch_size,
             augment=False,
             num_inputs=num_inputs,
@@ -464,7 +464,7 @@ def train_model(
             batch_size=global_bs,
             augment=True,
             num_inputs=num_inputs,
-            cache_file=None,  # Don't write to disk for just 1 step tests
+            cache_file=None,
         )
 
     print_section("Testing batch size")

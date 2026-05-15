@@ -1,14 +1,3 @@
-"""
-Convert U-Net semantic predictions (H×W class indices) to per-instance label maps.
-
-Two strategies:
-
-- Connected components on the interior class (default, matches legacy AJI extraction).
-- Marker-controlled watershed on the interior with the predicted boundary as an elevation
-  ridge (opt-in). This can split touching interior blobs when seeds and geometry support it;
-  it does not guarantee correct splitting when the model omits boundaries and yields a single
-  distance peak.
-"""
 
 from __future__ import annotations
 
@@ -33,7 +22,6 @@ def _structure_for_connectivity(ndim: int, connectivity: Connectivity) -> np.nda
 
 
 def _relabel_sequential(labeled: np.ndarray) -> np.ndarray:
-    """Map nonzero labels to 1..K; zero stays zero."""
     ids = sorted(x for x in np.unique(labeled) if x != 0)
     if not ids:
         return np.zeros_like(labeled)
@@ -61,15 +49,6 @@ def semantic_to_instance_label_map(
     connectivity: Connectivity = 1,
     min_area_px: int = 0,
 ) -> np.ndarray:
-    """
-    Instance IDs from connected components on ``semantic == interior_class``.
-
-    Uses 4-neighborhood when ``connectivity=1`` and 8-neighborhood when ``connectivity=2``,
-    matching :func:`scipy.ndimage.label` defaults for 2D when ``connectivity=1``.
-
-    When ``min_area_px`` is 0, returns the raw ``label`` output (same as legacy
-    :func:`evaluation.metrics.get_instances`).
-    """
     if semantic.ndim != 2:
         raise ValueError(f"semantic must be 2D, got shape {semantic.shape}")
     interior = semantic == interior_class
@@ -83,7 +62,6 @@ def semantic_to_instance_label_map(
 def iter_instance_binary_masks(
     instance_label_map: np.ndarray,
 ) -> Iterator[tuple[int, np.ndarray]]:
-    """Yield ``(instance_id, mask)`` for each nonzero instance id."""
     for i in sorted(x for x in np.unique(instance_label_map) if x != 0):
         yield int(i), instance_label_map == i
 
@@ -101,16 +79,6 @@ def semantic_to_instance_label_map_watershed(
     watershed_connectivity: Connectivity = 1,
     min_area_px: int = 0,
 ) -> np.ndarray:
-    """
-    Marker-controlled watershed on interior pixels with boundary as a high ridge.
-
-    ``ridge_level`` defaults to ``-(dt.min()) + dt.max() + 1.0`` on interior so boundaries
-    sit above the inverted distance field. ``boundary_dilate_iter`` thickens the boundary
-    mask before applying the ridge (0 keeps the raw predicted boundary).
-
-    Raises ``ValueError`` if interior pixels exist but no local maxima are found as
-    markers.
-    """
     from skimage.feature import peak_local_max
     from skimage.segmentation import watershed
 

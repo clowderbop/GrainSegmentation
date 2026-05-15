@@ -20,20 +20,6 @@ def predict_full_image(
     stride: int = 1504,
     batch_size: int = 4,
 ):
-    """
-    Sliding window prediction with overlap blending.
-
-    Args:
-        model: Trained Keras model
-        inputs: Tuple of numpy arrays, each of shape (H, W, C)
-        patch_size: Size of the patches to extract and predict
-        stride: Step size for the sliding window
-        batch_size: Batch size for model.predict
-
-    Returns:
-        pred_classes: (H, W) integer array of predicted classes
-        prediction_map: (H, W, num_classes) array of soft predictions (probabilities)
-    """
     if not inputs:
         raise ValueError("inputs must contain at least one image array")
     if patch_size <= 0 or stride <= 0 or batch_size <= 0:
@@ -63,18 +49,18 @@ def predict_full_image(
         )
         padded_inputs.append(pad_img)
 
-    # Get number of classes from model output shape
-    # Output shape typically (None, patch_size, patch_size, num_classes)
+
+
     num_classes = model.output_shape[-1]
 
     prediction_map = np.zeros((padded_h, padded_w, num_classes), dtype=np.float32)
     weight_map = np.zeros((padded_h, padded_w, 1), dtype=np.float32)
 
-    # 2D Hann window for blending overlapping patches smoothly
+
     y_window = np.hanning(patch_size)
     x_window = np.hanning(patch_size)
     window = np.outer(y_window, x_window)[..., np.newaxis]
-    window = np.maximum(window, 1e-4)  # prevent division by zero
+    window = np.maximum(window, 1e-4)
 
     patches = []
     coords = []
@@ -89,12 +75,12 @@ def predict_full_image(
 
     num_inputs = len(inputs)
 
-    # Process in batches
+
     for i in range(0, len(patches), batch_size):
         batch_patches = patches[i : i + batch_size]
         batch_coords = coords[i : i + batch_size]
 
-        # Format batch: List of inputs for model
+
         model_inputs = []
         for inp_idx in range(num_inputs):
             inp_batch = np.stack([p[inp_idx] for p in batch_patches], axis=0)
@@ -111,13 +97,13 @@ def predict_full_image(
             )
             weight_map[y : y + patch_size, x : x + patch_size] += window
 
-    # Normalize by the accumulated weights
+
     prediction_map /= weight_map
 
-    # Crop back to original size
+
     prediction_map = prediction_map[:h, :w, :]
 
-    # Convert to classes
+
     pred_classes = np.argmax(prediction_map, axis=-1)
 
     return pred_classes, prediction_map

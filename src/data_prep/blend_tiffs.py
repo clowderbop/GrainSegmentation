@@ -8,7 +8,6 @@ from tqdm import tqdm
 
 
 def get_max_value(dtype):
-    """Return the maximum possible value for a given numpy integer dtype."""
     if np.issubdtype(dtype, np.integer):
         return np.iinfo(dtype).max
     elif np.issubdtype(dtype, np.floating):
@@ -18,25 +17,21 @@ def get_max_value(dtype):
 
 
 def process_chunk(base_chunk, other_chunks, dtype):
-    """
-    Blend multiple image chunks using the Screen blending mode.
-    Result = 1 - (1 - Base) * (1 - Image2) * ...
-    """
     max_val = get_max_value(dtype)
 
-    # Normalize base chunk to [0.0, 1.0]
+
     blended = 1.0 - (base_chunk.astype(np.float32) / max_val)
 
-    # Process other chunks
+
     for chunk in other_chunks:
         normalized_chunk = chunk.astype(np.float32) / max_val
         blended *= 1.0 - normalized_chunk
 
     blended = 1.0 - blended
 
-    # Re-scale back to original bit depth
+
     if np.issubdtype(dtype, np.integer):
-        # Clip to ensure we don't overflow due to floating point inaccuracies
+
         blended = np.clip(blended * max_val, 0, max_val).astype(dtype)
     else:
         blended = np.clip(blended, 0.0, 1.0).astype(dtype)
@@ -47,7 +42,6 @@ def process_chunk(base_chunk, other_chunks, dtype):
 def blend_tiffs(
     input_dir, output_file, base_file=None, chunk_size=2048, exclude_files=None
 ):
-    """Blend multiple TIFF images using Screen blending mode."""
     if exclude_files is None:
         exclude_files = []
 
@@ -55,7 +49,7 @@ def blend_tiffs(
         print(f"Error: Input directory '{input_dir}' does not exist.")
         sys.exit(1)
 
-    # Find all TIFF files
+
     search_patterns = [
         os.path.join(input_dir, "*.tif"),
         os.path.join(input_dir, "*.tiff"),
@@ -64,11 +58,11 @@ def blend_tiffs(
     for pattern in search_patterns:
         tiff_files.extend(glob.glob(pattern))
 
-    # Filter out the output file if it's in the same directory
+
     output_abs = os.path.abspath(output_file)
     tiff_files = [f for f in tiff_files if os.path.abspath(f) != output_abs]
 
-    # Filter out excluded files
+
     exclude_abs = [os.path.abspath(f) for f in exclude_files]
     tiff_files = [f for f in tiff_files if os.path.abspath(f) not in exclude_abs]
 
@@ -78,11 +72,11 @@ def blend_tiffs(
 
     tiff_files.sort()
 
-    # Determine base image
+
     if base_file:
         if base_file not in tiff_files:
             if os.path.abspath(base_file) in [os.path.abspath(f) for f in tiff_files]:
-                # It's in the list but with a different relative path
+
                 base_idx = [os.path.abspath(f) for f in tiff_files].index(
                     os.path.abspath(base_file)
                 )
@@ -102,10 +96,10 @@ def blend_tiffs(
 
     if not other_files:
         print("Warning: Only one image found. Nothing to blend.")
-        # We could just copy it, but let's exit for now
+
         sys.exit(0)
 
-    # Read base image metadata
+
     try:
         with tifffile.TiffFile(base_file) as tif:
             base_page = tif.pages[0]
@@ -117,7 +111,7 @@ def blend_tiffs(
         print(f"Error reading base file metadata: {e}")
         sys.exit(1)
 
-    # Validate other images
+
     print("Validating input images...")
     for f in other_files:
         try:
@@ -139,14 +133,14 @@ def blend_tiffs(
 
     print("Validation successful.")
 
-    # Create memmaps for reading
+
     base_mmap = tifffile.memmap(base_file, mode="r")
     other_mmaps = [tifffile.memmap(f, mode="r") for f in other_files]
 
-    # Create output memmap
+
     print(f"Creating output file: {output_file}")
-    # We need to create the file first before memmapping it
-    # For large files, tifffile.memmap with shape and dtype creates an empty file
+
+
     out_mmap = tifffile.memmap(
         output_file,
         shape=shape,
@@ -154,12 +148,12 @@ def blend_tiffs(
         photometric="rgb" if len(shape) == 3 and shape[-1] in (3, 4) else "minisblack",
     )
 
-    # Calculate chunks
+
     if len(shape) == 2:
         height, width = shape
         channels = 1
     elif len(shape) == 3:
-        # Assuming HWC format (Height, Width, Channels)
+
         height, width, channels = shape
     else:
         print(f"Error: Unsupported image shape {shape}. Expected 2D or 3D (HWC).")
@@ -177,7 +171,7 @@ def blend_tiffs(
             for x in x_steps:
                 x_end = min(x + chunk_size, width)
 
-                # Extract chunks
+
                 if len(shape) == 2:
                     b_chunk = base_mmap[y:y_end, x:x_end]
                     o_chunks = [m[y:y_end, x:x_end] for m in other_mmaps]
@@ -185,7 +179,7 @@ def blend_tiffs(
                     b_chunk = base_mmap[y:y_end, x:x_end, :]
                     o_chunks = [m[y:y_end, x:x_end, :] for m in other_mmaps]
 
-                # Process and write
+
                 blended_chunk = process_chunk(b_chunk, o_chunks, dtype)
 
                 if len(shape) == 2:
@@ -195,34 +189,30 @@ def blend_tiffs(
 
                 pbar.update(1)
 
-    # Flush output memmap
+
     out_mmap.flush()
     print("Blending complete!")
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Blend multiple large TIFF images using Screen blending mode."
-    )
-    parser.add_argument("input_dir", help="Directory containing input TIFF files.")
-    parser.add_argument("output_file", help="Path to the output TIFF file.")
+        )
+    parser.add_argument("input_dir", )
+    parser.add_argument("output_file", )
     parser.add_argument(
         "--base",
-        help="Optional base image file. If not provided, the first alphabetical image is used.",
         default=None,
     )
     parser.add_argument(
         "--chunk-size",
         type=int,
         default=2048,
-        help="Size of the processing window (default: 2048).",
-    )
+        )
     parser.add_argument(
         "--exclude",
         nargs="+",
         default=[],
-        help="One or more files to exclude from blending.",
-    )
+        )
 
     args = parser.parse_args()
 

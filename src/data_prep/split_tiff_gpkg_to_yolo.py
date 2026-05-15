@@ -301,12 +301,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--test",
         action="store_true",
         dest="test",
-        help=(
-            "Export every tile's patches into images/test and labels/test only (no train/val). "
-            "Uses all regions; ignores validation-fraction and random-state. "
-            "For held-out test mosaics where a train/val split is meaningless."
-        ),
-    )
+        )
     return parser.parse_args(argv)
 
 

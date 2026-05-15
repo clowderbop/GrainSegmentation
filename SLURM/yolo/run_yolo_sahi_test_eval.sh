@@ -13,17 +13,13 @@ SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
 cd "$REPO_ROOT"
 
-# Edit variant / SAHI tiling as needed (whole held-out TIFF + COCO mask AP vs GPKG).
-# Multichannel test TIFFs: test_PPL*.tif under $SCRATCH/GrainSeg/dataset/test/
-# (single PPL+PPX channels in that tree use test_PPL / test_PPX*; uncropped/ stays unprefixed)
-# Override per job: sbatch --export=ALL,VARIANT=PPL+AllPPX SLURM/yolo/run_yolo_sahi_test_eval.sh
 VARIANT="${VARIANT:-PPL}"
 DEVICE="0"
 SLICE_H=1024
 SLICE_W=1024
 OV_H=0.5
 OV_W=0.5
-# Use either MANIFEST (JSON list of pairs) or default TEST_TIFF + TEST_GPKG per variant (leave MANIFEST empty).
+
 MANIFEST=""
 TEST_GPKG="$SCRATCH/GrainSeg/dataset/test/test_labels.gpkg"
 
@@ -59,7 +55,6 @@ if [[ -n "$SAHI_OUT" ]]; then
     mkdir -p "$SAHI_OUT"
 fi
 
-# Stage held-out test TIFF to node-local storage for faster SAHI reads (not used with MANIFEST).
 if [[ -z "$MANIFEST" ]]; then
     echo "Staging test TIFF to TMPDIR..."
     TMP_TEST_ROOT="${TMPDIR}/test_yolo"

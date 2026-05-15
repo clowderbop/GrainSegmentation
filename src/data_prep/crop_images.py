@@ -287,7 +287,7 @@ def _read_tiff_crop(
         try:
             store = series.aszarr()
             try:
-                import zarr  # type: ignore
+                import zarr
             except ImportError as exc:
                 raise RuntimeError("zarr is required for tiled TIFF reading") from exc
             z = zarr.open(store, mode="r")
@@ -367,45 +367,29 @@ def _crop_images(
 
 
 def main() -> None:
-    example = (
-        "Example:\n"
-        "  python src/preprocess/crop_images.py \\\n"
-        "    --geojson /scratch/s4361687/GrainSeg/dataset/MWD-1#121/tempData.geojson \\\n"
-        "    --out-geojson /scratch/s4361687/GrainSeg/dataset/MWD-1#121/tempData_crop.geojson \\\n"
-        "    --image-dir /scratch/s4361687/GrainSeg/dataset\n"
-    )
-    parser = argparse.ArgumentParser(
-        description="Crop GeoJSON polygons and images to a bbox.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=example,
-    )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--geojson",
         "--vector",
         dest="geojson",
-        help="Input vector file path (GeoJSON or GPKG)",
-    )
+        )
     parser.add_argument(
         "--out-geojson",
         "--out-vector",
         dest="out_geojson",
-        help="Output vector file path (GeoJSON or GPKG)",
-    )
+        )
     parser.add_argument(
         "--bbox",
         type=_parse_bbox,
         default="0,-5000,35000,0",
-        help="GeoJSON bbox minx,miny,maxx,maxy",
-    )
-    parser.add_argument("--image-dir", help="Directory of input images")
+        )
+    parser.add_argument("--image-dir", )
     parser.add_argument(
         "--out-image-dir",
         default=None,
-        help="Output directory for cropped images (default: <image-dir>/cropped)",
-    )
+        )
     parser.add_argument(
-        "--suffix", default="_crop", help="Suffix for cropped image filenames"
-    )
+        "--suffix", default="_crop", )
     args = parser.parse_args()
 
     if not (args.geojson and args.out_geojson) and not args.image_dir:

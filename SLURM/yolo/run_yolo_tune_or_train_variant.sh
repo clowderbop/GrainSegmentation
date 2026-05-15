@@ -13,21 +13,6 @@ SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
 
 function usage {
-    echo "Usage: $0 [--variant <name>] [--data-yaml <path>] [--run-name <name>] [--project <path>] [--resume [checkpoint]] [--epochs <count>] [--tune] [--tune-epochs <count>] [--tune-iterations <count>] [--device <value>] [--verbose]"
-    echo "  --variant <name>: Dataset variant to train (default: PPL)"
-    echo "  --data-yaml <path>: Optional explicit dataset YAML path override"
-    echo "  --run-name <name>: Stable run name (defaults to the selected variant)"
-    echo "  --project <path>: Output project directory (defaults to \$SCRATCH/GrainSeg/runs/yolo26-seg)"
-    echo "  --resume [checkpoint]: Resume from the last run checkpoint or an explicit checkpoint path"
-    echo "  --epochs <count>: Epoch count forwarded to src/yolo/train.py for fresh runs"
-    echo "  --tune: Run Ultralytics built-in hyperparameter tuning instead of training"
-    echo "  --tune-epochs <count>: Epochs to run per tuning iteration (default: 20)"
-    echo "  --tune-iterations <count>: Number of tuning iterations (default: 300)"
-    echo "  --batch <value>: Batch size forwarded to src/yolo/train.py"
-    echo "  --device <value>: Ultralytics device value for training and tuning runs"
-    echo "  --verbose: Keep shell tracing messages enabled for troubleshooting"
-    echo "  For variant-specific memory requests, prefer SLURM/yolo/submit_yolo_tune_or_train_variants.sh or override sbatch --mem."
-    echo "  Per the indexed @Yolo docs, resume restores saved training state; unsupported resume-time overrides are rejected."
     exit 1
 }
 
@@ -168,7 +153,6 @@ if [[ -z "$DATA_YAML" ]]; then
     cp -r "$SCRATCH/GrainSeg/dataset/train/patches/$DATASET_SUBDIR" "$TMP_YOLO_ROOT/"
     DATA_YAML="$TMP_DATASET_DIR/$YAML_NAME"
 
-    # Root the copied dataset YAML at TMPDIR so Ultralytics resolves images locally.
     uv run python - "$DATA_YAML" "$TMP_DATASET_DIR" <<'PY'
 from pathlib import Path
 import sys

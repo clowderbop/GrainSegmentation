@@ -134,34 +134,28 @@ def raster_to_gdf(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Convert a semantic prediction raster into polygon features."
-    )
-    parser.add_argument("-i", "--input", required=True, help="Input semantic raster")
+        )
+    parser.add_argument("-i", "--input", required=True, )
     parser.add_argument(
-        "-o", "--output", required=True, help="Output GeoPackage path (.gpkg)"
-    )
+        "-o", "--output", required=True, )
     parser.add_argument(
         "--output-layer",
         default=None,
-        help="Output layer name (default: output file stem)",
-    )
+        )
     parser.add_argument(
         "--class-value",
         type=int,
         default=1,
-        help="Semantic class value to polygonize (default: 1)",
-    )
+        )
     parser.add_argument(
         "--min-area",
         type=int,
         default=0,
-        help="Minimum connected-component area in pixels (default: 0)",
-    )
+        )
     parser.add_argument(
         "--no-flip-y",
         action="store_true",
-        help="Do not flip Y coordinates into the repo's negative-Y convention",
-    )
+        )
     args = parser.parse_args()
 
     raster = _load_raster(args.input)

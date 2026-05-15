@@ -38,7 +38,6 @@ def _iter_polygon_parts(
 
 
 def load_polygons_from_gpkg(path: Path) -> list[Polygon | MultiPolygon]:
-    """Load polygon geometries from a GeoPackage (same as split_tiff_gpkg_to_yolo)."""
     geodata = gpd.read_file(path)
     polygons: list[Polygon | MultiPolygon] = []
     for geometry in geodata.geometry:
@@ -59,7 +58,6 @@ def load_polygons_from_gpkg(path: Path) -> list[Polygon | MultiPolygon]:
 def normalize_polygons_to_image_space(
     polygons: list[Polygon | MultiPolygon],
 ) -> list[Polygon | MultiPolygon]:
-    """Flip Y if labels use negative Y (matches split_tiff_gpkg_to_yolo)."""
     if not polygons:
         return polygons
     min_y = min(p.bounds[1] for p in polygons if not p.is_empty)
@@ -73,7 +71,6 @@ def normalize_polygons_to_image_space(
 
 
 def clip_polygon_to_hw(polygon: Polygon, height: int, width: int) -> list[Polygon]:
-    """Clip to image rectangle [0,width] x [0,height]; return polygon parts."""
     frame = box(0, 0, width, height)
     try:
         clipped = polygon.intersection(frame)
@@ -83,7 +80,6 @@ def clip_polygon_to_hw(polygon: Polygon, height: int, width: int) -> list[Polygo
 
 
 def polygon_to_coco_polygon(polygon: Polygon) -> list[float]:
-    """Exterior ring as flat [x0,y0,...] for COCO polygon segmentation."""
     coords = list(orient(polygon, sign=1.0).exterior.coords[:-1])
     if len(coords) < 3:
         return []
@@ -157,7 +153,6 @@ def object_predictions_to_coco_dt(
     height: int,
     width: int,
 ) -> list[dict[str, Any]]:
-    """SAHI ObjectPrediction list -> COCO detection dicts for loadRes."""
     out: list[dict[str, Any]] = []
     for pred in predictions:
         coco_p = pred.to_coco_prediction(image_id=image_id)
@@ -214,13 +209,6 @@ def evaluate_mask_ap(
     category_id: int = 1,
     category_name: str = "grain",
 ) -> InstanceAPSummary:
-    """
-    Run COCO mask evaluation for a single image (image_id must match GT/DT).
-    Uses category_id 1 by default (COCO-style); SAHI preds may use 0 -> remapped in dt builder.
-
-    When there is no ground truth (no GT instances), summary metrics are undefined and
-    reported as -1.0 (pycocotools/COCOeval convention), not as real zeros.
-    """
     if not gt_annotations:
         return InstanceAPSummary(
             -1.0,

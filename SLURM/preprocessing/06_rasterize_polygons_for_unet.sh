@@ -12,7 +12,6 @@ REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
 cd "$REPO_ROOT"
 source "$SLURM_ROOT/prepare_env.sh"
 
-# Inputs and outputs can be overridden via environment variables
 INPUT_GPKG="${INPUT_GPKG:-$SCRATCH/GrainSeg/dataset/MWD-1#121/labels_cropped.gpkg}"
 REFERENCE_TIFF="${REFERENCE_TIFF:-$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/PPL.tif}"
 OUTPUT_RASTER="${OUTPUT_RASTER:-$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/labels_raster.tif}"
@@ -20,7 +19,6 @@ BOUNDARY_WIDTH="${BOUNDARY_WIDTH:-3.0}"
 
 if [[ -z "$INPUT_GPKG" || -z "$REFERENCE_TIFF" || -z "$OUTPUT_RASTER" ]]; then
     echo "Error: INPUT_GPKG, REFERENCE_TIFF, and OUTPUT_RASTER must be set."
-    echo "Usage: sbatch --export=ALL,INPUT_GPKG=in.gpkg,REFERENCE_TIFF=ref.tif,OUTPUT_RASTER=out.tif $0"
     exit 1
 fi
 
@@ -28,7 +26,6 @@ echo "Copying input files to fast local storage ($TMPDIR)..."
 WORK_DIR="$TMPDIR/gpkg_to_raster_$SLURM_JOB_ID"
 mkdir -p "$WORK_DIR"
 
-# Get base names for local copies
 INPUT_GPKG_NAME="$(basename "$INPUT_GPKG")"
 REFERENCE_TIFF_NAME="$(basename "$REFERENCE_TIFF")"
 OUTPUT_RASTER_NAME="$(basename "$OUTPUT_RASTER")"
@@ -57,7 +54,7 @@ echo
 "${CMD[@]}"
 
 echo "Copying results back to persistent storage..."
-# Ensure the destination directory exists
+
 mkdir -p "$(dirname "$OUTPUT_RASTER")"
 cp "$WORK_DIR/$OUTPUT_RASTER_NAME" "$OUTPUT_RASTER"
 

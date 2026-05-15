@@ -7,26 +7,22 @@ from typing import List, Dict, Any
 
 try:
     from tqdm import tqdm
-except Exception:  # pragma: no cover - optional progress bar
+except Exception:
     tqdm = None
 
 
 def decode_rle(rle_dict: Dict[str, Any]) -> np.ndarray:
-    """
-    Decodes a dictionary containing RLE encoded mask.
-    Expected format: { "size": [H, W], "counts": [c1, c2, ...], "order": "C" }
-    """
     if "size" not in rle_dict or "counts" not in rle_dict:
         raise ValueError("Invalid RLE dictionary: missing size or counts")
 
     h, w = rle_dict["size"]
     counts = rle_dict["counts"]
 
-    # Heuristic to fix double-zero starts in some legacy SAM-style RLE exports
+
     if len(counts) >= 2 and counts[0] == 0 and counts[1] == 0:
         counts = counts[1:]
 
-    # Decode
+
     mask = np.zeros(h * w, dtype=np.uint8)
     current_idx = 0
     val = 0
@@ -40,16 +36,12 @@ def decode_rle(rle_dict: Dict[str, Any]) -> np.ndarray:
 
 
 def encode_rle(mask: np.ndarray) -> Dict[str, Any]:
-    """
-    Encode a binary mask (HxW) to simple RLE with row-major order.
-    Returns a dict: { "size": [H, W], "counts": [runs...], "order": "C" }
-    """
     if mask.ndim != 2:
         raise ValueError("Mask must be 2D HxW for RLE encoding.")
     h, w = mask.shape
     flat = (mask.astype(np.uint8).ravel(order="C") > 0).astype(np.uint8)
     counts: List[int] = []
-    # RLE convention: start with run of zeros
+
     run_val = 0
     run_len = 0
     for v in flat:
@@ -68,23 +60,19 @@ def mask_to_polygons(
     offset_x: int = 0,
     offset_y: int = 0,
 ) -> List[List[List[float]]]:
-    """
-    Convert a binary mask to a list of polygons (contours).
-    Returns a list of polygons, where each polygon is a list of [x, y] coordinates.
-    """
-    # Find contours
+
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     polygons = []
     for contour in contours:
-        # Simplify contour slightly to reduce points
+
         epsilon = 0.001 * cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, epsilon, True)
 
         if len(approx) < 3:
             continue
 
-        # Convert to simple list of points and apply offset
+
         points = []
         for point in approx:
             x, y = point[0]
@@ -93,7 +81,7 @@ def mask_to_polygons(
             gy = float(0 - gy)
             points.append([gx, gy])
 
-        # Close the polygon
+
         if points[0] != points[-1]:
             points.append(points[0])
 
@@ -161,7 +149,7 @@ def rle_to_geojson(
                     "type": "Polygon",
                     "coordinates": [
                         poly
-                    ],  # GeoJSON Polygon is list of rings (outer, inner...)
+                    ],
                 },
                 "properties": {
                     "id": i,
@@ -208,8 +196,8 @@ def geojson_to_rle(
 ) -> List[Dict[str, Any]]:
     rle_list = []
 
-    # We will create one mask per feature
-    # Note: If features overlap, this creates separate masks.
+
+
 
     features = geojson_data.get("features", [])
     iterator = enumerate(features)
@@ -228,10 +216,10 @@ def geojson_to_rle(
         mask = np.zeros((height, width), dtype=np.uint8)
 
         if geom_type == "Polygon":
-            # GeoJSON Polygon: [ [ [x,y], ... ], [ [x,y], ... ] ]
+
             _draw_polygon(mask, coords, flip_y)
         elif geom_type == "MultiPolygon":
-            # GeoJSON MultiPolygon: [ [ [ [x,y], ... ], ... ], ... ]
+
             for poly in coords:
                 if not poly:
                     continue
@@ -242,7 +230,7 @@ def geojson_to_rle(
         if not mask.any():
             continue
 
-        # Encode
+
         rle = encode_rle(mask)
 
         ann = {"rle": rle, "tile_x": 0, "tile_y": 0, **feature.get("properties", {})}
@@ -253,22 +241,18 @@ def geojson_to_rle(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert between RLE masks and GeoJSON polygons."
-    )
+        )
     parser.add_argument(
-        "mode", choices=["rle2json", "json2rle"], help="Conversion mode"
-    )
-    parser.add_argument("-i", "--input", required=True, help="Input file path")
-    parser.add_argument("-o", "--output", required=True, help="Output file path")
+        "mode", choices=["rle2json", "json2rle"], )
+    parser.add_argument("-i", "--input", required=True, )
+    parser.add_argument("-o", "--output", required=True, )
     parser.add_argument(
-        "--height", type=int, help="Image height (required for json2rle)"
-    )
-    parser.add_argument("--width", type=int, help="Image width (required for json2rle)")
+        "--height", type=int, )
+    parser.add_argument("--width", type=int, )
     parser.add_argument(
         "--no-flip-y",
         action="store_true",
-        help="Do not flip Y (affects both rle2json and json2rle)",
-    )
+        )
 
     args = parser.parse_args()
 

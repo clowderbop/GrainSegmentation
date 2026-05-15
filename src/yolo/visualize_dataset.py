@@ -20,33 +20,28 @@ IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Save random annotated YOLO segmentation samples for train and val."
-    )
+        )
     parser.add_argument(
         "dataset_dir",
         type=Path,
-        help="Directory containing a YOLO dataset YAML plus images/ and labels/ folders.",
-    )
+        )
     parser.add_argument(
         "-o",
         "--output-dir",
         type=Path,
         default=None,
-        help="Directory where train/ and val/ visualization PNGs will be written.",
-    )
+        )
     parser.add_argument(
         "-n",
         "--num",
         type=int,
         default=4,
-        help="Maximum number of random samples to save per split.",
-    )
+        )
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
-        help="Optional random seed for reproducible sampling.",
-    )
+        )
     args = parser.parse_args(argv)
     if args.num < 1:
         parser.error("--num must be at least 1")

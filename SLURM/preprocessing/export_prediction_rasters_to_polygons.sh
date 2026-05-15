@@ -22,15 +22,6 @@ MIN_AREA="${MIN_AREA:-0}"
 TMP_ROOT="${TMPDIR:-/tmp}"
 
 function usage {
-    echo "Usage:"
-    echo "  Single raster: sbatch --export=ALL,INPUT_RASTER=in.png,OUTPUT_GPKG=out.gpkg [optional vars] $0"
-    echo "  Eval folder:   sbatch --export=ALL,EVAL_DIR=/path/to/eval [optional vars] $0"
-    echo "Optional exports:"
-    echo "  EVAL_DIR=<dir>        Evaluation directory containing preds_* folders"
-    echo "  OUTPUT_LAYER=<name>   GeoPackage layer name (default: output stem)"
-    echo "  CLASS_VALUE=<int>     Semantic class to polygonize (default: 1)"
-    echo "  MIN_AREA=<int>        Minimum pixel area per component (default: 0)"
-    echo "  NO_FLIP_Y=1           Keep image-space Y coordinates instead of negative-Y"
     exit 1
 }
 

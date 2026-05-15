@@ -1,4 +1,3 @@
-"""Shared JSON schema and aggregation for patch-level instance metrics (UNet + YOLO)."""
 
 from __future__ import annotations
 
@@ -8,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-# Keys produced by compute_aji + compute_instance_metrics_dict; stable comparison set.
+
 INSTANCE_METRIC_KEYS: tuple[str, ...] = (
     "aji",
     "precision_iou50",
@@ -26,11 +25,6 @@ SCHEMA_VERSION = 1
 
 
 def json_safe_for_dump(value: Any) -> Any:
-    """
-    Recursively convert values for ``json.dumps(..., allow_nan=False)``.
-
-    Non-finite floats become ``None`` so output is strict JSON.
-    """
     if isinstance(value, np.generic):
         return json_safe_for_dump(value.item())
     if isinstance(value, float):
@@ -49,7 +43,6 @@ def json_safe_for_dump(value: Any) -> Any:
 
 
 def count_instances(instance_map: np.ndarray) -> int:
-    """Number of GT/pred instances (non-zero labels)."""
     return int(np.sum(np.unique(instance_map) != 0))
 
 
@@ -82,7 +75,6 @@ def aggregate_mean_metrics(
     rows: list[dict[str, Any]],
     keys: tuple[str, ...] = INSTANCE_METRIC_KEYS,
 ) -> dict[str, float]:
-    """Per-key mean over ``rows``, using finite numeric values only; missing keys skipped."""
     mean: dict[str, float] = {}
     for key in keys:
         values: list[float] = []
@@ -105,7 +97,6 @@ def build_legacy_flat_dict(
     *,
     mean: dict[str, float] | None,
 ) -> dict[str, Any]:
-    """Previous UNet-style top-level dict: sample_id -> metrics, optional ``mean``."""
     out: dict[str, Any] = {}
     for row in rows:
         sid = str(row["sample_id"])
@@ -124,10 +115,6 @@ def build_instance_eval_report(
     extras: dict[str, Any] | None = None,
     include_legacy_flat: bool = True,
 ) -> dict[str, Any]:
-    """
-    Common metrics.json envelope. ``mean`` is included only when len(samples) > 1
-    (matches prior UNet evaluator behavior).
-    """
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "model_type": model_type,

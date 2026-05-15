@@ -90,7 +90,9 @@ def _as_rgb_uint8(image: np.ndarray) -> np.ndarray:
     return np.clip(display, 0, 255).astype(np.uint8, copy=False)
 
 
-def write_mask_overlay_visual(image: np.ndarray, pred_map: np.ndarray, out_path: Path) -> None:
+def write_mask_overlay_visual(
+    image: np.ndarray, pred_map: np.ndarray, out_path: Path
+) -> None:
     from PIL import Image
 
     visual = _as_rgb_uint8(image).astype(np.float32)
@@ -320,7 +322,9 @@ def _get_sliced_prediction_preserve_channels(
             f"Performed multichannel sliced prediction on {len(slice_bboxes)} slices "
             f"in {time.time() - start:.2f}s."
         )
-    return _NumpyPredictionResult(image=image, object_prediction_list=object_prediction_list)
+    return _NumpyPredictionResult(
+        image=image, object_prediction_list=object_prediction_list
+    )
 
 
 _PATCH_IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
@@ -739,7 +743,9 @@ def write_val_metrics_json(
     out_path = project.resolve() / name / "metrics.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
-        json.dumps(json_safe_for_dump(_collect_val_metrics(metrics)), indent=2, allow_nan=False),
+        json.dumps(
+            json_safe_for_dump(_collect_val_metrics(metrics)), indent=2, allow_nan=False
+        ),
         encoding="utf-8",
     )
     print(f"Wrote val metrics JSON to {out_path}")
@@ -761,9 +767,7 @@ def run_patches(args: argparse.Namespace, data_yaml: Path) -> dict[str, Any]:
     for image_path in image_paths:
         image = load_image_for_yolo(image_path)
         h, w = int(image.shape[0]), int(image.shape[1])
-        mask_path = label_dir / (
-            f"{image_path.stem}{mask_suffix}{image_path.suffix}"
-        )
+        mask_path = label_dir / (f"{image_path.stem}{mask_suffix}{image_path.suffix}")
         if not mask_path.is_file():
             raise FileNotFoundError(
                 f"Pre-computed semantic mask not found for {image_path}: expected {mask_path}. "

@@ -1,8 +1,11 @@
 """
-Grid-search watershed post-processing on cached U-Net semantic predictions.
+Grid-search watershed post-processing U-Net semantic predictions.
 
-Runs inference once per validation sample, then searches watershed parameters
-to maximize mean AJI vs ground-truth instances (CC on interior, same as evaluate.py).
+Runs inference once per sample found under ``--image-dir`` / ``--mask-dir``
+(unless ``--preds-dir`` supplies cached masks), then searches watershed
+parameters to maximize mean AJI vs polygon instances rasterized from
+``--gt-gpkg`` (same layout as whole-image eval; commonly training-section
+patches, not the held-out test mosaic).
 """
 
 from __future__ import annotations
@@ -24,7 +27,7 @@ from PIL import Image
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from evaluation.instance_masks import semantic_to_instance_label_map_watershed
-from evaluation.metrics import compute_aji, get_instances
+from evaluation.metrics import compute_aji
 
 
 def _raise_argument_error(message: str, parser: argparse.ArgumentParser | None = None):
@@ -82,6 +85,24 @@ def _load_pred_png(path: Path) -> np.ndarray:
     return _validate_pred_semantic(arr, str(path))
 
 
+def _load_gpkg_instance_map(gpkg_path: Path, height: int, width: int) -> np.ndarray:
+    from yolo.coco_instance_ap import (
+        build_gt_annotations,
+        load_polygons_from_gpkg,
+        normalize_polygons_to_image_space,
+    )
+    from yolo.instance_label_maps import gt_annotations_to_instance_map
+
+    polygons = normalize_polygons_to_image_space(load_polygons_from_gpkg(gpkg_path))
+    gt_anns = build_gt_annotations(
+        polygons,
+        image_id=1,
+        height=height,
+        width=width,
+    )
+    return gt_annotations_to_instance_map(gt_anns, height, width)
+
+
 @dataclass(frozen=True)
 class WatershedParamSet:
     min_distance: int
@@ -122,25 +143,11 @@ def mean_aji_for_watershed_params(
     return float(np.mean(ajis)), ajis
 
 
-def mean_aji_connected_components(
-    true_instances_per_sample: Sequence[np.ndarray],
-    pred_semantic_per_sample: Sequence[np.ndarray],
-    *,
-    interior_class: int = 1,
-) -> tuple[float, list[float]]:
-    """CC baseline on predictions (same as evaluate.py instance extraction)."""
-    ajis: list[float] = []
-    for ti, pred in zip(true_instances_per_sample, pred_semantic_per_sample):
-        pi = get_instances(pred, interior_class=interior_class)
-        ajis.append(float(compute_aji(ti, pi)))
-    return float(np.mean(ajis)), ajis
-
-
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Grid-search watershed parameters on validation data for max mean AJI. "
-            "Runs U-Net once per sample unless --preds-dir is set."
+            "Grid-search watershed parameters for max mean AJI on samples under "
+            "--image-dir / --mask-dir. Runs U-Net once per sample unless --preds-dir is set."
         )
     )
     src = parser.add_mutually_exclusive_group(required=True)
@@ -160,6 +167,14 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mask-dir", required=True, help="Directory containing ground truth masks"
+    )
+    parser.add_argument(
+        "--gt-gpkg",
+        required=True,
+        help=(
+            "Golden ground-truth GeoPackage with grain polygons in image pixel space. "
+            "AJI tuning is computed against these instances."
+        ),
     )
     parser.add_argument("--num-inputs", type=int, default=7)
     parser.add_argument(
@@ -258,6 +273,8 @@ def _validate_tune_args(
         _raise_argument_error("stride must be <= patch_size", parser)
     if args.batch_size <= 0:
         _raise_argument_error("batch_size must be > 0", parser)
+    if not Path(args.gt_gpkg).is_file():
+        _raise_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser)
     for name, vals in (
         ("min_distance", args.min_distance),
         ("boundary_dilate_iter", args.boundary_dilate_iter),
@@ -295,6 +312,7 @@ def _collect_samples(
     if args.max_samples is not None:
         samples = samples[: args.max_samples]
 
+    gpkg_path = Path(args.gt_gpkg).resolve()
     sample_ids: list[str] = []
     true_instances: list[np.ndarray] = []
     pred_semantic: list[np.ndarray] = []
@@ -320,6 +338,7 @@ def _collect_samples(
             true_mask = _validate_sample_data(
                 images, _load_raster_mask(sample["mask"]), sample["mask"]
             )
+            height, width = true_mask.shape
             pred_classes, _ = predict_full_image(
                 model=model,
                 inputs=tuple(images),
@@ -328,7 +347,7 @@ def _collect_samples(
                 batch_size=args.batch_size,
             )
             sample_ids.append(sid)
-            true_instances.append(get_instances(true_mask, interior_class=1))
+            true_instances.append(_load_gpkg_instance_map(gpkg_path, height, width))
             pred_semantic.append(_validate_pred_semantic(pred_classes, sid))
     else:
         preds_dir = Path(args.preds_dir).resolve()
@@ -346,13 +365,14 @@ def _collect_samples(
             true_mask = _validate_sample_data(
                 images, _load_raster_mask(sample["mask"]), sample["mask"]
             )
+            height, width = true_mask.shape
             pred_arr = _load_pred_png(pred_path)
             if pred_arr.shape != true_mask.shape:
                 raise ValueError(
                     f"Pred shape {pred_arr.shape} != mask shape {true_mask.shape} for {sid}"
                 )
             sample_ids.append(sid)
-            true_instances.append(get_instances(true_mask, interior_class=1))
+            true_instances.append(_load_gpkg_instance_map(gpkg_path, height, width))
             pred_semantic.append(pred_arr)
 
     return sample_ids, true_instances, pred_semantic
@@ -382,11 +402,6 @@ def _iter_param_grid(args: argparse.Namespace) -> Iterable[WatershedParamSet]:
 def main() -> None:
     args = _parse_args()
     sample_ids, true_instances, pred_semantic = _collect_samples(args)
-
-    cc_mean, cc_per = mean_aji_connected_components(true_instances, pred_semantic)
-    print(f"CC baseline mean AJI: {cc_mean:.6f}")
-    for sid, a in zip(sample_ids, cc_per):
-        print(f"  {sid}: {a:.6f}")
 
     ridge_levels = _ridge_level_grid(args)
     grid_size = (
@@ -459,8 +474,6 @@ def main() -> None:
 
     if args.output_json:
         summary = {
-            "cc_mean_aji": cc_mean,
-            "cc_per_sample": {sid: float(a) for sid, a in zip(sample_ids, cc_per)},
             "best_mean_aji": best_mean,
             "best_params": {
                 "min_distance": best_params.min_distance,

@@ -22,7 +22,7 @@ def decode_rle(rle_dict: Dict[str, Any]) -> np.ndarray:
     h, w = rle_dict["size"]
     counts = rle_dict["counts"]
 
-    # Heuristic to fix double-zero bug from run_sam2.py
+    # Heuristic to fix double-zero starts in some legacy SAM-style RLE exports
     if len(counts) >= 2 and counts[0] == 0 and counts[1] == 0:
         counts = counts[1:]
 

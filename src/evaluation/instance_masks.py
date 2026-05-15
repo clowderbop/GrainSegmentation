@@ -108,8 +108,8 @@ def semantic_to_instance_label_map_watershed(
     sit above the inverted distance field. ``boundary_dilate_iter`` thickens the boundary
     mask before applying the ridge (0 keeps the raw predicted boundary).
 
-    If no local maxima are found as markers, falls back to
-    :func:`semantic_to_instance_label_map` (connected components).
+    Raises ``ValueError`` if interior pixels exist but no local maxima are found as
+    markers.
     """
     from skimage.feature import peak_local_max
     from skimage.segmentation import watershed
@@ -147,11 +147,10 @@ def semantic_to_instance_label_map_watershed(
     )
     markers = np.zeros(semantic.shape, dtype=np.int32)
     if coordinates.size == 0:
-        return semantic_to_instance_label_map(
-            semantic,
-            interior_class=interior_class,
-            connectivity=1,
-            min_area_px=min_area_px,
+        raise ValueError(
+            "Watershed marker detection found no local maxima despite non-empty "
+            f"interior mask; min_distance={min_distance}, "
+            f"exclude_border={exclude_border}"
         )
     coord_arr = np.atleast_2d(np.asarray(coordinates, dtype=np.int64))
     if coord_arr.shape[-1] != 2:

@@ -18,11 +18,7 @@ from evaluation.instance_masks import (
     semantic_to_instance_label_map,
     semantic_to_instance_label_map_watershed,
 )
-from evaluation.metrics import (
-    compute_aji,
-    compute_instance_metrics_dict,
-    get_instances,
-)
+from evaluation.metrics import compute_aji, compute_instance_metrics_dict
 from evaluation.reporting import (
     build_instance_eval_report,
     build_sample_row,
@@ -68,13 +64,13 @@ def parse_args():
         "--instance-method",
         choices=("cc", "watershed"),
         default="cc",
-        help="How to derive predicted instances for instance metrics (AJI, PR/F1).",
+        help="How to derive GT and predicted instances for instance metrics (AJI, PR/F1).",
     )
     parser.add_argument(
         "--watershed-min-distance",
         type=int,
         default=1,
-        help="peak_local_max min_distance when --instance-method watershed.",
+        help="peak_local_max min_distance when --instance-method watershed (GT and pred).",
     )
     parser.add_argument(
         "--watershed-boundary-dilate-iter",
@@ -217,14 +213,14 @@ def _validate_sample_data(
     return mask_int
 
 
-def _pred_instances_for_metrics(
-    pred_classes: np.ndarray, args: argparse.Namespace
+def _instances_for_metrics(
+    semantic: np.ndarray, args: argparse.Namespace
 ) -> np.ndarray:
-    """Instance label map for predicted-instance metrics; GT always uses connected components."""
+    """Instance IDs from GT or predicted semantic mask (class 0/1/2) for AJI / PR-F1."""
     if args.instance_method == "cc":
-        return semantic_to_instance_label_map(pred_classes, min_area_px=0)
+        return semantic_to_instance_label_map(semantic, min_area_px=0)
     return semantic_to_instance_label_map_watershed(
-        pred_classes,
+        semantic,
         min_distance=args.watershed_min_distance,
         boundary_dilate_iter=args.watershed_boundary_dilate_iter,
         watershed_connectivity=args.watershed_connectivity,
@@ -333,8 +329,8 @@ def main():
                 Image.fromarray(pred_classes.astype(np.uint8)).save(out_img_path)
 
         t_inst = time.perf_counter()
-        true_instances = get_instances(true_mask, interior_class=1)
-        pred_instances = _pred_instances_for_metrics(pred_classes, args)
+        true_instances = _instances_for_metrics(true_mask, args)
+        pred_instances = _instances_for_metrics(pred_classes, args)
         print(f"  Instance maps (GT + pred): {time.perf_counter() - t_inst:.2f}s")
 
         metrics: dict[str, float] = {}
@@ -386,7 +382,10 @@ def main():
     with open(args.output_json, "w", encoding="utf-8") as f:
         f.write(
             json.dumps(
-                json_safe_for_dump(results), indent=4, allow_nan=False, ensure_ascii=False
+                json_safe_for_dump(results),
+                indent=4,
+                allow_nan=False,
+                ensure_ascii=False,
             )
         )
 

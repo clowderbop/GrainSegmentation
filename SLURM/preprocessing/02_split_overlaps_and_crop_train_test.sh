@@ -21,8 +21,8 @@ TRAIN_DIR="$WORK_DIR/train"
 mkdir -p "$TRAIN_DIR"
 mkdir -p "$TEST_DIR"
 
-cp $SCRATCH/GrainSeg/dataset/train/train_raw.gpkg "$TRAIN_DIR/"
-cp $SCRATCH/GrainSeg/dataset/test/test_raw.gpkg "$TEST_DIR/"
+cp $SCRATCH/GrainSeg/dataset/uncropped/train_raw.gpkg "$TRAIN_DIR/"
+cp $SCRATCH/GrainSeg/dataset/uncropped/test_raw.gpkg "$TEST_DIR/"
 
 # Uncropped sources stay unprefixed: PPL.tif, PPX1.tif, ...
 cp $SCRATCH/GrainSeg/dataset/uncropped/PPL.tif "$WORK_DIR/"
@@ -30,7 +30,7 @@ cp $SCRATCH/GrainSeg/dataset/uncropped/PPX*.tif "$WORK_DIR/"
 
 cd "$REPO_ROOT/src/data_prep"
 echo "Running split overlaps script on train..."
-uv run split_overlaps -u split_overlaps.py \
+uv run python -u split_overlaps.py \
     --input "$TRAIN_DIR/train_raw.gpkg" \
     --output "$TRAIN_DIR/train_split.gpkg" \
     --min-area 300 \

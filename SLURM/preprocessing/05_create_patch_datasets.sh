@@ -20,16 +20,16 @@ mkdir -p "$TRAIN_WORK"
 mkdir -p "$TEST_WORK"
 
 # YOLO data YAMLs (path relative to this file; multichannel only where the TIFF has extra bands).
-# held_out=1: all patches live under images/val/ only (--no-split test mosaics); point train/val/test
+# held_out=1: all patches live under images/test/ only (--test test mosaics); point train/val/test
 # there so Ultralytics model.val(..., split="test") resolves paths without an empty train/ split.
 write_yolo_dataset_yamls() {
     local yolo_root=$1
     local held_out="${2:-0}"
     local train_p val_p test_p
     if [[ "$held_out" == "1" ]]; then
-        train_p="images/val"
-        val_p="images/val"
-        test_p="images/val"
+        train_p="images/test"
+        val_p="images/test"
+        test_p="images/test"
     else
         train_p="images/train"
         val_p="images/val"
@@ -135,14 +135,14 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --validation-fraction 0.2 \
     --random-state 42
 
-echo "Copying YOLO train variants to persistent storage..."
-mkdir -p "$TRAIN_DEST/yolo"
-mv "$TRAIN_WORK/PPL" "$TRAIN_DEST/yolo/PPL"
-mv "$TRAIN_WORK/PPLPPXblend" "$TRAIN_DEST/yolo/PPLPPXblend"
-mv "$TRAIN_WORK/PPL+PPXblend" "$TRAIN_DEST/yolo/PPL+PPXblend"
-mv "$TRAIN_WORK/PPL+AllPPX" "$TRAIN_DEST/yolo/PPL+AllPPX"
+echo "Copying train patch datasets to persistent storage..."
+mkdir -p "$TRAIN_DEST/patches"
+mv "$TRAIN_WORK/PPL" "$TRAIN_DEST/patches/PPL"
+mv "$TRAIN_WORK/PPLPPXblend" "$TRAIN_DEST/patches/PPLPPXblend"
+mv "$TRAIN_WORK/PPL+PPXblend" "$TRAIN_DEST/patches/PPL+PPXblend"
+mv "$TRAIN_WORK/PPL+AllPPX" "$TRAIN_DEST/patches/PPL+AllPPX"
 
-write_yolo_dataset_yamls "$TRAIN_DEST/yolo"
+write_yolo_dataset_yamls "$TRAIN_DEST/patches"
 
 echo "Copying test inputs to fast local storage ($TMPDIR)..."
 cp "$TEST_DEST/test_PPL+PPXblend.tif" "$TEST_WORK/"
@@ -151,7 +151,7 @@ cp "$TEST_DEST/test_PPLPPXblend.tif" "$TEST_WORK/"
 cp "$TEST_DEST/test_PPL.tif" "$TEST_WORK/"
 cp "$TEST_DEST/test_labels.gpkg" "$TEST_WORK/labels.gpkg"
 
-echo "Running split_tiff_gpkg_to_yolo for all variants (test, full mosaic -> val/ only)..."
+echo "Running split_tiff_gpkg_to_yolo for all variants (test, full mosaic -> images/test/)..."
 uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --image "$TEST_WORK/test_PPL.tif" \
     --polygons "$TEST_WORK/labels.gpkg" \
@@ -161,7 +161,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \
-    --no-split
+    --test
 
 uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --image "$TEST_WORK/test_PPLPPXblend.tif" \
@@ -172,7 +172,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \
-    --no-split
+    --test
 
 uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --image "$TEST_WORK/test_PPL+PPXblend.tif" \
@@ -183,7 +183,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \
-    --no-split
+    --test
 
 uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --image "$TEST_WORK/test_PPL+AllPPX.tif" \
@@ -194,15 +194,15 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \
-    --no-split
+    --test
 
-echo "Copying YOLO test variants to persistent storage..."
-mkdir -p "$TEST_DEST/yolo"
-mv "$TEST_WORK/PPL" "$TEST_DEST/yolo/PPL"
-mv "$TEST_WORK/PPLPPXblend" "$TEST_DEST/yolo/PPLPPXblend"
-mv "$TEST_WORK/PPL+PPXblend" "$TEST_DEST/yolo/PPL+PPXblend"
-mv "$TEST_WORK/PPL+AllPPX" "$TEST_DEST/yolo/PPL+AllPPX"
+echo "Copying test patch datasets to persistent storage..."
+mkdir -p "$TEST_DEST/patches"
+mv "$TEST_WORK/PPL" "$TEST_DEST/patches/PPL"
+mv "$TEST_WORK/PPLPPXblend" "$TEST_DEST/patches/PPLPPXblend"
+mv "$TEST_WORK/PPL+PPXblend" "$TEST_DEST/patches/PPL+PPXblend"
+mv "$TEST_WORK/PPL+AllPPX" "$TEST_DEST/patches/PPL+AllPPX"
 
-write_yolo_dataset_yamls "$TEST_DEST/yolo" 1
+write_yolo_dataset_yamls "$TEST_DEST/patches" 1
 
 echo "Done!"

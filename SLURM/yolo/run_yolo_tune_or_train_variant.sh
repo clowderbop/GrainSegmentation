@@ -165,7 +165,7 @@ if [[ -z "$DATA_YAML" ]]; then
     TMP_YOLO_ROOT="$TMPDIR/yolo"
     TMP_DATASET_DIR="$TMP_YOLO_ROOT/$DATASET_SUBDIR"
     mkdir -p "$TMP_YOLO_ROOT"
-    cp -r "$SCRATCH/GrainSeg/dataset/train/yolo/$DATASET_SUBDIR" "$TMP_YOLO_ROOT/"
+    cp -r "$SCRATCH/GrainSeg/dataset/train/patches/$DATASET_SUBDIR" "$TMP_YOLO_ROOT/"
     DATA_YAML="$TMP_DATASET_DIR/$YAML_NAME"
 
     # Root the copied dataset YAML at TMPDIR so Ultralytics resolves images locally.

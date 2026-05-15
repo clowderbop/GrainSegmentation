@@ -298,10 +298,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--coverage-bins", type=int, default=10)
     parser.add_argument("--image-ext", default=".tif")
     parser.add_argument(
-        "--no-split",
+        "--test",
         action="store_true",
+        dest="test",
         help=(
-            "Export every tile's patches into val/ only (no train/). "
+            "Export every tile's patches into images/test and labels/test only (no train/val). "
             "Uses all regions; ignores validation-fraction and random-state. "
             "For held-out test mosaics where a train/val split is meaningless."
         ),
@@ -396,9 +397,11 @@ def _clear_output_files(directory: Path, patterns: tuple[str, ...]) -> None:
                 path.unlink()
 
 
-def _prepare_output_dirs(output_dir: Path) -> dict[str, tuple[Path, Path]]:
+def _prepare_output_dirs(
+    output_dir: Path, split_names: tuple[str, ...]
+) -> dict[str, tuple[Path, Path]]:
     split_dirs: dict[str, tuple[Path, Path]] = {}
-    for split_name in ("train", "val"):
+    for split_name in split_names:
         image_dir = output_dir / "images" / split_name
         label_dir = output_dir / "labels" / split_name
         image_dir.mkdir(parents=True, exist_ok=True)
@@ -437,17 +440,16 @@ def export_dataset(
     coverage_bins: int,
     image_ext: str,
     *,
-    no_split: bool = False,
+    test: bool = False,
 ) -> None:
     image = load_image_channel_first(image_path)
     polygons = _normalize_polygons_to_image_space(_load_polygons(polygons_path))
     _, height, width = image.shape
 
     region_bounds = _region_bounds(height, width, tile_size)
-    if no_split:
-        region_splits = (
-            ("val", np.arange(len(region_bounds), dtype=np.int64)),
-        )
+    if test:
+        region_splits = (("test", np.arange(len(region_bounds), dtype=np.int64)),)
+        split_dirs = _prepare_output_dirs(output_dir, ("test",))
     else:
         coverages = _compute_region_coverages(region_bounds, polygons)
         train_indices, val_indices = split_region_indices(
@@ -457,8 +459,7 @@ def export_dataset(
             coverage_bins=coverage_bins,
         )
         region_splits = (("train", train_indices), ("val", val_indices))
-
-    split_dirs = _prepare_output_dirs(output_dir)
+        split_dirs = _prepare_output_dirs(output_dir, ("train", "val"))
     normalized_image_ext = _normalize_image_ext(image_ext)
 
     for split_name, region_indices in region_splits:
@@ -503,7 +504,7 @@ def main(argv: list[str] | None = None) -> None:
         random_state=args.random_state,
         coverage_bins=args.coverage_bins,
         image_ext=args.image_ext,
-        no_split=args.no_split,
+        test=args.test,
     )
 
 

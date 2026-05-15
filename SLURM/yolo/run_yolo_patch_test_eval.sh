@@ -63,7 +63,7 @@ if [[ -z "$DATA_YAML" ]]; then
     TMP_YOLO_ROOT="$TMPDIR/yolo"
     TMP_DATASET_DIR="$TMP_YOLO_ROOT/$DATASET_SUBDIR"
     mkdir -p "$TMP_YOLO_ROOT"
-    cp -r "$SCRATCH/GrainSeg/dataset/test/yolo/$DATASET_SUBDIR" "$TMP_YOLO_ROOT/"
+    cp -r "$SCRATCH/GrainSeg/dataset/test/patches/$DATASET_SUBDIR" "$TMP_YOLO_ROOT/"
     DATA_YAML="$TMP_DATASET_DIR/$YAML_NAME"
 
     # Run from src/yolo so uv binds to that project's environment (no pyproject at repo root).
@@ -85,7 +85,7 @@ else:
     raise SystemExit(f"Dataset YAML missing path entry: {yaml_path}")
 for index, line in enumerate(lines):
     if line.strip() == "test:":
-        lines[index] = "test: images/val"
+        lines[index] = "test: images/test"
         break
 trailing_newline = "\n" if text.endswith("\n") else ""
 yaml_path.write_text("\n".join(lines) + trailing_newline, encoding="utf-8")

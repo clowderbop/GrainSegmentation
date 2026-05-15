@@ -1,26 +1,3 @@
-"""
-Evaluate trained YOLO segmentation models: Ultralytics val, SAHI on held-out TIFFs (COCO mask AP),
-or patch-level AJI + instance metrics on the dataset test/val split.
-
-Import path: this module imports ``evaluation.metrics`` from the sibling ``src/evaluation``
-package. The parent of this file's directory is ``src/yolo``, so ``src`` is prepended to
-``sys.path`` once at import time. Any process that imports ``evaluate`` therefore resolves
-``evaluation.*`` the same way as running from ``src/yolo`` with ``PYTHONPATH`` including
-``src``. Prefer not importing this module solely to reuse that side effect in unrelated code.
-
-**Patches mode** reads images from the Ultralytics data YAML, loads **pre-computed**
-semantic mask GeoTIFFs/PNGs in the split ``labels`` tree (``{stem}{mask_stem_suffix}{ext}``,
-same layout as ``crop_unet_masks_from_yolo_patches.py`` / ``SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh``),
-derives GT instances via connected components on class 1 (matching UNet ``evaluate.py``),
-runs ``model.predict`` per image, and writes a metrics JSON envelope shared with
-``evaluation.evaluate``.
-
-SAHI JSON semantics: COCO AP fields use ``-1`` / excluded means when GT is empty; instance
-metrics (AJI, IoU-sweep P/R/F1) follow ``evaluation.metrics`` and are still reported. Each
-per-image row includes ``empty_gt`` when there are no GT annotations so consumers can tell
-``mean_AP`` null (no valid COCO AP) from ``mean_aji`` etc. (empty-empty can be perfect 1.0).
-"""
-
 from __future__ import annotations
 
 import argparse

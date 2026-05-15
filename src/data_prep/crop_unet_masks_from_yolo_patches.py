@@ -1,12 +1,3 @@
-"""
-Crop a full-scene UNet raster mask (0/1/2) into patch masks aligned with
-``split_tiff_gpkg_to_yolo.py`` / patchify YOLO ``images/val`` exports.
-
-Also copies each patch image to ``{stem}{image_suffix}.tif`` so
-``training.data.list_samples`` can find paired ``{stem}{mask_stem_suffix}.tif``
-masks (default ``_labels``).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -111,7 +102,7 @@ def main(argv: list[str] | None = None) -> None:
         "--yolo-images-dir",
         type=Path,
         required=True,
-        help="YOLO images/val directory (patch filenames region_*_y*_x*).",
+        help="YOLO patch image dir (e.g. images/test for held-out mosaics; filenames region_*_y*_x*).",
     )
     parser.add_argument(
         "--output-images-dir",
@@ -186,8 +177,7 @@ def main(argv: list[str] | None = None) -> None:
 
         out_img = args.output_images_dir / f"{stem}{args.image_suffix}{img_path.suffix}"
         out_msk = (
-            args.output_masks_dir
-            / f"{stem}{args.mask_stem_suffix}{img_path.suffix}"
+            args.output_masks_dir / f"{stem}{args.mask_stem_suffix}{img_path.suffix}"
         )
         shutil.copy2(img_path, out_img)
         tifffile.imwrite(out_msk, patch_mask, compression="deflate")

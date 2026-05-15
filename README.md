@@ -101,8 +101,8 @@ For each input variant, the U-Net workflow is:
   - tuned watershed using the predicted interior and boundary classes
 5. Select the better U-Net instance extraction method.
 6. Evaluate the selected U-Net pipeline on the held-out test data in two ways:
-  - patch-wise evaluation on the test patch dataset
-  - whole-section evaluation using custom sliding-window inference
+  - patch-wise segmentation evaluation on the test patch dataset
+  - whole-section segmentation and semantic evaluation using custom sliding-window inference
 
 ### Metrics and Comparison
 

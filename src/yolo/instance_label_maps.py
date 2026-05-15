@@ -1,9 +1,3 @@
-"""
-Dense instance label maps for SAHI evaluation (aligns with COCO GT/dt annotations).
-
-Used with evaluation.metrics (AJI, instance P/R/F1) on the same segmentations as mask AP.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path

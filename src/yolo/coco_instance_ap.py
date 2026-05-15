@@ -1,9 +1,3 @@
-"""
-Build COCO-style GT/detections and run pycocotools mask AP for instance segmentation.
-
-Used for whole held-out TIFF evaluation (SAHI predictions vs GeoPackage polygons).
-"""
-
 from __future__ import annotations
 
 import contextlib

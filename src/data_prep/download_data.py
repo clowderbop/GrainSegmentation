@@ -1,9 +1,3 @@
-"""
-GrainSegmentation Dataset Downloader
-
-This script downloads dataset from Google Drive for the GrainSegmentation project.
-"""
-
 import gdown
 import os
 import argparse

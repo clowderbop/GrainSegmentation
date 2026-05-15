@@ -8,17 +8,18 @@
 
 set -euo pipefail
 
-# Per-patch UNet evaluation on materialized trees from SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh
-# (images: .../unet_from_yolo/<VARIANT>/images; masks: .../yolo/<VARIANT>/labels/val).
+# Per-patch UNet evaluation on patch images from SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh
+# (images: .../unet_from_yolo/<VARIANT>/images). Ground-truth instances come from --gt-gpkg (default test_labels.gpkg);
+# raster semantic masks are not used.
 #
-# Pattern: copy patch images/masks + model to $TMPDIR, run evaluate.py there, then copy
+# Pattern: copy patch images + model to $TMPDIR, run evaluate.py there, then copy
 # metrics.json and preds/ back to $SCRATCH.
 #
 # True per-patch tiles: use stride == patch size (default 1024) so each patch file is one
 # non-overlapping sliding window (matches typical 1024 YOLO crops).
 #
-# Instance metrics: GT and predictions use watershed (--instance-method) with the same
-# hyperparameters. Optional WATERSHED_JSON=/path/to/watershed_best_*.json passes tune_watershed
+# Instance GT: polygons from GT_GPKG (patch offsets from region_*_y*_x* stems). Prediction instances:
+# use --instance-method from evaluate.py. Optional WATERSHED_JSON=/path/to/watershed_best_*.json passes tune_watershed
 # params via src/evaluation/watershed_json_to_eval_args.py; if unset, evaluate.py watershed
 # defaults apply.
 #
@@ -44,7 +45,7 @@ BATCH_SIZE="${BATCH_SIZE:-1}"
 TEST_ROOT="$SCRATCH/GrainSeg/dataset/test"
 UNET_SRC_ROOT="$TEST_ROOT/unet_from_yolo/$VARIANT"
 UNET_SRC_IMAGES="$UNET_SRC_ROOT/images"
-UNET_SRC_MASKS="$TEST_ROOT/yolo/$VARIANT/labels/val"
+GT_GPKG="${GT_GPKG:-$TEST_ROOT/test_labels.gpkg}"
 
 OUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/GrainSeg/eval/unet_patches/$VARIANT/$JOB_TAG}"
 OUTPUT_JSON="$OUT_ROOT/metrics.json"
@@ -90,25 +91,25 @@ esac
 MODEL_PATH="${MODEL_PATH:-$SCRATCH/GrainSeg/models/$DEFAULT_MODEL_BASENAME}"
 
 require_dir "$UNET_SRC_IMAGES" "Patch image directory not found (run 08_create_unet_test_patches_from_yolo_patches.sh?)"
-require_dir "$UNET_SRC_MASKS" "Patch mask directory not found (run 08_create_unet_test_patches_from_yolo_patches.sh?)"
 require_file "$MODEL_PATH" "Model not found"
+require_file "$GT_GPKG" "Ground-truth GeoPackage not found"
 
 source "$SLURM_ROOT/prepare_env.sh"
 export TF_CPP_MIN_LOG_LEVEL=2
 
 WORK_ROOT="$TMPDIR/unet_patch_eval_${VARIANT}_$JOB_TAG"
 LOCAL_IMAGES="$WORK_ROOT/images"
-LOCAL_MASKS="$WORK_ROOT/masks"
 LOCAL_MODEL_DIR="$WORK_ROOT/model"
+LOCAL_GT_GPKG="$WORK_ROOT/$(basename "$GT_GPKG")"
 TMP_OUTPUT_JSON="$WORK_ROOT/metrics.json"
 TMP_PRED_DIR="$WORK_ROOT/preds"
 
 rm -rf "$WORK_ROOT"
-mkdir -p "$LOCAL_IMAGES" "$LOCAL_MASKS" "$LOCAL_MODEL_DIR" "$TMP_PRED_DIR"
+mkdir -p "$LOCAL_IMAGES" "$LOCAL_MODEL_DIR" "$TMP_PRED_DIR"
 
-echo "Staging UNet patch images, masks, and model to TMPDIR ($WORK_ROOT)..."
+echo "Staging UNet patch images and model to TMPDIR ($WORK_ROOT)..."
 cp -r "$UNET_SRC_IMAGES"/. "$LOCAL_IMAGES"/
-cp -r "$UNET_SRC_MASKS"/. "$LOCAL_MASKS"/
+cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 LOCAL_MODEL_PATH="$LOCAL_MODEL_DIR/$(basename "$MODEL_PATH")"
 cp -f "$MODEL_PATH" "$LOCAL_MODEL_PATH"
 
@@ -128,7 +129,7 @@ eval_cmd=(
     --variant "$VARIANT"
     --model-path "$LOCAL_MODEL_PATH"
     --image-dir "$LOCAL_IMAGES"
-    --mask-dir "$LOCAL_MASKS"
+    --gt-gpkg "$LOCAL_GT_GPKG"
     --output-json "$TMP_OUTPUT_JSON"
     --save-predictions-dir "$TMP_PRED_DIR"
     --num-inputs "1"
@@ -137,8 +138,6 @@ eval_cmd=(
     --patch-size "$PATCH_SIZE"
     --stride "$STRIDE"
     --batch-size "$BATCH_SIZE"
-    --mask-ext ".tif"
-    --mask-stem-suffix "_labels"
 )
 
 WATERSHED_JSON_HELPER="$REPO_ROOT/src/evaluation/watershed_json_to_eval_args.py"

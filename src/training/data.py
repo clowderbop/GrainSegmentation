@@ -126,7 +126,7 @@ def _validate_sample_inputs(samples: List[Dict[str, Any]], num_inputs: int) -> N
 
 def list_samples(
     image_dir: str,
-    mask_dir: str,
+    mask_dir: str | None,
     image_suffixes: List[str],
     mask_ext: str | None,
     mask_stem_suffix: str,
@@ -160,22 +160,25 @@ def list_samples(
                 )
             image_paths.append(img_path)
 
-        sample = {"images": image_paths, "id": base_stem}
-        if mask_ext is None:
-            mask_exts = [".png", ".tif", ".tiff", ".jpg", ".jpeg"]
-        else:
-            mask_exts = [mask_ext]
-        mask_path = None
-        for ext in mask_exts:
-            candidate = os.path.join(mask_dir, f"{base_stem}{mask_stem_suffix}{ext}")
-            if os.path.exists(candidate):
-                mask_path = candidate
-                break
-        if mask_path is None:
-            raise FileNotFoundError(
-                f"Missing raster mask for {base_stem} in {mask_dir}"
-            )
-        sample["mask"] = mask_path
+        sample: Dict[str, Any] = {"images": image_paths, "id": base_stem}
+        if mask_dir is not None:
+            if mask_ext is None:
+                mask_exts = [".png", ".tif", ".tiff", ".jpg", ".jpeg"]
+            else:
+                mask_exts = [mask_ext]
+            mask_path = None
+            for ext in mask_exts:
+                candidate = os.path.join(
+                    mask_dir, f"{base_stem}{mask_stem_suffix}{ext}"
+                )
+                if os.path.exists(candidate):
+                    mask_path = candidate
+                    break
+            if mask_path is None:
+                raise FileNotFoundError(
+                    f"Missing raster mask for {base_stem} in {mask_dir}"
+                )
+            sample["mask"] = mask_path
 
         samples.append(sample)
     return samples

@@ -1,8 +1,10 @@
 import argparse
 import json
 import os
+import re
 import sys
 import time
+from pathlib import Path
 
 import numpy as np
 import tensorflow as tf
@@ -38,7 +40,20 @@ def parse_args():
         "--image-dir", required=True, help="Directory containing test images"
     )
     parser.add_argument(
-        "--mask-dir", required=True, help="Directory containing ground truth masks"
+        "--mask-dir",
+        default=None,
+        help=(
+            "Optional directory of raster semantic masks (values 0–2). "
+            "If omitted, only image-dir is used to list samples; GT instances still come from --gt-gpkg."
+        ),
+    )
+    parser.add_argument(
+        "--gt-gpkg",
+        required=True,
+        help=(
+            "GeoPackage with ground-truth grain polygons in image pixel space. "
+            "Instance metrics always use these polygons as GT."
+        ),
     )
     parser.add_argument(
         "--output-json", required=True, help="Path to save evaluation metrics JSON"
@@ -156,6 +171,10 @@ def _validate_args(
         args.watershed_ridge_level
     ):
         _raise_argument_error("watershed_ridge_level must be finite when set", parser)
+    if not Path(args.gt_gpkg).is_file():
+        _raise_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser)
+    if args.mask_dir is not None and not Path(args.mask_dir).is_dir():
+        _raise_argument_error(f"mask-dir is not a directory: {args.mask_dir}", parser)
 
 
 def _prediction_png_path(save_dir: str, sample_id: str) -> str:
@@ -230,6 +249,52 @@ def _instances_for_metrics(
     )
 
 
+PATCH_STEM_RE = re.compile(r"^region_\d+_y(\d+)_x(\d+)$")
+
+
+def _sample_origin_xy(sample_id: str) -> tuple[int, int]:
+    match = PATCH_STEM_RE.match(sample_id)
+    if match is None:
+        return 0, 0
+    return int(match.group(2)), int(match.group(1))
+
+
+def _load_gpkg_polygons(gpkg_path: Path):
+    from yolo.coco_instance_ap import (
+        load_polygons_from_gpkg,
+        normalize_polygons_to_image_space,
+    )
+
+    return normalize_polygons_to_image_space(load_polygons_from_gpkg(gpkg_path))
+
+
+def _gpkg_instance_map(
+    polygons,
+    *,
+    sample_id: str,
+    height: int,
+    width: int,
+) -> np.ndarray:
+    from shapely.affinity import translate
+
+    from yolo.coco_instance_ap import build_gt_annotations
+    from yolo.instance_label_maps import gt_annotations_to_instance_map
+
+    origin_x, origin_y = _sample_origin_xy(sample_id)
+    if origin_x or origin_y:
+        polygons = [
+            translate(p, xoff=-float(origin_x), yoff=-float(origin_y))
+            for p in polygons
+        ]
+    gt_anns = build_gt_annotations(
+        polygons,
+        image_id=1,
+        height=height,
+        width=width,
+    )
+    return gt_annotations_to_instance_map(gt_anns, height, width)
+
+
 def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> None:
     if sample_count == 1:
         print("\n--- Single-Sample Evaluation ---")
@@ -247,6 +312,8 @@ def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> 
 
 def main():
     args = parse_args()
+    gt_gpkg_path = Path(args.gt_gpkg).resolve()
+    gt_gpkg_polygons = _load_gpkg_polygons(gt_gpkg_path)
 
     samples = list_samples(
         image_dir=args.image_dir,
@@ -292,13 +359,19 @@ def main():
         images = [_load_rgb_image(p) for p in sample["images"]]
         if len(images) != args.num_inputs:
             raise ValueError("Mismatch between num_inputs and loaded images.")
-        true_mask = _validate_sample_data(
-            images, _load_raster_mask(sample["mask"]), sample["mask"]
-        )
-        t_load = time.perf_counter()
-        print(f"  Loaded inputs + GT mask: {t_load - t0:.2f}s")
+        if "mask" in sample:
+            _validate_sample_data(
+                images, _load_raster_mask(sample["mask"]), sample["mask"]
+            )
+            t_load = time.perf_counter()
+            print(f"  Loaded inputs + raster mask (validated): {t_load - t0:.2f}s")
+        else:
+            t_load = time.perf_counter()
+            print(f"  Loaded inputs: {t_load - t0:.2f}s")
 
-        expected_hw = (int(images[0].shape[0]), int(images[0].shape[1]))
+        height, width = int(images[0].shape[0]), int(images[0].shape[1])
+
+        expected_hw = (height, width)
         pred_classes: np.ndarray | None = None
 
         if args.save_predictions_dir:
@@ -329,7 +402,12 @@ def main():
                 Image.fromarray(pred_classes.astype(np.uint8)).save(out_img_path)
 
         t_inst = time.perf_counter()
-        true_instances = _instances_for_metrics(true_mask, args)
+        true_instances = _gpkg_instance_map(
+            gt_gpkg_polygons,
+            sample_id=sample_id,
+            height=height,
+            width=width,
+        )
         pred_instances = _instances_for_metrics(pred_classes, args)
         print(f"  Instance maps (GT + pred): {time.perf_counter() - t_inst:.2f}s")
 
@@ -374,6 +452,7 @@ def main():
         variant=args.variant,
         unit=args.unit,
         samples=sample_rows,
+        extras={"ground_truth_instance_source": str(gt_gpkg_path)},
     )
     mean_for_print = results.get("mean")
     _print_summary(mean_for_print, len(sample_rows))

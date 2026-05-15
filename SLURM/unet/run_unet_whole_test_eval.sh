@@ -16,6 +16,7 @@ TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
 MODEL_DIR=""
 IMAGE_DIR=""
 MASK_DIR=""
+GT_GPKG=""
 OUTPUT_DIR=""
 CONFIG_FILE=""
 PPL_IMAGE=""
@@ -33,6 +34,7 @@ function usage {
     echo "  --model-dir <dir>         Directory containing .keras models to evaluate"
     echo "  --image-dir <dir>         Directory containing evaluation images"
     echo "  --mask-dir <dir>          Directory containing raster masks"
+    echo "  --gt-gpkg <path>          GeoPackage with ground-truth grain polygons for instance metrics"
     echo "  --output-dir <dir>        Directory for JSONs, predictions, and plots"
     echo "  --config-file <path>      Optional TSV: label, model, num_inputs, suffix_csv [, watershed_json]"
     echo "  --ppl-image <path>        Optional PPL image to use for overlay generation"
@@ -293,6 +295,10 @@ while [[ $# -gt 0 ]]; do
             MASK_DIR="$2"
             shift 2
             ;;
+        --gt-gpkg)
+            GT_GPKG="$2"
+            shift 2
+            ;;
         --output-dir)
             OUTPUT_DIR="$2"
             shift 2
@@ -350,6 +356,10 @@ fi
 require_dir "$MODEL_DIR" "Model directory not found"
 require_dir "$IMAGE_DIR" "Image directory not found"
 require_dir "$MASK_DIR" "Mask directory not found"
+if [ -z "$GT_GPKG" ]; then
+    GT_GPKG="$MASK_DIR/test_labels.gpkg"
+fi
+require_file "$GT_GPKG" "Ground-truth GeoPackage not found"
 if [ -n "$CONFIG_FILE" ]; then
     require_file "$CONFIG_FILE" "Config file not found"
 fi
@@ -363,12 +373,14 @@ WORK_DIR="$TMPDIR/eval_models_${SLURM_JOB_ID:-$$}"
 LOCAL_MODEL_DIR="$WORK_DIR/models"
 LOCAL_IMAGE_DIR="$WORK_DIR/images"
 LOCAL_MASK_DIR="$WORK_DIR/masks"
+LOCAL_GT_GPKG="$WORK_DIR/$(basename "$GT_GPKG")"
 mkdir -p "$LOCAL_MODEL_DIR" "$LOCAL_IMAGE_DIR" "$LOCAL_MASK_DIR"
 
 echo "Copying models and dataset to TMPDIR..."
 cp -r "$MODEL_DIR"/. "$LOCAL_MODEL_DIR"/
 cp -r "$IMAGE_DIR"/. "$LOCAL_IMAGE_DIR"/
 cp -r "$MASK_DIR"/. "$LOCAL_MASK_DIR"/
+cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 
 cd "$REPO_ROOT/src/training"
 echo "Syncing evaluation environment..."
@@ -456,6 +468,7 @@ for i in "${!MODEL_PATHS[@]}"; do
         --model-path "$model_path"
         --image-dir "$LOCAL_IMAGE_DIR"
         --mask-dir "$LOCAL_MASK_DIR"
+        --gt-gpkg "$LOCAL_GT_GPKG"
         --output-json "$json_path"
         --save-predictions-dir "$pred_dir"
         --num-inputs "${MODEL_NUM_INPUTS[$i]}"

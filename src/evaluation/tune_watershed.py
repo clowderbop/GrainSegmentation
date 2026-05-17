@@ -19,6 +19,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from evaluation.instance_masks import semantic_to_instance_label_map_watershed
 from evaluation.metrics import compute_aji
+from common.ground_truth import gpkg_to_instance_map
+from common.image_io import validate_image_mask_sample, validate_semantic_labels
 
 
 def _raise_argument_error(message: str, parser: argparse.ArgumentParser | None = None):
@@ -30,40 +32,12 @@ def _raise_argument_error(message: str, parser: argparse.ArgumentParser | None =
 def _validate_sample_data(
     images: list[np.ndarray], mask: np.ndarray, mask_path: str
 ) -> np.ndarray:
-    if not images:
-        raise ValueError("Sample must contain at least one input image.")
-
-    expected_shape = images[0].shape
-    if len(expected_shape) != 3:
-        raise ValueError("All input images must have shape (H, W, C).")
-    for img in images[1:]:
-        if img.shape != expected_shape:
-            raise ValueError("All input images must share the same shape.")
-
-    if mask.ndim != 2:
-        raise ValueError(f"Raster mask must be 2D: {mask_path}")
-
-    image_shape = expected_shape[:2]
-    if mask.shape != image_shape:
-        raise ValueError(
-            f"Mask shape {mask.shape} does not match image shape {image_shape} "
-            f"for {mask_path}"
-        )
-
-    mask_int = mask.astype(np.int32)
-    if not np.all(mask == mask_int) or np.any((mask_int < 0) | (mask_int > 2)):
-        raise ValueError(f"Mask values must be in [0, 2] for {mask_path}")
-
-    return mask_int
+    validate_image_mask_sample(images, mask, mask_path)
+    return validate_semantic_labels(mask, mask_path)
 
 
 def _validate_pred_semantic(pred: np.ndarray, mask_path: str) -> np.ndarray:
-    if pred.ndim != 2:
-        raise ValueError(f"Prediction must be 2D: {mask_path}")
-    p = pred.astype(np.int32)
-    if not np.all(pred == p) or np.any((p < 0) | (p > 2)):
-        raise ValueError(f"Prediction values must be in [0, 2] for {mask_path}")
-    return p
+    return validate_semantic_labels(pred, mask_path)
 
 
 def _sanitize_csv_key(sample_id: str) -> str:
@@ -77,21 +51,7 @@ def _load_pred_png(path: Path) -> np.ndarray:
 
 
 def _load_gpkg_instance_map(gpkg_path: Path, height: int, width: int) -> np.ndarray:
-    from yolo.coco_instance_ap import (
-        build_gt_annotations,
-        load_polygons_from_gpkg,
-        normalize_polygons_to_image_space,
-    )
-    from yolo.instance_label_maps import gt_annotations_to_instance_map
-
-    polygons = normalize_polygons_to_image_space(load_polygons_from_gpkg(gpkg_path))
-    gt_anns = build_gt_annotations(
-        polygons,
-        image_id=1,
-        height=height,
-        width=width,
-    )
-    return gt_annotations_to_instance_map(gt_anns, height, width)
+    return gpkg_to_instance_map(gpkg_path, height=height, width=width)
 
 
 @dataclass(frozen=True)

@@ -1,63 +1,35 @@
 import argparse
 import math
+import sys
 from pathlib import Path
 
-import geopandas as gpd
 import numpy as np
 import tifffile
-from shapely.affinity import scale as scale_geometry
 from shapely.errors import GEOSException
-from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
+from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.geometry.polygon import orient
+
+_SRC_ROOT = Path(__file__).resolve().parent.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from common.geometry import (
+    iter_polygon_parts,
+    load_polygons_from_vector,
+    normalize_polygons_to_image_space,
+)
+from common.image_io import load_tiff_channel_first
+from common.patching import (
+    build_coverage_bin_ids,
+    compute_starts,
+    extract_padded_patch_channel_first,
+    region_bounds,
+)
 
 MIN_VALIDATION_COVERAGE = 0.10
 
 
-def compute_starts(size: int, patch_size: int, stride: int) -> list[int]:
-    if patch_size <= 0:
-        raise ValueError("patch_size must be > 0")
-    if stride <= 0:
-        raise ValueError("stride must be > 0")
-    if stride > patch_size:
-        raise ValueError("stride must not exceed patch_size")
-    if size <= patch_size:
-        return [0]
-
-    last_start = size - patch_size
-    starts = list(range(0, last_start + 1, stride))
-    if starts[-1] != last_start:
-        starts.append(last_start)
-    return starts
-
-
-def load_image_channel_first(path: Path) -> np.ndarray:
-    with tifffile.TiffFile(path) as tif:
-        image = tif.asarray()
-        axes = tif.series[0].axes
-
-    if image.ndim != 3:
-        return image
-
-    if axes == "YXS":
-        return np.transpose(image, (2, 0, 1))
-
-    if axes in {"SYX", "CYX"}:
-        return image
-
-    if axes == "QYX":
-        first, middle, last = image.shape
-
-        if first < middle and last >= middle:
-            return image
-
-        if last < middle and first >= middle:
-            return np.transpose(image, (2, 0, 1))
-
-        raise ValueError(
-            f"TIFF layout cannot be inferred safely from axes={axes!r} and shape={image.shape}"
-        )
-
-    raise ValueError(f"Unsupported 3D TIFF axes {axes!r} for shape {image.shape}")
+load_image_channel_first = load_tiff_channel_first
 
 
 def save_patch(path: Path, patch: np.ndarray) -> None:
@@ -76,29 +48,9 @@ def _format_yolo_value(value: float) -> str:
 
 
 def _iter_polygon_parts(
-    geometry: Polygon | MultiPolygon | GeometryCollection,
+    geometry: Polygon | MultiPolygon,
 ) -> list[Polygon]:
-    if geometry.is_empty:
-        return []
-
-    cleaned = geometry.buffer(0)
-    if cleaned.is_empty:
-        return []
-
-    if isinstance(cleaned, Polygon):
-        return [cleaned]
-
-    if isinstance(cleaned, MultiPolygon):
-        return [part for part in cleaned.geoms if not part.is_empty]
-
-    if isinstance(cleaned, GeometryCollection):
-        return [
-            part
-            for part in cleaned.geoms
-            if isinstance(part, Polygon) and not part.is_empty
-        ]
-
-    return []
+    return iter_polygon_parts(geometry)
 
 
 def _normalized_exterior_coordinates(polygon: Polygon) -> list[tuple[float, float]]:
@@ -183,7 +135,7 @@ def split_region_indices(
 
     eligible_coverages = coverages_arr[eligible_indices]
     group_count = max(2, math.ceil(1 / validation_fraction))
-    bin_ids = _build_coverage_bin_ids(
+    bin_ids = build_coverage_bin_ids(
         eligible_coverages,
         coverage_bins=coverage_bins,
         group_count=group_count,
@@ -246,30 +198,6 @@ def split_region_indices(
     return train_indices, val_indices
 
 
-def _build_coverage_bin_ids(
-    coverages_arr: np.ndarray,
-    *,
-    coverage_bins: int,
-    group_count: int,
-) -> np.ndarray:
-    total = coverages_arr.shape[0]
-    if total <= 0:
-        raise ValueError("At least one region is required for splitting.")
-
-    if group_count <= 0:
-        raise ValueError("group_count must be > 0")
-
-    bins = min(coverage_bins, max(1, total // group_count))
-    if bins <= 1:
-        return np.zeros(total, dtype=int)
-
-    bin_edges = np.quantile(coverages_arr, np.linspace(0.0, 1.0, bins + 1))
-    if np.allclose(bin_edges, bin_edges[0]):
-        return np.zeros(total, dtype=int)
-
-    return np.digitize(coverages_arr, bin_edges[1:-1], right=True)
-
-
 def _parse_patch_overlap(value: str) -> float:
     overlap = float(value)
     if overlap < 0.0 or overlap > 0.9:
@@ -313,53 +241,19 @@ def _normalize_image_ext(image_ext: str) -> str:
 
 
 def _load_polygons(path: Path) -> list[Polygon | MultiPolygon]:
-    geodata = gpd.read_file(path)
-    polygons: list[Polygon | MultiPolygon] = []
-    for geometry in geodata.geometry:
-        if geometry is None or geometry.is_empty:
-            continue
-        if isinstance(geometry, (Polygon, MultiPolygon)):
-            polygons.append(geometry)
-            continue
-        if isinstance(geometry, GeometryCollection):
-            polygons.extend(
-                part
-                for part in geometry.geoms
-                if isinstance(part, (Polygon, MultiPolygon)) and not part.is_empty
-            )
-    return polygons
+    return load_polygons_from_vector(path)
 
 
 def _normalize_polygons_to_image_space(
     polygons: list[Polygon | MultiPolygon],
 ) -> list[Polygon | MultiPolygon]:
-    if not polygons:
-        return polygons
-
-    min_y = min(polygon.bounds[1] for polygon in polygons if not polygon.is_empty)
-    max_y = max(polygon.bounds[3] for polygon in polygons if not polygon.is_empty)
-    if max_y <= 0 and min_y < 0:
-        return [
-            scale_geometry(polygon, xfact=1.0, yfact=-1.0, origin=(0.0, 0.0))
-            for polygon in polygons
-        ]
-
-    return polygons
+    return normalize_polygons_to_image_space(polygons)
 
 
 def _region_bounds(
     height: int, width: int, tile_size: int
 ) -> list[tuple[int, int, int, int]]:
-    if tile_size <= 0:
-        raise ValueError("tile_size must be > 0")
-
-    bounds: list[tuple[int, int, int, int]] = []
-    for y0 in range(0, height, tile_size):
-        y1 = min(y0 + tile_size, height)
-        for x0 in range(0, width, tile_size):
-            x1 = min(x0 + tile_size, width)
-            bounds.append((y0, y1, x0, x1))
-    return bounds
+    return region_bounds(height, width, tile_size)
 
 
 def _compute_region_coverages(
@@ -416,11 +310,7 @@ def _extract_padded_patch(
     patch_bounds: tuple[int, int, int, int],
     patch_size: int,
 ) -> np.ndarray:
-    y0, y1, x0, x1 = patch_bounds
-    patch = image[:, y0:y1, x0:x1]
-    padded = np.zeros((image.shape[0], patch_size, patch_size), dtype=image.dtype)
-    padded[:, : patch.shape[1], : patch.shape[2]] = patch
-    return padded
+    return extract_padded_patch_channel_first(image, patch_bounds, patch_size)
 
 
 def export_dataset(

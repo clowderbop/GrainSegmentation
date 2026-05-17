@@ -5,27 +5,19 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
+_SRC_ROOT = Path(__file__).resolve().parent.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
 
-VALID_SUFFIXES = {".tif", ".tiff"}
+from common.image_io import TIFF_SUFFIXES, to_channel_first_uint8
+
+
+VALID_SUFFIXES = TIFF_SUFFIXES
 
 
 def _to_channel_first_uint8(image: np.ndarray) -> np.ndarray:
-    if image.ndim != 3:
-        raise ValueError(
-            f"Expected a stacked TIFF with 3 dimensions, got shape {image.shape}."
-        )
-
-    image_uint8 = np.clip(image, 0, 255).astype(np.uint8)
-
-    if image_uint8.shape[0] % 3 == 0:
-        return image_uint8
-
-    if image_uint8.shape[-1] % 3 == 0:
-        return np.transpose(image_uint8, (2, 0, 1))
-
-    raise ValueError(
-        "Expected channel count divisible by 3 in either (channel, height, width) "
-        f"or (height, width, channel) order, got shape {image.shape}."
+    return to_channel_first_uint8(
+        image, channel_multiple=3, description="a stacked TIFF"
     )
 
 

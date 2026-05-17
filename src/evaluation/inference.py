@@ -1,16 +1,14 @@
+import sys
+from pathlib import Path
+
 import numpy as np
 import tensorflow as tf
 
+_SRC_ROOT = Path(__file__).resolve().parent.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
 
-def _compute_starts(size: int, patch_size: int, stride: int) -> list[int]:
-    if size <= patch_size:
-        return [0]
-
-    limit = size - patch_size
-    starts = list(range(0, limit + 1, stride))
-    if starts[-1] != limit:
-        starts.append(limit)
-    return starts
+from common.patching import compute_starts
 
 
 def predict_full_image(
@@ -36,8 +34,8 @@ def predict_full_image(
         if img.shape != base_shape:
             raise ValueError("All input images must share the same shape")
 
-    y_starts = _compute_starts(h, patch_size, stride)
-    x_starts = _compute_starts(w, patch_size, stride)
+    y_starts = compute_starts(h, patch_size, stride)
+    x_starts = compute_starts(w, patch_size, stride)
 
     padded_h = max(h, patch_size)
     padded_w = max(w, patch_size)

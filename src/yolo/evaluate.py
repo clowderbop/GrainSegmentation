@@ -30,6 +30,8 @@ from evaluation.reporting import (
     count_instances,
     json_safe_for_dump,
 )
+from common.geometry import load_image_space_polygons
+from common.image_io import load_single_channel_mask, validate_semantic_labels
 
 from config import variant_choices
 from instance_label_maps import (
@@ -44,8 +46,6 @@ from train import _parse_device
 from coco_instance_ap import (
     build_gt_annotations,
     evaluate_mask_ap,
-    load_polygons_from_gpkg,
-    normalize_polygons_to_image_space,
     object_predictions_to_coco_dt,
 )
 
@@ -584,38 +584,8 @@ def load_image_for_yolo(path: Path) -> np.ndarray:
 
 
 def load_semantic_patch_mask(path: Path) -> np.ndarray:
-    suffix = path.suffix.lower()
-    if suffix in {".tif", ".tiff"}:
-        with TiffFile(path) as tif:
-            arr = tif.series[0].asarray()
-        if arr.ndim == 3:
-            if arr.shape[0] == 1:
-                arr = arr[0]
-            elif arr.shape[2] == 1:
-                arr = arr[:, :, 0]
-            else:
-                raise ValueError(f"Mask TIFF must be single-channel: {path}")
-    else:
-        from PIL import Image
-
-        with Image.open(path) as im:
-            if im.mode not in ("L", "I", "I;16", "F"):
-                im = im.convert("L")
-            arr = np.asarray(im)
-    if arr.ndim != 2:
-        raise ValueError(f"Mask must be 2D: {path}")
-    if np.issubdtype(arr.dtype, np.floating):
-        if not np.all(np.isfinite(arr)):
-            raise ValueError(f"Mask must be finite: {path}")
-        rounded = np.rint(arr)
-        if not np.allclose(arr, rounded, rtol=0.0, atol=1e-4):
-            raise ValueError(f"Mask must have integer labels in [0, 2]: {path}")
-        mask_int = rounded.astype(np.int32)
-    else:
-        mask_int = arr.astype(np.int32)
-    if np.any((mask_int < 0) | (mask_int > 2)):
-        raise ValueError(f"Mask values must be in [0, 2]: {path}")
-    return mask_int
+    arr = load_single_channel_mask(path)
+    return validate_semantic_labels(arr, path, allow_float=True)
 
 
 def _optional_metric_attr(obj: Any, name: str) -> Any:
@@ -894,7 +864,7 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
 
         image = load_image_for_yolo(tiff_path)
         height, width = image.shape[:2]
-        polygons = normalize_polygons_to_image_space(load_polygons_from_gpkg(gpkg_path))
+        polygons = load_image_space_polygons(gpkg_path)
         gt_anns = build_gt_annotations(
             polygons,
             image_id=image_id,

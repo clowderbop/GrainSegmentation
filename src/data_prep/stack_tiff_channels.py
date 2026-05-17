@@ -5,8 +5,14 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
+_SRC_ROOT = Path(__file__).resolve().parent.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
 
-VALID_SUFFIXES = {".tif", ".tiff"}
+from common.image_io import TIFF_SUFFIXES, to_channel_first_uint8
+
+
+VALID_SUFFIXES = TIFF_SUFFIXES
 
 
 def _discover_tiff_files(input_dir: Path, output_file: Path) -> list[Path]:
@@ -21,22 +27,11 @@ def _discover_tiff_files(input_dir: Path, output_file: Path) -> list[Path]:
 
 
 def _to_channel_first_uint8(image: np.ndarray) -> np.ndarray:
-    if image.ndim != 3:
-        raise ValueError(
-            f"Expected an RGB image with 3 dimensions, got shape {image.shape}."
-        )
-
-    image_uint8 = np.clip(image, 0, 255).astype(np.uint8)
-
-    if image_uint8.shape[-1] == 3:
-        return np.transpose(image_uint8, (2, 0, 1))
-
-    if image_uint8.shape[0] == 3:
-        return image_uint8
-
-    raise ValueError(
-        "Expected an RGB image with 3 channels in either (height, width, channel) "
-        f"or (channel, height, width) order, got shape {image.shape}."
+    return to_channel_first_uint8(
+        image,
+        exact_channels=3,
+        description="an RGB image",
+        prefer_channel_last=True,
     )
 
 

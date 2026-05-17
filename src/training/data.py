@@ -1,37 +1,28 @@
 import math
 import os
+import sys
 from glob import glob
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from PIL import Image
 import tensorflow as tf
 
+_SRC_ROOT = Path(__file__).resolve().parent.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from common.image_io import (
+    load_rgb_float_image,
+    load_single_channel_mask,
+    validate_image_mask_sample,
+    validate_semantic_labels,
+)
+from common.patching import build_coverage_bin_ids, compute_starts_tf, region_bounds
+
 Image.MAX_IMAGE_PIXELS = None
 MIN_VALIDATION_COVERAGE = 0.10
-
-
-def _compute_starts_tf(
-    size: tf.Tensor, patch_size: tf.Tensor, stride: tf.Tensor
-) -> tf.Tensor:
-    size = tf.cast(size, tf.int32)
-    patch_size = tf.cast(patch_size, tf.int32)
-    stride = tf.cast(stride, tf.int32)
-
-    def get_starts():
-        limit = size - patch_size
-        starts = tf.range(0, limit + 1, stride)
-        last_start = starts[-1]
-
-        return tf.cond(
-            tf.equal(last_start, limit),
-            lambda: starts,
-            lambda: tf.concat([starts, [limit]], axis=0),
-        )
-
-    return tf.cond(
-        size <= patch_size, lambda: tf.constant([0], dtype=tf.int32), get_starts
-    )
 
 
 def _tf_augment(
@@ -77,45 +68,21 @@ def _tf_augment(
 
 
 def _load_rgb_image(path: str) -> np.ndarray:
-    with Image.open(path) as img:
-        img = img.convert("RGB")
-        return np.asarray(img, dtype=np.float32) / 255.0
+    return load_rgb_float_image(path)
 
 
 def _load_raster_mask(path: str) -> np.ndarray:
-    with Image.open(path) as img:
-        if img.mode not in ("L", "I", "I;16", "F"):
-            img = img.convert("L")
-        mask = np.asarray(img)
-    if mask.ndim != 2:
-        raise ValueError(f"Raster mask must be 2D: {path}")
-    return mask
+    return load_single_channel_mask(path, allow_tiff=False)
 
 
 def _validate_loaded_sample(
     images: List[np.ndarray], mask: np.ndarray, mask_path: str
 ) -> None:
-    if not images:
-        raise ValueError("Sample must contain at least one input image.")
-
-    expected_shape = images[0].shape
-    for img in images[1:]:
-        if img.shape != expected_shape:
-            raise ValueError("All input images must share the same shape.")
-
-    image_shape = expected_shape[:2]
-    if mask.shape != image_shape:
-        raise ValueError(
-            f"Mask shape {mask.shape} does not match image shape {image_shape} "
-            f"for {mask_path}"
-        )
+    validate_image_mask_sample(images, mask, mask_path)
 
 
 def _validate_mask_labels(mask: np.ndarray, mask_path: str) -> np.ndarray:
-    mask_int = mask.astype(np.int32)
-    if not np.all(mask == mask_int) or np.any((mask_int < 0) | (mask_int > 2)):
-        raise ValueError(f"Mask values must be in [0, 2] for {mask_path}")
-    return mask_int
+    return validate_semantic_labels(mask, mask_path)
 
 
 def _validate_sample_inputs(samples: List[Dict[str, Any]], num_inputs: int) -> None:
@@ -184,18 +151,6 @@ def list_samples(
     return samples
 
 
-def _grid_regions(
-    height: int, width: int, tile_size: int
-) -> List[Tuple[int, int, int, int]]:
-    regions = []
-    for y0 in range(0, height, tile_size):
-        for x0 in range(0, width, tile_size):
-            y1 = min(y0 + tile_size, height)
-            x1 = min(x0 + tile_size, width)
-            regions.append((y0, y1, x0, x1))
-    return regions
-
-
 def _build_region_samples_and_coverages(
     samples: List[Dict[str, Any]], tile_size: int
 ) -> Tuple[List[Dict[str, Any]], np.ndarray]:
@@ -208,7 +163,7 @@ def _build_region_samples_and_coverages(
     for sample in samples:
         mask = _load_raster_mask(sample["mask"])
         height, width = mask.shape
-        regions = _grid_regions(height, width, tile_size)
+        regions = region_bounds(height, width, tile_size)
         if not regions:
             continue
         for y0, y1, x0, x1 in regions:
@@ -221,30 +176,6 @@ def _build_region_samples_and_coverages(
 
     coverages_arr = np.array(coverages, dtype=np.float32)
     return region_samples, coverages_arr
-
-
-def _build_coverage_bin_ids(
-    coverages_arr: np.ndarray,
-    *,
-    coverage_bins: int,
-    group_count: int,
-) -> np.ndarray:
-    total = coverages_arr.shape[0]
-    if total <= 0:
-        raise ValueError("At least one region is required for splitting.")
-
-    if group_count <= 0:
-        raise ValueError("group_count must be > 0")
-
-    bins = min(coverage_bins, max(1, total // group_count))
-    if bins <= 1:
-        return np.zeros(total, dtype=int)
-
-    bin_edges = np.quantile(coverages_arr, np.linspace(0.0, 1.0, bins + 1))
-    if np.allclose(bin_edges, bin_edges[0]):
-        return np.zeros(total, dtype=int)
-
-    return np.digitize(coverages_arr, bin_edges[1:-1], right=True)
 
 
 def create_spatial_holdout_split(
@@ -277,7 +208,7 @@ def create_spatial_holdout_split(
     val_count = math.ceil(total * validation_fraction)
     val_count = max(1, min(val_count, total - 1))
     group_count = max(2, math.ceil(1 / validation_fraction))
-    bin_ids = _build_coverage_bin_ids(
+    bin_ids = build_coverage_bin_ids(
         coverages_arr[eligible_indices],
         coverage_bins=coverage_bins,
         group_count=group_count,
@@ -324,7 +255,7 @@ def create_spatial_cv_folds(
     if total < n_splits:
         raise ValueError(f"Not enough regions ({total}) for {n_splits} splits.")
 
-    bin_ids = _build_coverage_bin_ids(
+    bin_ids = build_coverage_bin_ids(
         coverages_arr,
         coverage_bins=coverage_bins,
         group_count=n_splits,
@@ -432,12 +363,12 @@ def build_dataset(
         height = shape[0]
         width = shape[1]
 
-        y_starts = _compute_starts_tf(
+        y_starts = compute_starts_tf(
             height,
             tf.constant(patch_size, dtype=tf.int32),
             tf.constant(stride, dtype=tf.int32),
         )
-        x_starts = _compute_starts_tf(
+        x_starts = compute_starts_tf(
             width,
             tf.constant(patch_size, dtype=tf.int32),
             tf.constant(stride, dtype=tf.int32),

@@ -2,72 +2,43 @@ from __future__ import annotations
 
 import contextlib
 import io
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import geopandas as gpd
 import numpy as np
 from pycocotools import mask as mask_utils
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-from shapely.affinity import scale as scale_geometry
 from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
 from shapely.geometry.polygon import orient
+
+_SRC_ROOT = Path(__file__).resolve().parent.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from common.geometry import (
+    iter_polygon_parts,
+    load_polygons_from_vector,
+    normalize_polygons_to_image_space as _normalize_polygons_to_image_space,
+)
 
 
 def _iter_polygon_parts(
     geometry: Polygon | MultiPolygon | GeometryCollection,
 ) -> list[Polygon]:
-    if geometry.is_empty:
-        return []
-    cleaned = geometry.buffer(0)
-    if cleaned.is_empty:
-        return []
-    if isinstance(cleaned, Polygon):
-        return [cleaned]
-    if isinstance(cleaned, MultiPolygon):
-        return [part for part in cleaned.geoms if not part.is_empty]
-    if isinstance(cleaned, GeometryCollection):
-        return [
-            part
-            for part in cleaned.geoms
-            if isinstance(part, Polygon) and not part.is_empty
-        ]
-    return []
+    return iter_polygon_parts(geometry)
 
 
 def load_polygons_from_gpkg(path: Path) -> list[Polygon | MultiPolygon]:
-    geodata = gpd.read_file(path)
-    polygons: list[Polygon | MultiPolygon] = []
-    for geometry in geodata.geometry:
-        if geometry is None or geometry.is_empty:
-            continue
-        if isinstance(geometry, (Polygon, MultiPolygon)):
-            polygons.append(geometry)
-            continue
-        if isinstance(geometry, GeometryCollection):
-            polygons.extend(
-                part
-                for part in geometry.geoms
-                if isinstance(part, (Polygon, MultiPolygon)) and not part.is_empty
-            )
-    return polygons
+    return load_polygons_from_vector(path)
 
 
 def normalize_polygons_to_image_space(
     polygons: list[Polygon | MultiPolygon],
 ) -> list[Polygon | MultiPolygon]:
-    if not polygons:
-        return polygons
-    min_y = min(p.bounds[1] for p in polygons if not p.is_empty)
-    max_y = max(p.bounds[3] for p in polygons if not p.is_empty)
-    if max_y <= 0 and min_y < 0:
-        return [
-            scale_geometry(p, xfact=1.0, yfact=-1.0, origin=(0.0, 0.0))
-            for p in polygons
-        ]
-    return polygons
+    return _normalize_polygons_to_image_space(polygons)
 
 
 def clip_polygon_to_hw(polygon: Polygon, height: int, width: int) -> list[Polygon]:

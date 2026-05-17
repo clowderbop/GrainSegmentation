@@ -1,74 +1,29 @@
 from __future__ import annotations
 
 import argparse
-import re
 import shutil
 import sys
 from pathlib import Path
 
-import numpy as np
 import tifffile
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
+_SRC_ROOT = _SCRIPT_DIR.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
 
-from split_tiff_gpkg_to_yolo import _region_bounds, load_image_channel_first
+from common.image_io import load_tiff_channel_first
+from common.patching import (
+    extract_padded_patch_2d,
+    parse_region_patch_stem,
+    tile_patch_bounds,
+)
 
-PATCH_STEM_RE = re.compile(r"^region_(\d+)_y(\d+)_x(\d+)$")
-
-
-def parse_patch_stem(name_without_ext: str) -> tuple[int, int, int]:
-    match = PATCH_STEM_RE.match(name_without_ext)
-    if match is None:
-        raise ValueError(
-            f"Expected stem like region_0123_y01234_x05678, got: {name_without_ext!r}"
-        )
-    return int(match.group(1)), int(match.group(2)), int(match.group(3))
-
-
-def compute_tile_patch_bounds(
-    region_idx: int,
-    patch_y0: int,
-    patch_x0: int,
-    *,
-    height: int,
-    width: int,
-    tile_size: int,
-    patch_size: int,
-) -> tuple[int, int, int, int]:
-    regions = _region_bounds(height, width, tile_size)
-    if region_idx < 0 or region_idx >= len(regions):
-        raise ValueError(
-            f"region_idx {region_idx} out of range for "
-            f"{len(regions)} tiles (H={height}, W={width}, tile_size={tile_size})"
-        )
-    ry0, ry1, rx0, rx1 = regions[region_idx]
-    if patch_y0 < ry0 or patch_y0 >= ry1 or patch_x0 < rx0 or patch_x0 >= rx1:
-        raise ValueError(
-            f"Patch origin (y={patch_y0}, x={patch_x0}) outside "
-            f"region {region_idx} bounds y=[{ry0},{ry1}), x=[{rx0},{rx1})"
-        )
-    patch_y1 = min(patch_y0 + patch_size, ry1)
-    patch_x1 = min(patch_x0 + patch_size, rx1)
-    return patch_y0, patch_y1, patch_x0, patch_x1
-
-
-def extract_padded_patch_2d(
-    mask: np.ndarray,
-    y0: int,
-    y1: int,
-    x0: int,
-    x1: int,
-    patch_size: int,
-) -> np.ndarray:
-    if mask.ndim != 2:
-        raise ValueError(f"Mask must be 2D, got shape {mask.shape}")
-    patch = mask[y0:y1, x0:x1]
-    out = np.zeros((patch_size, patch_size), dtype=mask.dtype)
-    h, w = patch.shape
-    out[:h, :w] = patch
-    return out
+load_image_channel_first = load_tiff_channel_first
+parse_patch_stem = parse_region_patch_stem
+compute_tile_patch_bounds = tile_patch_bounds
 
 
 def _raster_hw(path: Path) -> tuple[int, int]:

@@ -1,21 +1,17 @@
 import argparse
 import json
 import os
-import re
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
-import tensorflow as tf
 from PIL import Image
 
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from training.data import list_samples, _load_rgb_image, _load_raster_mask
-from training.model import weighted_crossentropy
-from evaluation.inference import predict_full_image
 from evaluation.instance_masks import (
     semantic_to_instance_label_map,
     semantic_to_instance_label_map_watershed,
@@ -27,6 +23,9 @@ from evaluation.reporting import (
     count_instances,
     json_safe_for_dump,
 )
+from common.geometry import load_image_space_polygons
+from common.image_io import validate_image_mask_sample, validate_semantic_labels
+from common.patching import sample_origin_xy
 
 
 def parse_args():
@@ -178,31 +177,8 @@ def _load_cached_prediction_png(path: str, expected_hw: tuple[int, int]) -> np.n
 def _validate_sample_data(
     images: list[np.ndarray], mask: np.ndarray, mask_path: str
 ) -> np.ndarray:
-    if not images:
-        raise ValueError("Sample must contain at least one input image.")
-
-    expected_shape = images[0].shape
-    if len(expected_shape) != 3:
-        raise ValueError("All input images must have shape (H, W, C).")
-    for img in images[1:]:
-        if img.shape != expected_shape:
-            raise ValueError("All input images must share the same shape.")
-
-    if mask.ndim != 2:
-        raise ValueError(f"Raster mask must be 2D: {mask_path}")
-
-    image_shape = expected_shape[:2]
-    if mask.shape != image_shape:
-        raise ValueError(
-            f"Mask shape {mask.shape} does not match image shape {image_shape} "
-            f"for {mask_path}"
-        )
-
-    mask_int = mask.astype(np.int32)
-    if not np.all(mask == mask_int) or np.any((mask_int < 0) | (mask_int > 2)):
-        raise ValueError(f"Mask values must be in [0, 2] for {mask_path}")
-
-    return mask_int
+    validate_image_mask_sample(images, mask, mask_path)
+    return validate_semantic_labels(mask, mask_path)
 
 
 def _instances_for_metrics(
@@ -221,23 +197,8 @@ def _instances_for_metrics(
     )
 
 
-PATCH_STEM_RE = re.compile(r"^region_\d+_y(\d+)_x(\d+)$")
-
-
-def _sample_origin_xy(sample_id: str) -> tuple[int, int]:
-    match = PATCH_STEM_RE.match(sample_id)
-    if match is None:
-        return 0, 0
-    return int(match.group(2)), int(match.group(1))
-
-
 def _load_gpkg_polygons(gpkg_path: Path):
-    from yolo.coco_instance_ap import (
-        load_polygons_from_gpkg,
-        normalize_polygons_to_image_space,
-    )
-
-    return normalize_polygons_to_image_space(load_polygons_from_gpkg(gpkg_path))
+    return load_image_space_polygons(gpkg_path)
 
 
 def _gpkg_instance_map(
@@ -252,7 +213,7 @@ def _gpkg_instance_map(
     from yolo.coco_instance_ap import build_gt_annotations
     from yolo.instance_label_maps import gt_annotations_to_instance_map
 
-    origin_x, origin_y = _sample_origin_xy(sample_id)
+    origin_x, origin_y = sample_origin_xy(sample_id)
     if origin_x or origin_y:
         polygons = [
             translate(p, xoff=-float(origin_x), yoff=-float(origin_y))
@@ -284,6 +245,8 @@ def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> 
 
 def main():
     args = parse_args()
+    from training.data import list_samples, _load_rgb_image, _load_raster_mask
+
     gt_gpkg_path = Path(args.gt_gpkg).resolve()
     gt_gpkg_polygons = _load_gpkg_polygons(gt_gpkg_path)
 
@@ -308,11 +271,15 @@ def main():
     if args.save_predictions_dir:
         os.makedirs(args.save_predictions_dir, exist_ok=True)
 
-    model: tf.keras.Model | None = None
+    model: Any | None = None
 
-    def _ensure_model() -> tf.keras.Model:
+    def _ensure_model() -> Any:
         nonlocal model
         if model is None:
+            import tensorflow as tf
+
+            from training.model import weighted_crossentropy
+
             print(f"Loading model from {args.model_path}...")
             model = tf.keras.models.load_model(
                 args.model_path,
@@ -357,6 +324,8 @@ def main():
                 )
 
         if pred_classes is None:
+            from evaluation.inference import predict_full_image
+
             t_inf = time.perf_counter()
             pred_classes, _ = predict_full_image(
                 model=_ensure_model(),

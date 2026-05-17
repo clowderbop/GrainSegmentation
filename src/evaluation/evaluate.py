@@ -8,8 +8,6 @@ from typing import Any
 
 import numpy as np
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
 from common.geometry import load_image_space_polygons
 from common.ground_truth import scene_polygons_to_patch_instance_map
 from common.samples import list_samples, load_rgb_image, load_raster_mask

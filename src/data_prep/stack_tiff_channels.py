@@ -5,10 +5,6 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-_SRC_ROOT = Path(__file__).resolve().parent.parent
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
-
 from common.image_io import TIFF_SUFFIXES, to_channel_first_uint8
 
 

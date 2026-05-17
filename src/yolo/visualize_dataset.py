@@ -1,24 +1,19 @@
 import argparse
 import random
-import sys
 from pathlib import Path
 
 import matplotlib
 import numpy as np
 from matplotlib import patches
 
-_SRC_ROOT = Path(__file__).resolve().parent.parent
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
-
 from common.image_io import load_tiff_channel_first
-from dataset_yaml import (
+from yolo.dataset_yaml import (
     default_labels_dir as default_label_dir_for_split,
     label_map_from_yaml_names,
     load_yaml_dataset_config,
     resolve_split_dir,
 )
-from yolo_seg_label_io import read_yolo_seg_label_rows
+from yolo.yolo_seg_label_io import read_yolo_seg_label_rows
 
 
 matplotlib.use("Agg")

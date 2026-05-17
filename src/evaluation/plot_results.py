@@ -1,16 +1,10 @@
 import argparse
 import json
 import os
-import sys
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
-
-_SRC_ROOT = Path(__file__).resolve().parent.parent
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
 
 from common.image_io import load_tiff_rgb_hwc_float, load_tiff_single_channel_mask
 

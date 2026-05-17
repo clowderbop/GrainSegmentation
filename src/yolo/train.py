@@ -2,8 +2,8 @@ import argparse
 from pathlib import Path
 import sys
 
-from config import variant_choices
-from pipeline import (
+from yolo.config import variant_choices
+from yolo.pipeline import (
     default_project_dir,
     default_resume_checkpoint,
     resolve_variant_paths,

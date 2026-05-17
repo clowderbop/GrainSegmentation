@@ -7,13 +7,6 @@ from pathlib import Path
 
 import tifffile
 
-_SCRIPT_DIR = Path(__file__).resolve().parent
-if str(_SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPT_DIR))
-_SRC_ROOT = _SCRIPT_DIR.parent
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
-
 from common.image_io import load_tiff_channel_first
 from common.patching import (
     extract_padded_patch_2d,

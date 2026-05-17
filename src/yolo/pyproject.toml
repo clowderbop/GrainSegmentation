@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "YOLO26 segmentation training pipeline for GrainSegmentation"
 requires-python = ">=3.12"
 dependencies = [
+    "evaluation",
     "grainsegmentation-common",
     "geopandas>=1.0.0",
     "pycocotools>=2.0.8",
@@ -15,4 +16,15 @@ dependencies = [
 ]
 
 [tool.uv.sources]
+evaluation = { path = "../evaluation", editable = true }
 grainsegmentation-common = { path = "../common", editable = true }
+
+[build-system]
+requires = ["setuptools>=81.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["yolo"]
+
+[tool.setuptools.package-dir]
+yolo = "."

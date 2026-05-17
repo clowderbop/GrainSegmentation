@@ -362,9 +362,9 @@ cp -r "$IMAGE_DIR"/. "$LOCAL_IMAGE_DIR"/
 cp -r "$MASK_DIR"/. "$LOCAL_MASK_DIR"/
 cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 
-cd "$REPO_ROOT/src/training"
+cd "$REPO_ROOT/src/evaluation"
 echo "Syncing evaluation environment..."
-uv sync
+uv sync --extra unet
 
 WHEEL_PATH="$SCRATCH/GrainSeg/wheels/$TF_WHEEL_NAME"
 require_file "$WHEEL_PATH" "TensorFlow wheel not found"
@@ -444,7 +444,7 @@ for i in "${!MODEL_PATHS[@]}"; do
     mkdir -p "$pred_dir"
 
     eval_cmd=(
-        uv run --no-sync python -u ../evaluation/evaluate.py
+        uv run --no-sync python -u -m evaluation.evaluate
         --model-path "$model_path"
         --image-dir "$LOCAL_IMAGE_DIR"
         --mask-dir "$LOCAL_MASK_DIR"
@@ -513,7 +513,7 @@ done
 
 echo "Generating comparison plots..."
 plot_cmd=(
-    uv run --no-sync python -u ../evaluation/plot_results.py
+    uv run --no-sync python -u -m evaluation.plot_results
     --json-files
     "${JSON_FILES[@]}"
     --labels
@@ -523,7 +523,7 @@ plot_cmd=(
 "${plot_cmd[@]}"
 
 overlay_cmd=(
-    uv run --no-sync python -u ../evaluation/plot_results.py
+    uv run --no-sync python -u -m evaluation.plot_results
     --image-path "$LOCAL_PPL_IMAGE"
     --gt-path "$LOCAL_GT_PATH"
     --pred-paths

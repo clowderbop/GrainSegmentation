@@ -1,12 +1,5 @@
-import sys
-from pathlib import Path
-
 import numpy as np
 import tensorflow as tf
-
-_SRC_ROOT = Path(__file__).resolve().parent.parent
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
 
 from common.patching import compute_starts
 

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from config import default_dataset_root, default_run_root, get_variant_config
+from yolo.config import default_dataset_root, default_run_root, get_variant_config
 
 from ultralytics import settings
 

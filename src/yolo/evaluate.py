@@ -12,11 +12,6 @@ import numpy as np
 from tifffile import TiffFile
 
 
-_YOLO_ROOT = Path(__file__).resolve().parent
-_SRC_ROOT = _YOLO_ROOT.parent
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
-
 from evaluation.metrics import (
     compute_aji,
     compute_instance_metrics_dict,
@@ -37,21 +32,19 @@ from common.instance_maps import (
     gt_annotations_to_instance_map,
     segmentation_to_binary_mask,
 )
-
-from config import variant_choices
-from dataset_yaml import (
-    default_labels_dir,
-    load_yaml_dataset_config,
-    resolve_split_dir,
-)
-from pipeline import resolve_variant_paths
-from train import _parse_device
-
-from coco_instance_ap import (
+from yolo.coco_instance_ap import (
     build_gt_annotations,
     evaluate_mask_ap,
     object_predictions_to_coco_dt,
 )
+from yolo.config import variant_choices
+from yolo.dataset_yaml import (
+    default_labels_dir,
+    load_yaml_dataset_config,
+    resolve_split_dir,
+)
+from yolo.pipeline import resolve_variant_paths
+from yolo.train import _parse_device
 
 
 def _visualization_image(image: np.ndarray) -> np.ndarray:

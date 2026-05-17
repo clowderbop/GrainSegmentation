@@ -93,9 +93,9 @@ cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 LOCAL_MODEL_PATH="$LOCAL_MODEL_DIR/$(basename "$MODEL_PATH")"
 cp -f "$MODEL_PATH" "$LOCAL_MODEL_PATH"
 
-cd "$REPO_ROOT/src/training"
+cd "$REPO_ROOT/src/evaluation"
 echo "Syncing evaluation environment..."
-uv sync
+uv sync --extra unet
 
 WHEEL_PATH="$SCRATCH/GrainSeg/wheels/$TF_WHEEL_NAME"
 require_file "$WHEEL_PATH" "TensorFlow wheel not found"
@@ -104,7 +104,7 @@ uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~
 
 echo "Running evaluate.py on patch directories (TMPDIR)..."
 eval_cmd=(
-    uv run --no-sync python -u ../evaluation/evaluate.py
+    uv run --no-sync python -u -m evaluation.evaluate
     --model-type unet
     --variant "$VARIANT"
     --model-path "$LOCAL_MODEL_PATH"

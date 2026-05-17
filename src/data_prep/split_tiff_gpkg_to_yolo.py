@@ -1,6 +1,5 @@
 import argparse
 import math
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -9,10 +8,6 @@ import tifffile
 from shapely.errors import GEOSException
 from shapely.geometry import MultiPolygon, Polygon, box
 from shapely.geometry.polygon import orient
-
-_SRC_ROOT = Path(__file__).resolve().parent.parent
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
 
 from common.geometry import (
     iter_polygon_parts,

@@ -6,8 +6,8 @@ import tensorflow as tf
 import keras_tuner as kt
 from keras.optimizers import Adam
 import warnings
-from data import build_dataset, list_samples, create_spatial_holdout_split
-from model import build_unet, initialize_from_checkpoint, weighted_crossentropy
+from training.data import build_dataset, list_samples, create_spatial_holdout_split
+from training.model import build_unet, initialize_from_checkpoint, weighted_crossentropy
 
 warnings.filterwarnings("ignore", message="Your input ran out of data")
 

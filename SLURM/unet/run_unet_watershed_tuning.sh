@@ -126,9 +126,9 @@ JOB_TAG="${SLURM_JOB_ID:-manual}"
 OUT_CSV="$OUTPUT_DIR/watershed_grid_${JOB_TAG}.csv"
 OUT_JSON="$OUTPUT_DIR/watershed_best_${JOB_TAG}.json"
 
-cd "$REPO_ROOT/src/training"
+cd "$REPO_ROOT/src/evaluation"
 echo "Syncing evaluation/training environment..."
-uv sync
+uv sync --extra unet
 
 WHEEL_PATH="$SCRATCH/GrainSeg/wheels/$TF_WHEEL_NAME"
 require_file "$WHEEL_PATH" "TensorFlow wheel not found"
@@ -136,7 +136,7 @@ echo "Installing TensorFlow wheel..."
 uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~=12.8.0 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-cusolver-cu12 nvidia-cuda-nvcc-cu12 nvidia-cuda-nvrtc-cu12 "$WHEEL_PATH"
 
 TUNE_CMD=(
-    uv run --no-sync python -u ../evaluation/tune_watershed.py
+    uv run --no-sync python -u -m evaluation.tune_watershed
     --image-dir "$LOCAL_IMAGE_DIR"
     --mask-dir "$LOCAL_MASK_DIR"
     --gt-gpkg "$LOCAL_GT_GPKG"

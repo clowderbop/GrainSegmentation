@@ -817,7 +817,7 @@ wheels = [
 [[package]]
 name = "training-pipeline"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "grainsegmentation-common" },
     { name = "keras-tuner" },

@@ -1,7 +1,6 @@
 import argparse
-import os
-import sys
-from train import train_model
+
+from training.train import train_model
 
 
 def _print_start_message(
@@ -139,9 +138,6 @@ def main(argv: list[str] | None = None) -> None:
         raise ValueError("--patch-overlap must be in [0, 1).")
     if args.validation_fraction <= 0 or args.validation_fraction >= 1:
         raise ValueError("--validation-fraction must be in (0, 1).")
-
-    current_dir = os.path.dirname(__file__)
-    sys.path.append(current_dir)
 
     split_tile_size = args.split_tile_size or args.patch_size * 2
     stride = int(args.patch_size * (1 - args.patch_overlap))

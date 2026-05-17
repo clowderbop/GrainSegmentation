@@ -5,16 +5,12 @@ import argparse
 import csv
 import itertools
 import json
-import os
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import numpy as np
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from common.geometry import load_image_space_polygons
 from common.ground_truth import polygons_to_instance_map

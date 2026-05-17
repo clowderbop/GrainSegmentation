@@ -12,5 +12,19 @@ dependencies = [
     "scipy>=1.17.1",
 ]
 
+[project.optional-dependencies]
+unet = ["training-pipeline"]
+
 [tool.uv.sources]
 grainsegmentation-common = { path = "../common", editable = true }
+training-pipeline = { path = "../training", editable = true }
+
+[build-system]
+requires = ["setuptools>=81.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["evaluation"]
+
+[tool.setuptools.package-dir]
+evaluation = "."

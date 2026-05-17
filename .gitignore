@@ -6,6 +6,7 @@ notes.md
 logs/
 *.gpkg
 __pycache__/
+*.egg-info/
 .worktrees/
 docs/
 *.pt

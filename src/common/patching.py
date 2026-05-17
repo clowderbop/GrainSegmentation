@@ -72,11 +72,22 @@ def parse_region_patch_stem(name_without_ext: str) -> tuple[int, int, int]:
 
 
 def sample_origin_xy(sample_id: str) -> tuple[int, int]:
+    """Return ``(x0, y0)`` for a patch stem like ``region_*_y*_x*``.
+
+    Raises ``ValueError`` if ``sample_id`` does not match the patch naming scheme.
+    Use :func:`sample_origin_xy_or_whole_image` for full-section rasters whose
+    file stems are not patch ids (coordinates align at the section origin).
+    """
+    _, y0, x0 = parse_region_patch_stem(sample_id)
+    return x0, y0
+
+
+def sample_origin_xy_or_whole_image(sample_id: str) -> tuple[int, int]:
+    """Patch origin from stem, or ``(0, 0)`` when the stem is not a patch id."""
     try:
-        _, y0, x0 = parse_region_patch_stem(sample_id)
+        return sample_origin_xy(sample_id)
     except ValueError:
         return 0, 0
-    return x0, y0
 
 
 def tile_patch_bounds(

@@ -14,7 +14,7 @@ from common.coco_annotations import build_gt_annotations
 from common.geometry import load_image_space_polygons
 from common.image_io import validate_image_mask_sample, validate_semantic_labels
 from common.instance_maps import gt_annotations_to_instance_map
-from common.patching import sample_origin_xy
+from common.patching import sample_origin_xy, sample_origin_xy_or_whole_image
 from evaluation.instance_masks import (
     semantic_to_instance_label_map,
     semantic_to_instance_label_map_watershed,
@@ -52,6 +52,13 @@ def parse_args():
     )
     parser.add_argument(
         "--save-predictions-dir",
+    )
+    parser.add_argument(
+        "--gt-origin",
+        choices=("patch_stem", "whole_image"),
+        default="patch_stem",
+        help="GPKG-to-raster alignment: patch_stem requires region_*_y*_x* ids "
+        "(fail if missing); whole_image uses (0,0) for non-patch stems.",
     )
     parser.add_argument(
         "--num-inputs",
@@ -162,6 +169,40 @@ def _prediction_tiff_path(save_dir: str, sample_id: str) -> str:
     return os.path.join(save_dir, f"{sample_id}_pred.tif")
 
 
+PREDICTION_CACHE_SCHEMA_VERSION = 1
+
+
+def _prediction_meta_path(save_dir: str, sample_id: str) -> str:
+    return os.path.join(save_dir, f"{sample_id}_pred.meta.json")
+
+
+def _prediction_cache_record(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "schema_version": PREDICTION_CACHE_SCHEMA_VERSION,
+        "model_path": str(Path(args.model_path).resolve()),
+        "patch_size": args.patch_size,
+        "stride": args.stride,
+        "batch_size": args.batch_size,
+        "num_inputs": args.num_inputs,
+        "image_suffixes": list(args.image_suffixes),
+    }
+
+
+def _validate_prediction_cache(meta: dict[str, Any], args: argparse.Namespace) -> None:
+    expected = _prediction_cache_record(args)
+    if meta.get("schema_version") != PREDICTION_CACHE_SCHEMA_VERSION:
+        raise ValueError(
+            f"Cache schema_version {meta.get('schema_version')!r} != "
+            f"{PREDICTION_CACHE_SCHEMA_VERSION}"
+        )
+    for key in expected:
+        if meta.get(key) != expected[key]:
+            raise ValueError(
+                f"Cache mismatch for {key!r}: cached {meta.get(key)!r} != "
+                f"current {expected[key]!r}"
+            )
+
+
 def _load_cached_prediction_tiff(path: str, expected_hw: tuple[int, int]) -> np.ndarray:
     import tifffile
 
@@ -216,10 +257,14 @@ def _gpkg_instance_map(
     sample_id: str,
     height: int,
     width: int,
+    gt_origin_mode: str,
 ) -> np.ndarray:
     from shapely.affinity import translate
 
-    origin_x, origin_y = sample_origin_xy(sample_id)
+    if gt_origin_mode == "whole_image":
+        origin_x, origin_y = sample_origin_xy_or_whole_image(sample_id)
+    else:
+        origin_x, origin_y = sample_origin_xy(sample_id)
     if origin_x or origin_y:
         polygons = [
             translate(p, xoff=-float(origin_x), yoff=-float(origin_y)) for p in polygons
@@ -318,13 +363,35 @@ def main():
 
         if args.save_predictions_dir:
             cache_path = _prediction_tiff_path(args.save_predictions_dir, sample_id)
+            meta_path = _prediction_meta_path(args.save_predictions_dir, sample_id)
             if os.path.isfile(cache_path):
-                print(f"Reusing cached prediction: {cache_path}")
-                t_cache = time.perf_counter()
-                pred_classes = _load_cached_prediction_tiff(cache_path, expected_hw)
-                print(
-                    f"  Loaded cached prediction: {time.perf_counter() - t_cache:.2f}s"
-                )
+                if not os.path.isfile(meta_path):
+                    print(
+                        "Cached prediction TIFF exists but metadata sidecar is missing "
+                        f"({meta_path}); recomputing.",
+                        file=sys.stderr,
+                    )
+                else:
+                    try:
+                        with open(meta_path, encoding="utf-8") as mf:
+                            meta = json.load(mf)
+                        _validate_prediction_cache(meta, args)
+                    except (OSError, json.JSONDecodeError, ValueError) as e:
+                        print(
+                            f"Invalid or incompatible prediction cache metadata "
+                            f"({meta_path}): {e}; recomputing.",
+                            file=sys.stderr,
+                        )
+                    else:
+                        print(f"Reusing cached prediction: {cache_path}")
+                        t_cache = time.perf_counter()
+                        pred_classes = _load_cached_prediction_tiff(
+                            cache_path, expected_hw
+                        )
+                        print(
+                            f"  Loaded cached prediction: "
+                            f"{time.perf_counter() - t_cache:.2f}s"
+                        )
 
         if pred_classes is None:
             from evaluation.inference import predict_full_image
@@ -345,11 +412,18 @@ def main():
                 out_img_path = _prediction_tiff_path(
                     args.save_predictions_dir, sample_id
                 )
+                out_meta_path = _prediction_meta_path(
+                    args.save_predictions_dir, sample_id
+                )
                 tifffile.imwrite(
                     out_img_path,
                     pred_classes.astype(np.uint8),
                     compression="deflate",
                 )
+                cache_meta = _prediction_cache_record(args)
+                with open(out_meta_path, "w", encoding="utf-8") as mf:
+                    json.dump(cache_meta, mf, indent=2, sort_keys=True)
+                    mf.write("\n")
 
         t_inst = time.perf_counter()
         true_instances = _gpkg_instance_map(
@@ -357,6 +431,7 @@ def main():
             sample_id=sample_id,
             height=height,
             width=width,
+            gt_origin_mode=args.gt_origin,
         )
         pred_instances = _instances_for_metrics(pred_classes, args)
         print(f"  Instance maps (GT + pred): {time.perf_counter() - t_inst:.2f}s")

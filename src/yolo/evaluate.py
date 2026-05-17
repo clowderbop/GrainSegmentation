@@ -765,9 +765,10 @@ def _load_sahi_pairs(args: argparse.Namespace) -> list[tuple[Path, Path]]:
     return [(args.test_tiff.resolve(), args.test_gpkg.resolve())]
 
 
-def aggregate_sahi_means(
-    per_image: list[dict[str, Any]],
+def _aggregate_coco_mask_ap_means(
+    rows: list[dict[str, Any]],
 ) -> dict[str, float | None]:
+    """Mean COCO mask AP fields across samples (skips sentinel negatives)."""
     coco_mean_keys = (
         "AP",
         "AP50",
@@ -779,32 +780,16 @@ def aggregate_sahi_means(
         "AR10",
         "AR100",
     )
-    instance_mean_keys = (
-        "aji",
-        "precision_iou50",
-        "recall_iou50",
-        "f1_iou50",
-        "precision_iou75",
-        "recall_iou75",
-        "f1_iou75",
-        "mP_iou50_95",
-        "mR_iou50_95",
-        "mF1_iou50_95",
-    )
     out: dict[str, float | None] = {}
     for key in coco_mean_keys:
-        values = [
-            float(row[key])
-            for row in per_image
-            if np.isfinite(row[key]) and row[key] >= 0
-        ]
-        out[f"mean_{key}"] = float(np.mean(values)) if values else None
-    for key in instance_mean_keys:
-        values = [
-            float(row[key])
-            for row in per_image
-            if key in row and np.isfinite(row[key]) and row[key] >= 0
-        ]
+        values: list[float] = []
+        for row in rows:
+            block = row.get("coco_mask_ap")
+            if not isinstance(block, dict) or key not in block:
+                continue
+            v = float(block[key])
+            if np.isfinite(v) and v >= 0:
+                values.append(v)
         out[f"mean_{key}"] = float(np.mean(values)) if values else None
     return out
 
@@ -821,7 +806,7 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
         device=device,
     )
 
-    per_image: list[dict[str, Any]] = []
+    sample_rows: list[dict[str, Any]] = []
     for image_id, (tiff_path, gpkg_path) in enumerate(pairs, start=1):
         if not tiff_path.is_file():
             raise FileNotFoundError(f"test TIFF not found: {tiff_path}")
@@ -868,18 +853,23 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
             for k, v in compute_instance_metrics_dict(gt_map, pred_map).items()
         }
 
-        row: dict[str, Any] = {
-            "test_tiff": str(tiff_path),
-            "test_gpkg": str(gpkg_path),
-            "image_id": image_id,
-            "gt_instances": len(gt_anns),
-            "pred_instances": len(dt_anns),
-            "empty_gt": len(gt_anns) == 0,
-            "aji": aji,
-        }
-        row.update(inst_metrics)
-        row.update(summary.to_dict())
-        per_image.append(row)
+        metrics: dict[str, float] = {"aji": aji, **inst_metrics}
+        sample_id = f"{image_id:05d}_{tiff_path.stem}"
+        sample_rows.append(
+            build_sample_row(
+                sample_id,
+                metrics=metrics,
+                gt_instances=len(gt_anns),
+                pred_instances=len(dt_anns),
+                empty_gt=len(gt_anns) == 0,
+                extra={
+                    "test_tiff": str(tiff_path.resolve()),
+                    "test_gpkg": str(gpkg_path.resolve()),
+                    "image_id": image_id,
+                    "coco_mask_ap": summary.to_dict(),
+                },
+            )
+        )
         if args.sahi_out_dir is not None:
             out_root = args.sahi_out_dir.resolve()
             out_root.mkdir(parents=True, exist_ok=True)
@@ -898,16 +888,36 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
             f"GT={len(gt_anns)} Pred={len(dt_anns)}"
         )
 
-    aggregate: dict[str, Any] = {"per_image": per_image}
-    aggregate.update(aggregate_sahi_means(per_image))
+    if not sample_rows:
+        print(
+            "ERROR: SAHI evaluation produced no samples (empty manifest or pair list).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    sahi_meta: dict[str, Any] = {
+        "slice_height": args.slice_height,
+        "slice_width": args.slice_width,
+        "overlap_height_ratio": args.overlap_height_ratio,
+        "overlap_width_ratio": args.overlap_width_ratio,
+        "confidence_threshold": args.conf,
+        "mean_coco_mask_ap": _aggregate_coco_mask_ap_means(sample_rows),
+    }
+    report = build_instance_eval_report(
+        model_type="yolo",
+        variant=args.variant,
+        unit="whole_section",
+        samples=sample_rows,
+        extras={"sahi": sahi_meta},
+    )
     if args.output_json is not None:
         args.output_json.parent.mkdir(parents=True, exist_ok=True)
         args.output_json.write_text(
-            json.dumps(json_safe_for_dump(aggregate), indent=2, allow_nan=False),
+            json.dumps(json_safe_for_dump(report), indent=2, allow_nan=False),
             encoding="utf-8",
         )
         print(f"Wrote metrics JSON to {args.output_json}")
-    return aggregate
+    return report
 
 
 def main(argv: list[str] | None = None) -> None:

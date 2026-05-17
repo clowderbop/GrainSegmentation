@@ -105,23 +105,6 @@ def build_unet(patch_size, num_inputs=1, hp=None, base_filters=None):
 
     conv10 = Conv2D(3, (1, 1), activation="softmax", dtype="float32")(conv9)
     model = Model(inputs=inputs, outputs=conv10)
-
-    if hp:
-        learning_rate = hp.Float(
-            "learning_rate", min_value=1e-4, max_value=1e-2, sampling="log"
-        )
-    else:
-        learning_rate = 1e-3
-
-    from keras.optimizers import Adam
-
-    optimizer = Adam(learning_rate=learning_rate)
-
-
-
-
-
-
     return model
 
 
@@ -131,7 +114,9 @@ def initialize_from_checkpoint(checkpoint_path, patch_size, num_inputs=7, hp=Non
     )
 
 
-    first_conv = next(l for l in source_model.layers if isinstance(l, Conv2D))
+    first_conv = next(
+        layer for layer in source_model.layers if isinstance(layer, Conv2D)
+    )
     ckpt_base_filters = first_conv.filters
 
     target_model = build_unet(

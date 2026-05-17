@@ -2,7 +2,6 @@ import datetime
 import hashlib
 import json
 import os
-import numpy as np
 import tensorflow as tf
 import keras_tuner as kt
 from keras.optimizers import Adam

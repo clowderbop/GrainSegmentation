@@ -90,23 +90,6 @@ def mask_to_polygons(
     return polygons
 
 
-def _infer_full_height(rle_data: List[Dict[str, Any]]) -> int | None:
-    max_height = 0
-    found = False
-    for ann in rle_data:
-        rle = ann.get("rle")
-        if not rle or "size" not in rle:
-            continue
-        try:
-            h = int(rle["size"][0])
-        except Exception:
-            continue
-        ty = int(ann.get("tile_y", 0))
-        max_height = max(max_height, ty + h)
-        found = True
-    return max_height if found and max_height > 0 else None
-
-
 def _scalar_properties(ann: Dict[str, Any]) -> Dict[str, Any]:
     props: Dict[str, Any] = {}
     for key, val in ann.items():
@@ -123,10 +106,6 @@ def rle_to_geojson(
     flip_y: bool = True,
 ) -> Dict[str, Any]:
     features = []
-    full_height = None
-    if flip_y:
-        full_height = 0
-
     for i, ann in enumerate(rle_data):
         if "rle" not in ann:
             continue

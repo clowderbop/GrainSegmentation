@@ -6,10 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence, Tuple
 
 import numpy as np
-from PIL import Image
 import tifffile
-
-Image.MAX_IMAGE_PIXELS = None
 
 
 def _parse_bbox(value: str) -> Tuple[float, float, float, float]:
@@ -317,7 +314,7 @@ def _crop_images(
             continue
 
         ext = Path(filename).suffix.lower()
-        if ext not in (".tif", ".tiff", ".png", ".jpg", ".jpeg"):
+        if ext not in (".tif", ".tiff"):
             continue
 
         stem = Path(filename).stem
@@ -336,30 +333,8 @@ def _crop_images(
             ) = _read_tiff_crop(input_path, left, top, right, bottom)
             tifffile.imwrite(output_path, cropped)
         except Exception as exc:
-            print(
-                f"Warning: TIFF read failed for {input_path}: {exc}",
-                file=sys.stderr,
-            )
-            try:
-                with Image.open(input_path) as img:
-                    width, height = img.size
-                    crop_left = max(0, left)
-                    crop_top = max(0, top)
-                    crop_right = min(width, right)
-                    crop_bottom = min(height, bottom)
-                    if crop_left >= crop_right or crop_top >= crop_bottom:
-                        print(
-                            f"Warning: crop outside image for {input_path}",
-                            file=sys.stderr,
-                        )
-                        continue
-                    cropped_img = img.crop(
-                        (crop_left, crop_top, crop_right, crop_bottom)
-                    )
-                    cropped_img.save(output_path)
-            except Exception as e:
-                print(f"Error reading image {input_path}: {e}", file=sys.stderr)
-                continue
+            print(f"Error reading TIFF {input_path}: {exc}", file=sys.stderr)
+            continue
 
         print(
             f"Saved {output_path} ({crop_right - crop_left}x{crop_bottom - crop_top})"

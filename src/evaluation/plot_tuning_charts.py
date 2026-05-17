@@ -186,7 +186,7 @@ def _plot_fitness_vs_iterations(csv_paths, runs_root, args, output_path):
     ax.legend(loc="best", frameon=True)
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=args.dpi)
+    fig.savefig(output_path, dpi=args.dpi, format="tiff")
     plt.close(fig)
     print(f"Saved combined plot to: {output_path}")
 
@@ -344,7 +344,7 @@ def _plot_tune_scatter(
     )
 
     fig.tight_layout()
-    fig.savefig(output_path, dpi=300)
+    fig.savefig(output_path, dpi=300, format="tiff")
     plt.close(fig)
     print(f"Saved 2D tune plot to: {output_path}")
 
@@ -385,12 +385,12 @@ def main() -> None:
         csv_paths,
         runs_root,
         args,
-        runs_root / "all_runs_fitness_vs_iterations.png",
+        runs_root / "all_runs_fitness_vs_iterations.tif",
     )
 
     for csv_path in csv_paths:
         run_name = _infer_run_name(csv_path, runs_root)
-        output_path = runs_root / f"{run_name}_tune_scatter.png"
+        output_path = runs_root / f"{run_name}_tune_scatter.tif"
         _plot_tune_scatter(csv_path, run_name, output_path, z_lo=z_lo, z_hi=z_hi)
 
 

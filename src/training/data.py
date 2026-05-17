@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-from PIL import Image
 import tensorflow as tf
 
 _SRC_ROOT = Path(__file__).resolve().parent.parent
@@ -14,14 +13,14 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from common.image_io import (
-    load_rgb_float_image,
-    load_single_channel_mask,
+    TIFF_SUFFIXES,
+    load_tiff_rgb_hwc_float,
+    load_tiff_single_channel_mask,
     validate_image_mask_sample,
     validate_semantic_labels,
 )
 from common.patching import build_coverage_bin_ids, compute_starts_tf, region_bounds
 
-Image.MAX_IMAGE_PIXELS = None
 MIN_VALIDATION_COVERAGE = 0.10
 
 
@@ -68,11 +67,20 @@ def _tf_augment(
 
 
 def _load_rgb_image(path: str) -> np.ndarray:
-    return load_rgb_float_image(path)
+    return load_tiff_rgb_hwc_float(path)
 
 
 def _load_raster_mask(path: str) -> np.ndarray:
-    return load_single_channel_mask(path, allow_tiff=False)
+    return load_tiff_single_channel_mask(path)
+
+
+def _mask_extensions(mask_ext: str | None) -> list[str]:
+    if mask_ext is None:
+        return [".tif", ".tiff"]
+    ext = mask_ext if mask_ext.startswith(".") else f".{mask_ext}"
+    if ext.lower() not in TIFF_SUFFIXES:
+        raise ValueError(f"mask_ext must be .tif or .tiff, got {mask_ext!r}")
+    return [ext]
 
 
 def _validate_loaded_sample(
@@ -129,10 +137,7 @@ def list_samples(
 
         sample: Dict[str, Any] = {"images": image_paths, "id": base_stem}
         if mask_dir is not None:
-            if mask_ext is None:
-                mask_exts = [".png", ".tif", ".tiff", ".jpg", ".jpeg"]
-            else:
-                mask_exts = [mask_ext]
+            mask_exts = _mask_extensions(mask_ext)
             mask_path = None
             for ext in mask_exts:
                 candidate = os.path.join(

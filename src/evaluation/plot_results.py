@@ -2,9 +2,17 @@ import argparse
 import json
 import os
 import sys
-import numpy as np
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import numpy as np
 from PIL import Image
+
+_SRC_ROOT = Path(__file__).resolve().parent.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from common.image_io import load_tiff_rgb_hwc_float, load_tiff_single_channel_mask
 
 Image.MAX_IMAGE_PIXELS = None
 OVERLAY_MAX_DIM = 2048
@@ -208,7 +216,7 @@ def generate_quantitative_plot(json_files, labels, output_path):
     ax.grid(axis="y", linestyle="--", alpha=0.7)
 
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
+    plt.savefig(output_path, dpi=300, format="tiff")
     print(f"Saved quantitative plot to {output_path}")
 
 
@@ -276,29 +284,23 @@ def _build_overlay_output_paths(
     output_dir = os.path.dirname(output_path) or "."
     base_name = os.path.splitext(os.path.basename(output_path))[0] or "overlay"
 
-    gt_output = os.path.join(output_dir, f"{base_name}_ground_truth.png")
+    gt_output = os.path.join(output_dir, f"{base_name}_ground_truth.tif")
     pred_outputs = [
-        os.path.join(output_dir, f"{base_name}_{_sanitize_overlay_label(label)}.png")
+        os.path.join(output_dir, f"{base_name}_{_sanitize_overlay_label(label)}.tif")
         for label in labels
     ]
     return gt_output, pred_outputs
 
 
 def generate_qualitative_overlay(image_path, gt_path, pred_paths, labels, output_path):
-    with Image.open(image_path) as img:
-        rgb_img = np.asarray(img.convert("RGB"), dtype=np.float32) / 255.0
+    import tifffile
 
-    with Image.open(gt_path) as img:
-        if img.mode not in ("L", "I", "I;16", "F"):
-            img = img.convert("L")
-        gt_mask = np.asarray(img)
+    rgb_img = load_tiff_rgb_hwc_float(image_path)
+    gt_mask = load_tiff_single_channel_mask(gt_path)
 
     preds = []
     for pp in pred_paths:
-        with Image.open(pp) as img:
-            if img.mode not in ("L", "I", "I;16", "F"):
-                img = img.convert("L")
-            preds.append(np.asarray(img))
+        preds.append(load_tiff_single_channel_mask(pp))
 
     rgb_img, gt_mask, preds = _resize_overlay_arrays(rgb_img, gt_mask, preds)
     gt_output_path, pred_output_paths = _build_overlay_output_paths(output_path, labels)
@@ -306,14 +308,20 @@ def generate_qualitative_overlay(image_path, gt_path, pred_paths, labels, output
     if os.path.exists(output_path):
         os.remove(output_path)
 
-    Image.fromarray((blend_overlay(rgb_img, gt_mask) * 255.0).astype(np.uint8)).save(
-        gt_output_path
+    tifffile.imwrite(
+        gt_output_path,
+        (blend_overlay(rgb_img, gt_mask) * 255.0).astype(np.uint8),
+        photometric="rgb",
+        compression="deflate",
     )
     print(f"Saved qualitative overlay to {gt_output_path}")
 
     for label, pred, pred_output_path in zip(labels, preds, pred_output_paths):
-        Image.fromarray((blend_overlay(rgb_img, pred) * 255.0).astype(np.uint8)).save(
-            pred_output_path
+        tifffile.imwrite(
+            pred_output_path,
+            (blend_overlay(rgb_img, pred) * 255.0).astype(np.uint8),
+            photometric="rgb",
+            compression="deflate",
         )
         print(f"Saved qualitative overlay to {pred_output_path} ({label})")
 

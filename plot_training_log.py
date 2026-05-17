@@ -65,6 +65,6 @@ if __name__ == "__main__":
     plt.grid(True)
 
     plt.tight_layout()
-    out_file = log_path.replace(".log", ".png")
-    plt.savefig(out_file)
+    out_file = log_path.replace(".log", ".tif")
+    plt.savefig(out_file, format="tiff")
     print(f"Plot saved to {out_file}")

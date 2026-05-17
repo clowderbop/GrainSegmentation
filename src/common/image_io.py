@@ -81,6 +81,46 @@ def load_tiff_channel_first(path: str | Path) -> np.ndarray:
     raise ValueError(f"Unsupported 3D TIFF axes {axes!r} for shape {image.shape}")
 
 
+def load_tiff_rgb_hwc_float(path: str | Path) -> np.ndarray:
+    arr = load_tiff_channel_first(path)
+    if arr.ndim != 3:
+        raise ValueError(
+            f"Expected RGB TIFF with 3 dimensions, got shape {arr.shape} for {path}"
+        )
+    if arr.shape[0] != 3:
+        raise ValueError(
+            f"Expected 3 channels (RGB) in channel-first order after load, "
+            f"got C={arr.shape[0]} for {path}"
+        )
+    hwc = np.transpose(arr, (1, 2, 0))
+    return hwc.astype(np.float32) / 255.0
+
+
+def load_tiff_single_channel_mask(path: str | Path) -> np.ndarray:
+    import tifffile
+
+    mask_path = Path(path)
+    if mask_path.suffix.lower() not in TIFF_SUFFIXES:
+        raise ValueError(
+            f"Mask must be a TIFF (.tif / .tiff), got suffix {mask_path.suffix!r} "
+            f"for {mask_path}"
+        )
+
+    with tifffile.TiffFile(mask_path) as tif:
+        arr = tif.series[0].asarray()
+
+    if arr.ndim == 3:
+        if arr.shape[0] == 1:
+            arr = arr[0]
+        elif arr.shape[2] == 1:
+            arr = arr[:, :, 0]
+        else:
+            raise ValueError(f"Mask TIFF must be single-channel: {mask_path}")
+    if arr.ndim != 2:
+        raise ValueError(f"Mask must be 2D: {mask_path}")
+    return arr
+
+
 def load_rgb_float_image(path: str | Path) -> np.ndarray:
     with Image.open(path) as img:
         img = img.convert("RGB")
@@ -90,9 +130,7 @@ def load_rgb_float_image(path: str | Path) -> np.ndarray:
 def load_single_channel_mask(path: str | Path, *, allow_tiff: bool = True) -> np.ndarray:
     mask_path = Path(path)
     if allow_tiff and mask_path.suffix.lower() in TIFF_SUFFIXES:
-        import tifffile
-
-        arr = tifffile.imread(mask_path)
+        return load_tiff_single_channel_mask(mask_path)
     else:
         with Image.open(mask_path) as img:
             if img.mode not in ("L", "I", "I;16", "F"):

@@ -674,9 +674,10 @@ def visualize_masks(
     show_anns(masks)
     plt.axis("off")
     plt.savefig(
-        os.path.join(output_dir, f"{file_name}_tile_{tile['x']}_{tile['y']}.png"),
+        os.path.join(output_dir, f"{file_name}_tile_{tile['x']}_{tile['y']}.tif"),
         bbox_inches="tight",
         pad_inches=0,
+        format="tiff",
     )
     plt.close()
 
@@ -712,7 +713,7 @@ def collect_images(input_path: str) -> List[str]:
         return [str(p)]
     if not p.exists():
         raise FileNotFoundError(f"Input path does not exist: {input_path}")
-    exts = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+    exts = {".tif", ".tiff"}
     images: List[str] = []
     for entry in p.rglob("*"):
         if entry.is_file() and entry.suffix.lower() in exts:

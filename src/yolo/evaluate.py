@@ -31,7 +31,7 @@ from evaluation.reporting import (
     json_safe_for_dump,
 )
 from common.geometry import load_image_space_polygons
-from common.image_io import load_single_channel_mask, validate_semantic_labels
+from common.image_io import load_tiff_single_channel_mask, validate_semantic_labels
 
 from config import variant_choices
 from instance_label_maps import (
@@ -70,7 +70,7 @@ def _as_rgb_uint8(image: np.ndarray) -> np.ndarray:
 def write_mask_overlay_visual(
     image: np.ndarray, pred_map: np.ndarray, out_path: Path
 ) -> None:
-    from PIL import Image
+    import tifffile
 
     visual = _as_rgb_uint8(image).astype(np.float32)
     labels = np.unique(pred_map)
@@ -87,7 +87,12 @@ def write_mask_overlay_visual(
         )
         visual[mask] = (0.45 * visual[mask]) + (0.55 * color)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.clip(visual, 0, 255).astype(np.uint8)).save(out_path)
+    tifffile.imwrite(
+        out_path,
+        np.clip(visual, 0, 255).astype(np.uint8),
+        photometric="rgb",
+        compression="deflate",
+    )
 
 
 def _mask_to_polygons(mask: np.ndarray) -> list[Any]:
@@ -303,7 +308,7 @@ def _get_sliced_prediction_preserve_channels(
     )
 
 
-_PATCH_IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+_PATCH_IMAGE_SUFFIXES = {".tif", ".tiff"}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -554,37 +559,29 @@ def device_for_sahi(device: int | str | list[int]) -> str:
 
 def load_image_for_yolo(path: Path) -> np.ndarray:
     suffix = path.suffix.lower()
-    if suffix in {".tif", ".tiff"}:
-        with TiffFile(path) as tif:
-            series = tif.series[0]
-            image = series.asarray()
-            axes = series.axes
+    if suffix not in {".tif", ".tiff"}:
+        raise ValueError(f"Expected .tif / .tiff image, got {path.suffix!r} for {path}")
+    with TiffFile(path) as tif:
+        series = tif.series[0]
+        image = series.asarray()
+        axes = series.axes
 
-        if image.ndim == 2:
-            return np.expand_dims(image.astype(np.uint8, copy=False), axis=-1)
+    if image.ndim == 2:
+        return np.expand_dims(image.astype(np.uint8, copy=False), axis=-1)
 
-        if axes == "CYX":
-            image = np.transpose(image, (1, 2, 0))
-        elif axes == "YXC":
-            pass
-        elif image.ndim == 3 and image.shape[0] < min(image.shape[1], image.shape[2]):
+    if axes == "CYX":
+        image = np.transpose(image, (1, 2, 0))
+    elif axes == "YXC":
+        pass
+    elif image.ndim == 3 and image.shape[0] < min(image.shape[1], image.shape[2]):
+        image = np.transpose(image, (1, 2, 0))
 
-            image = np.transpose(image, (1, 2, 0))
-
-        image = np.clip(image, 0, 255).astype(np.uint8, copy=False)
-        return image
-
-    from PIL import Image
-
-    with Image.open(path) as im:
-        arr = np.asarray(im)
-    if arr.ndim == 2:
-        arr = np.expand_dims(arr, axis=-1)
-    return np.clip(arr, 0, 255).astype(np.uint8, copy=False)
+    image = np.clip(image, 0, 255).astype(np.uint8, copy=False)
+    return image
 
 
 def load_semantic_patch_mask(path: Path) -> np.ndarray:
-    arr = load_single_channel_mask(path)
+    arr = load_tiff_single_channel_mask(path)
     return validate_semantic_labels(arr, path, allow_float=True)
 
 
@@ -919,7 +916,7 @@ def run_sahi(args: argparse.Namespace) -> dict[str, Any]:
             out_root.mkdir(parents=True, exist_ok=True)
             sub = out_root / tiff_path.stem
             sub.mkdir(parents=True, exist_ok=True)
-            write_mask_overlay_visual(image, pred_map, sub / "prediction_visual.png")
+            write_mask_overlay_visual(image, pred_map, sub / "prediction_visual.tif")
             write_predicted_masks_gpkg(
                 dt_anns,
                 height=height,

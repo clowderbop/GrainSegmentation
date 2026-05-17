@@ -1,12 +1,18 @@
 import argparse
 import random
+import sys
 from pathlib import Path
 
 import matplotlib
 import numpy as np
 import yaml
-from PIL import Image
 from matplotlib import patches
+
+_SRC_ROOT = Path(__file__).resolve().parent.parent
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from common.image_io import load_tiff_channel_first
 
 from ultralytics.utils.plotting import colors
 
@@ -15,7 +21,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+IMAGE_SUFFIXES = {".tif", ".tiff"}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -120,37 +126,18 @@ def collect_samples(
     return samples
 
 
-def _normalize_channel(channel: np.ndarray) -> np.ndarray:
-    channel = channel.astype(np.float32)
-    channel_min = float(channel.min())
-    channel_max = float(channel.max())
-    if channel_max <= channel_min:
-        return np.zeros_like(channel, dtype=np.uint8)
-    scaled = (channel - channel_min) / (channel_max - channel_min)
-    return np.clip(scaled * 255.0, 0, 255).astype(np.uint8)
-
-
 def load_image_preview(image_path: Path) -> tuple[np.ndarray, str | None]:
-    with Image.open(image_path) as image:
-        frame_count = getattr(image, "n_frames", 1)
-        if frame_count > 1:
-            channels = []
-            for index in range(min(frame_count, 3)):
-                image.seek(index)
-                channels.append(_normalize_channel(np.asarray(image)))
-            while len(channels) < 3:
-                channels.append(channels[-1])
-            return np.stack(channels[:3], axis=-1), None
-
-        array = np.asarray(image)
-
-    if array.ndim == 2:
-        return array, "gray"
-    if array.ndim == 3 and array.shape[2] >= 3:
-        return array[..., :3], None
-    if array.ndim == 3 and array.shape[2] == 1:
-        return array[..., 0], "gray"
-    raise ValueError(f"Unsupported image shape for visualization: {array.shape}")
+    arr = load_tiff_channel_first(image_path)
+    if arr.ndim == 2:
+        return arr, "gray"
+    if arr.ndim == 3:
+        channels = arr.shape[0]
+        if channels == 1:
+            return arr[0], "gray"
+        if channels >= 3:
+            preview = np.transpose(arr[:3], (1, 2, 0))
+            return preview, None
+    raise ValueError(f"Unsupported TIFF shape for visualization: {arr.shape}")
 
 
 def _read_polygons(
@@ -209,7 +196,7 @@ def save_visualization(
         )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, bbox_inches="tight", pad_inches=0)
+    fig.savefig(output_path, bbox_inches="tight", pad_inches=0, format="tiff")
     plt.close(fig)
 
 
@@ -226,7 +213,7 @@ def save_split_visualizations(
 
     selected = rng.sample(samples, k=min(num_samples, len(samples)))
     for index, (image_path, label_path) in enumerate(selected, start=1):
-        output_path = output_dir / split_name / f"{index:03d}_{image_path.stem}.png"
+        output_path = output_dir / split_name / f"{index:03d}_{image_path.stem}.tif"
         save_visualization(
             image_path=image_path,
             label_path=label_path,

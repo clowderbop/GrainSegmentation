@@ -2,6 +2,7 @@ import argparse
 import math
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import tifffile
@@ -47,10 +48,8 @@ def _format_yolo_value(value: float) -> str:
     return text
 
 
-def _iter_polygon_parts(
-    geometry: Polygon | MultiPolygon,
-) -> list[Polygon]:
-    return iter_polygon_parts(geometry)
+def _iter_polygon_parts(geometry: Any) -> list[Polygon]:
+    return iter_polygon_parts(geometry, context="split_tiff_gpkg_to_yolo")
 
 
 def _normalized_exterior_coordinates(polygon: Polygon) -> list[tuple[float, float]]:

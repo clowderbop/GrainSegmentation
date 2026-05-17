@@ -13,14 +13,17 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 import numpy as np
-from PIL import Image
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from evaluation.instance_masks import semantic_to_instance_label_map_watershed
 from evaluation.metrics import compute_aji
 from common.ground_truth import gpkg_to_instance_map
-from common.image_io import validate_image_mask_sample, validate_semantic_labels
+from common.image_io import (
+    load_tiff_single_channel_mask,
+    validate_image_mask_sample,
+    validate_semantic_labels,
+)
 
 
 def _raise_argument_error(message: str, parser: argparse.ArgumentParser | None = None):
@@ -44,10 +47,9 @@ def _sanitize_csv_key(sample_id: str) -> str:
     return re.sub(r"[^0-9A-Za-z_]+", "_", sample_id)
 
 
-def _load_pred_png(path: Path) -> np.ndarray:
-    with Image.open(path) as img:
-        arr = np.asarray(img)
-    return _validate_pred_semantic(arr, str(path))
+def _load_pred_tiff(path: Path) -> np.ndarray:
+    arr = load_tiff_single_channel_mask(path)
+    return validate_semantic_labels(arr, str(path))
 
 
 def _load_gpkg_instance_map(gpkg_path: Path, height: int, width: int) -> np.ndarray:
@@ -282,7 +284,7 @@ def _collect_samples(
 
         for sample in samples:
             sid = sample["id"]
-            pred_path = preds_dir / f"{sid}_pred.png"
+            pred_path = preds_dir / f"{sid}_pred.tif"
             if not pred_path.is_file():
                 raise SystemExit(f"Missing prediction file: {pred_path}")
             print(f"Loading pred: {pred_path}")
@@ -292,7 +294,7 @@ def _collect_samples(
                 images, _load_raster_mask(sample["mask"]), sample["mask"]
             )
             height, width = true_mask.shape
-            pred_arr = _load_pred_png(pred_path)
+            pred_arr = _load_pred_tiff(pred_path)
             if pred_arr.shape != true_mask.shape:
                 raise ValueError(
                     f"Pred shape {pred_arr.shape} != mask shape {true_mask.shape} for {sid}"

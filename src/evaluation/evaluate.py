@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from PIL import Image
 
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -150,19 +149,22 @@ def _validate_args(
         _raise_argument_error(f"mask-dir is not a directory: {args.mask_dir}", parser)
 
 
-def _prediction_png_path(save_dir: str, sample_id: str) -> str:
-    return os.path.join(save_dir, f"{sample_id}_pred.png")
+def _prediction_tiff_path(save_dir: str, sample_id: str) -> str:
+    return os.path.join(save_dir, f"{sample_id}_pred.tif")
 
 
-def _load_cached_prediction_png(path: str, expected_hw: tuple[int, int]) -> np.ndarray:
-    with Image.open(path) as img:
-        arr = np.asarray(img)
+def _load_cached_prediction_tiff(path: str, expected_hw: tuple[int, int]) -> np.ndarray:
+    import tifffile
+
+    arr = tifffile.imread(path)
     if arr.ndim == 3:
-        if arr.shape[2] == 1:
+        if arr.shape[0] == 1:
+            arr = arr[0]
+        elif arr.shape[2] == 1:
             arr = arr[:, :, 0]
         else:
             raise ValueError(
-                f"Cached prediction must be single-channel (L mode): {path}"
+                f"Cached prediction must be single-channel TIFF: {path}"
             )
     if arr.ndim != 2:
         raise ValueError(f"Cached prediction must be 2D: {path}")
@@ -314,11 +316,11 @@ def main():
         pred_classes: np.ndarray | None = None
 
         if args.save_predictions_dir:
-            cache_path = _prediction_png_path(args.save_predictions_dir, sample_id)
+            cache_path = _prediction_tiff_path(args.save_predictions_dir, sample_id)
             if os.path.isfile(cache_path):
                 print(f"Reusing cached prediction: {cache_path}")
                 t_cache = time.perf_counter()
-                pred_classes = _load_cached_prediction_png(cache_path, expected_hw)
+                pred_classes = _load_cached_prediction_tiff(cache_path, expected_hw)
                 print(
                     f"  Loaded cached prediction: {time.perf_counter() - t_cache:.2f}s"
                 )
@@ -337,10 +339,16 @@ def main():
             print(f"  Inference: {time.perf_counter() - t_inf:.2f}s")
 
             if args.save_predictions_dir:
-                out_img_path = _prediction_png_path(
+                import tifffile
+
+                out_img_path = _prediction_tiff_path(
                     args.save_predictions_dir, sample_id
                 )
-                Image.fromarray(pred_classes.astype(np.uint8)).save(out_img_path)
+                tifffile.imwrite(
+                    out_img_path,
+                    pred_classes.astype(np.uint8),
+                    compression="deflate",
+                )
 
         t_inst = time.perf_counter()
         true_instances = _gpkg_instance_map(

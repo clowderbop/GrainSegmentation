@@ -68,7 +68,7 @@ if [[ -n "$EVAL_DIR" ]]; then
         [[ -d "$pred_dir" ]] || continue
 
         shopt -s nullglob
-        raster_paths=("$pred_dir"/*.png "$pred_dir"/*.tif "$pred_dir"/*.tiff)
+        raster_paths=("$pred_dir"/*.tif "$pred_dir"/*.tiff)
         shopt -u nullglob
 
         for raster_path in "${raster_paths[@]}"; do

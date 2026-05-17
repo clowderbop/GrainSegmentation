@@ -249,7 +249,7 @@ function find_mask_for_sample {
     fi
 
     local ext=""
-    for ext in .png .tif .tiff .jpg .jpeg; do
+    for ext in .tif .tiff; do
         candidate="$LOCAL_MASK_DIR/${sample_id}${MASK_STEM_SUFFIX}${ext}"
         if [ -f "$candidate" ]; then
             printf '%s\n' "$candidate"
@@ -506,7 +506,7 @@ OVERLAY_PRED_PATHS=()
 for i in "${!MODEL_PATHS[@]}"; do
     model_path="${MODEL_PATHS[$i]}"
     model_stem="$(basename "${model_path%.keras}")"
-    pred_path="$OUTPUT_DIR/preds_${model_stem}/${OVERLAY_SAMPLE_ID}_pred.png"
+    pred_path="$OUTPUT_DIR/preds_${model_stem}/${OVERLAY_SAMPLE_ID}_pred.tif"
     require_file "$pred_path" "Overlay prediction not found"
     OVERLAY_PRED_PATHS+=("$pred_path")
 done
@@ -518,7 +518,7 @@ plot_cmd=(
     "${JSON_FILES[@]}"
     --labels
     "${MODEL_LABELS[@]}"
-    --output-plot "$OUTPUT_DIR/quantitative_plot.png"
+    --output-plot "$OUTPUT_DIR/quantitative_plot.tif"
 )
 "${plot_cmd[@]}"
 
@@ -530,7 +530,7 @@ overlay_cmd=(
     "${OVERLAY_PRED_PATHS[@]}"
     --labels
     "${MODEL_LABELS[@]}"
-    --output-overlay "$OUTPUT_DIR/overlay.png"
+    --output-overlay "$OUTPUT_DIR/overlay.tif"
 )
 "${overlay_cmd[@]}"
 

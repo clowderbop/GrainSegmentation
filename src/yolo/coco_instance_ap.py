@@ -27,8 +27,10 @@ from common.geometry import (
 
 def _iter_polygon_parts(
     geometry: Polygon | MultiPolygon | GeometryCollection,
+    *,
+    context: str = "coco_instance_ap",
 ) -> list[Polygon]:
-    return iter_polygon_parts(geometry)
+    return iter_polygon_parts(geometry, context=context)
 
 
 def load_polygons_from_gpkg(path: Path) -> list[Polygon | MultiPolygon]:
@@ -47,7 +49,11 @@ def clip_polygon_to_hw(polygon: Polygon, height: int, width: int) -> list[Polygo
         clipped = polygon.intersection(frame)
     except Exception:
         return []
-    return [p for p in _iter_polygon_parts(clipped) if not p.is_empty and p.area > 0]
+    return [
+        p
+        for p in _iter_polygon_parts(clipped, context="clip_polygon_to_hw")
+        if not p.is_empty and p.area > 0
+    ]
 
 
 def polygon_to_coco_polygon(polygon: Polygon) -> list[float]:
@@ -91,7 +97,7 @@ def build_gt_annotations(
     anns: list[dict[str, Any]] = []
     ann_id = 1
     for geom in polygons:
-        for part in _iter_polygon_parts(geom):
+        for part in _iter_polygon_parts(geom, context="build_gt_annotations"):
             for clipped in clip_polygon_to_hw(part, height, width):
                 seg_flat = polygon_to_coco_polygon(clipped)
                 if len(seg_flat) < 6:

@@ -151,45 +151,6 @@ def create_spatial_holdout_split(
     return train_samples, val_samples
 
 
-def create_spatial_cv_folds(
-    samples: List[Dict[str, Any]],
-    tile_size: int,
-    n_splits: int,
-    random_state: int,
-    coverage_bins: int,
-) -> List[Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]:
-    from sklearn.model_selection import StratifiedKFold, KFold
-
-    region_samples, coverages_arr = _build_region_samples_and_coverages(
-        samples, tile_size
-    )
-    total = coverages_arr.shape[0]
-
-    if total < n_splits:
-        raise ValueError(f"Not enough regions ({total}) for {n_splits} splits.")
-
-    bin_ids = build_coverage_bin_ids(
-        coverages_arr,
-        coverage_bins=coverage_bins,
-        group_count=n_splits,
-    )
-
-    folds = []
-    if np.bincount(bin_ids).min() < n_splits:
-        cv = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-        splits = cv.split(np.zeros(total))
-    else:
-        cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
-        splits = cv.split(np.zeros(total), bin_ids)
-
-    for train_idx, val_idx in splits:
-        train_samples_fold = [region_samples[i] for i in train_idx]
-        val_samples_fold = [region_samples[i] for i in val_idx]
-        folds.append((train_samples_fold, val_samples_fold))
-
-    return folds
-
-
 def build_dataset(
     samples: List[Dict[str, Any]],
     patch_size: int,

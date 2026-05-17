@@ -1,7 +1,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import Literal
 
 import numpy as np
@@ -57,13 +56,6 @@ def semantic_to_instance_label_map(
     if min_area_px > 0:
         return _drop_small_components(labeled, min_area_px)
     return labeled
-
-
-def iter_instance_binary_masks(
-    instance_label_map: np.ndarray,
-) -> Iterator[tuple[int, np.ndarray]]:
-    for i in sorted(x for x in np.unique(instance_label_map) if x != 0):
-        yield int(i), instance_label_map == i
 
 
 def semantic_to_instance_label_map_watershed(

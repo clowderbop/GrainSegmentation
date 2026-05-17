@@ -120,28 +120,6 @@ def load_tiff_single_channel_mask(path: str | Path) -> np.ndarray:
     return arr
 
 
-def load_single_channel_mask(path: str | Path, *, allow_tiff: bool = True) -> np.ndarray:
-    mask_path = Path(path)
-    if allow_tiff and mask_path.suffix.lower() in TIFF_SUFFIXES:
-        return load_tiff_single_channel_mask(mask_path)
-    else:
-        with Image.open(mask_path) as img:
-            if img.mode not in ("L", "I", "I;16", "F"):
-                img = img.convert("L")
-            arr = np.asarray(img)
-
-    if arr.ndim == 3:
-        if arr.shape[0] == 1:
-            arr = arr[0]
-        elif arr.shape[2] == 1:
-            arr = arr[:, :, 0]
-        else:
-            raise ValueError(f"Mask must be single-channel: {mask_path}")
-    if arr.ndim != 2:
-        raise ValueError(f"Mask must be 2D: {mask_path}")
-    return arr
-
-
 def validate_semantic_labels(
     mask: np.ndarray,
     mask_path: str | Path,

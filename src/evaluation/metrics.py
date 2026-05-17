@@ -99,24 +99,18 @@ def precision_recall_f1_from_iou_matrix(
     return float(precision), float(recall), float(f1)
 
 
-def compute_instance_precision_recall_f1(
-    true_instances: np.ndarray,
-    pred_instances: np.ndarray,
-    iou_threshold: float,
-) -> tuple[float, float, float]:
-    true_ids = _instance_ids(true_instances)
-    pred_ids = _instance_ids(pred_instances)
-    nt, np_ = len(true_ids), len(pred_ids)
-
-    if nt == 0 and np_ == 0:
-        return 1.0, 1.0, 1.0
-    if nt == 0:
-        return 0.0, 0.0, 0.0
-    if np_ == 0:
-        return 0.0, 0.0, 0.0
-
-    iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
-    return precision_recall_f1_from_iou_matrix(iou_matrix, iou_threshold)
+def _prf_series_over_thresholds(
+    iou_matrix: np.ndarray, thresholds: tuple[float, ...]
+) -> tuple[list[float], list[float], list[float]]:
+    ps: list[float] = []
+    rs: list[float] = []
+    fs: list[float] = []
+    for t in thresholds:
+        p, r, f = precision_recall_f1_from_iou_matrix(iou_matrix, t)
+        ps.append(p)
+        rs.append(r)
+        fs.append(f)
+    return ps, rs, fs
 
 
 def compute_instance_prf_mean_iou_sweep(
@@ -139,14 +133,7 @@ def compute_instance_prf_mean_iou_sweep(
         return 0.0, 0.0, 0.0
 
     iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
-    ps: list[float] = []
-    rs: list[float] = []
-    fs: list[float] = []
-    for t in thresholds:
-        p, r, f = precision_recall_f1_from_iou_matrix(iou_matrix, t)
-        ps.append(p)
-        rs.append(r)
-        fs.append(f)
+    ps, rs, fs = _prf_series_over_thresholds(iou_matrix, thresholds)
     return float(np.mean(ps)), float(np.mean(rs)), float(np.mean(fs))
 
 
@@ -185,14 +172,7 @@ def compute_instance_metrics_dict(
         }
 
     iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
-    ps: list[float] = []
-    rs: list[float] = []
-    fs: list[float] = []
-    for t in IOU_THRESHOLDS_50_95:
-        p, r, f = precision_recall_f1_from_iou_matrix(iou_matrix, t)
-        ps.append(p)
-        rs.append(r)
-        fs.append(f)
+    ps, rs, fs = _prf_series_over_thresholds(iou_matrix, IOU_THRESHOLDS_50_95)
 
     idx75 = _index_for_reported_threshold(0.75)
     return {

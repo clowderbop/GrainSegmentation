@@ -321,7 +321,7 @@ def merge_overlapping_masks(
         merged_ids: List[int] = []
         for entry in group:
             merged_ids.extend(entry.source_ids)
-            ex0, ey0, ex1, ey1 = entry.bbox
+            ex0, ey0, ex1, _ey1 = entry.bbox
             y0 = ey0 - gy0
             x0 = ex0 - gx0
             union_mask[

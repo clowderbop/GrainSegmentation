@@ -5,7 +5,6 @@ from pathlib import Path
 
 import matplotlib
 import numpy as np
-import yaml
 from matplotlib import patches
 
 _SRC_ROOT = Path(__file__).resolve().parent.parent
@@ -13,13 +12,18 @@ if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
 from common.image_io import load_tiff_channel_first
-
-from ultralytics.utils.plotting import colors
+from dataset_yaml import (
+    default_labels_dir as default_label_dir_for_split,
+    label_map_from_yaml_names,
+    load_yaml_dataset_config,
+    resolve_split_dir,
+)
+from yolo_seg_label_io import read_yolo_seg_label_rows
 
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-
+from ultralytics.utils.plotting import colors
 
 IMAGE_SUFFIXES = {".tif", ".tiff"}
 
@@ -71,35 +75,9 @@ def find_dataset_yaml(dataset_dir: Path) -> Path:
 
 def load_dataset_config(dataset_dir: Path) -> tuple[Path, dict, dict[int, str]]:
     dataset_yaml = find_dataset_yaml(dataset_dir)
-    with dataset_yaml.open(encoding="utf-8") as handle:
-        config = yaml.safe_load(handle)
-
-    dataset_root = Path(config.get("path", "."))
-    if not dataset_root.is_absolute():
-        dataset_root = (dataset_yaml.parent / dataset_root).resolve()
-
-    names = config.get("names", {})
-    if isinstance(names, list):
-        label_map = {index: name for index, name in enumerate(names)}
-    else:
-        label_map = {int(index): name for index, name in names.items()}
-
+    dataset_root, config = load_yaml_dataset_config(dataset_yaml)
+    label_map = label_map_from_yaml_names(config)
     return dataset_root, config, label_map
-
-
-def resolve_split_dir(dataset_root: Path, split_path: str) -> Path:
-    path = Path(split_path)
-    if path.is_absolute():
-        return path
-    return (dataset_root / path).resolve()
-
-
-def default_label_dir(dataset_root: Path, split_name: str, image_dir: Path) -> Path:
-    relative_parts = list(image_dir.relative_to(dataset_root).parts)
-    if "images" in relative_parts:
-        relative_parts[relative_parts.index("images")] = "labels"
-        return dataset_root.joinpath(*relative_parts)
-    return dataset_root / "labels" / split_name
 
 
 def collect_samples(
@@ -115,7 +93,7 @@ def collect_samples(
             f"Missing image directory for split '{split_name}': {image_dir}"
         )
 
-    label_dir = default_label_dir(dataset_root, split_name, image_dir)
+    label_dir = default_label_dir_for_split(dataset_root, split_name, image_dir)
     samples: list[tuple[Path, Path]] = []
     for image_path in sorted(image_dir.iterdir()):
         if image_path.suffix.lower() not in IMAGE_SUFFIXES:
@@ -140,26 +118,6 @@ def load_image_preview(image_path: Path) -> tuple[np.ndarray, str | None]:
     raise ValueError(f"Unsupported TIFF shape for visualization: {arr.shape}")
 
 
-def _read_polygons(
-    label_path: Path, image_width: int, image_height: int
-) -> list[tuple[int, np.ndarray]]:
-    polygons: list[tuple[int, np.ndarray]] = []
-    with label_path.open(encoding="utf-8") as handle:
-        for raw_line in handle:
-            line = raw_line.strip()
-            if not line:
-                continue
-            values = [float(value) for value in line.split()]
-            if len(values) < 7 or (len(values) - 1) % 2 != 0:
-                raise ValueError(f"Invalid segmentation label row in {label_path}")
-            class_id = int(values[0])
-            points = np.asarray(values[1:], dtype=np.float32).reshape(-1, 2)
-            points[:, 0] *= image_width
-            points[:, 1] *= image_height
-            polygons.append((class_id, points))
-    return polygons
-
-
 def save_visualization(
     image_path: Path,
     label_path: Path,
@@ -168,7 +126,7 @@ def save_visualization(
 ) -> None:
     preview, cmap = load_image_preview(image_path)
     image_height, image_width = preview.shape[:2]
-    polygons = _read_polygons(
+    polygons = read_yolo_seg_label_rows(
         label_path, image_width=image_width, image_height=image_height
     )
 

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import yaml
 from tifffile import TiffFile
 
 
@@ -32,13 +31,18 @@ from evaluation.reporting import (
 )
 from common.geometry import load_image_space_polygons
 from common.image_io import load_tiff_single_channel_mask, validate_semantic_labels
-
-from config import variant_choices
-from instance_label_maps import (
+from common.instance_maps import (
     binary_masks_to_instance_map_by_confidence,
     dt_annotations_to_instance_map,
     gt_annotations_to_instance_map,
     segmentation_to_binary_mask,
+)
+
+from config import variant_choices
+from dataset_yaml import (
+    default_labels_dir,
+    load_yaml_dataset_config,
+    resolve_split_dir,
 )
 from pipeline import resolve_variant_paths
 from train import _parse_device
@@ -449,34 +453,6 @@ def _resolve_data_yaml(args: argparse.Namespace) -> Path:
     return resolved.data_yaml
 
 
-def load_dataset_config_from_yaml(data_yaml: Path) -> tuple[Path, dict[str, Any]]:
-    with data_yaml.open(encoding="utf-8") as handle:
-        config = yaml.safe_load(handle)
-
-    dataset_root = Path(config.get("path", "."))
-    if not dataset_root.is_absolute():
-        dataset_root = (data_yaml.parent / dataset_root).resolve()
-    return dataset_root, config
-
-
-def _default_label_dir_for_split(
-    dataset_root: Path, split_name: str, image_dir: Path
-) -> Path:
-    try:
-        relative_parts = list(image_dir.relative_to(dataset_root).parts)
-    except ValueError:
-        relative_parts = []
-    if "images" in relative_parts:
-        relative_parts[relative_parts.index("images")] = "labels"
-        return dataset_root.joinpath(*relative_parts)
-    return dataset_root / "labels" / split_name
-
-
-def _resolve_rel_split_dir(dataset_root: Path, split_path: str) -> Path:
-    path = Path(split_path)
-    if path.is_absolute():
-        return path.resolve()
-    return (dataset_root / path).resolve()
 
 
 def collect_yolo_patch_pairs(
@@ -492,12 +468,12 @@ def collect_yolo_patch_pairs(
                 "The dataset YAML also defines `val`, which is ignored for this run.",
                 file=sys.stderr,
             )
-        image_dir = _resolve_rel_split_dir(dataset_root, str(rel))
+        image_dir = resolve_split_dir(dataset_root, str(rel))
         if not image_dir.is_dir():
             raise FileNotFoundError(
                 f"Missing image directory for split {split_name!r}: {image_dir}"
             )
-        label_dir = _default_label_dir_for_split(dataset_root, split_name, image_dir)
+        label_dir = default_labels_dir(dataset_root, split_name, image_dir)
         image_paths: list[Path] = []
         for image_path in sorted(image_dir.iterdir()):
             if image_path.suffix.lower() not in _PATCH_IMAGE_SUFFIXES:
@@ -649,7 +625,7 @@ def write_val_metrics_json(
 def run_patches(args: argparse.Namespace, data_yaml: Path) -> dict[str, Any]:
     from ultralytics import YOLO
 
-    dataset_root, config = load_dataset_config_from_yaml(data_yaml)
+    dataset_root, config = load_yaml_dataset_config(data_yaml)
     label_dir, image_paths = collect_yolo_patch_pairs(dataset_root, config)
 
     device = _parse_device(args.device)

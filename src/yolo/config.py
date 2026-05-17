@@ -6,6 +6,7 @@ from pathlib import Path
 DATASET_ROOT = Path("GrainSeg") / "dataset" / "train" / "yolo"
 RUN_ROOT = Path("GrainSeg") / "runs" / "yolo26-seg"
 
+# Typical SLURM resource hints live in SLURM/yolo/*.sh (mem, GPUs, time).
 
 @dataclass(frozen=True)
 class VariantConfig:
@@ -13,13 +14,6 @@ class VariantConfig:
     dataset_subdir: str
     yaml_name: str
     channels: int
-    slurm_mem: str
-    slurm_gpus_per_node: str = "rtx_pro_6000:2"
-    slurm_cpus_per_task: int = 16
-    slurm_time: str = "12:00:00"
-    default_batch: int = -1
-    default_imgsz: int = 1024
-    default_workers: int = 16
 
 
 VARIANT_CONFIGS: dict[str, VariantConfig] = {
@@ -28,28 +22,24 @@ VARIANT_CONFIGS: dict[str, VariantConfig] = {
         dataset_subdir="PPL",
         yaml_name="PPL.yaml",
         channels=1,
-        slurm_mem="256G",
     ),
     "PPLPPXblend": VariantConfig(
         name="PPLPPXblend",
         dataset_subdir="PPLPPXblend",
         yaml_name="PPLPPXblend.yaml",
         channels=1,
-        slurm_mem="256G",
     ),
     "PPL+PPXblend": VariantConfig(
         name="PPL+PPXblend",
         dataset_subdir="PPL+PPXblend",
         yaml_name="PPL_PPXblend.yaml",
         channels=6,
-        slurm_mem="512G",
     ),
     "PPL+AllPPX": VariantConfig(
         name="PPL+AllPPX",
         dataset_subdir="PPL+AllPPX",
         yaml_name="PPL+AllPPX.yaml",
         channels=32,
-        slurm_mem="950G",
     ),
 }
 

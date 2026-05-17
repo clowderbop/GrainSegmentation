@@ -16,7 +16,7 @@ _SRC_ROOT = Path(__file__).resolve().parent.parent
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from common.coco_annotations import build_gt_annotations
+from common.coco_annotations import build_gt_annotations  # noqa: F401
 
 
 def _ensure_dt_bbox_area(record: dict[str, Any], *, height: int, width: int) -> None:

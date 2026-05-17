@@ -54,3 +54,20 @@ def dt_annotations_to_instance_map(
         m = segmentation_to_binary_mask(seg, height, width)
         out[m] = label
     return out
+
+
+def binary_masks_to_instance_map_by_confidence(
+    masks_hw: np.ndarray, confidences: np.ndarray
+) -> np.ndarray:
+    """Rasterize Ultralytics masks in ascending confidence order (later paints win)."""
+    if masks_hw.ndim != 3:
+        raise ValueError(f"masks_hw must be (n, H, W), got {masks_hw.shape}")
+    n, h, w = masks_hw.shape
+    if confidences.shape[0] != n:
+        raise ValueError("confidences length must match number of masks")
+    out = np.zeros((h, w), dtype=np.int32)
+    order = np.argsort(confidences.astype(np.float64))
+    for idx in order:
+        m = masks_hw[idx]
+        out[m] = int(idx) + 1
+    return out

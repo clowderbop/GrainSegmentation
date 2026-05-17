@@ -113,30 +113,6 @@ def _prf_series_over_thresholds(
     return ps, rs, fs
 
 
-def compute_instance_prf_mean_iou_sweep(
-    true_instances: np.ndarray,
-    pred_instances: np.ndarray,
-    thresholds: tuple[float, ...] = IOU_THRESHOLDS_50_95,
-) -> tuple[float, float, float]:
-    if not thresholds:
-        return float("nan"), float("nan"), float("nan")
-
-    true_ids = _instance_ids(true_instances)
-    pred_ids = _instance_ids(pred_instances)
-    nt, np_ = len(true_ids), len(pred_ids)
-
-    if nt == 0 and np_ == 0:
-        return 1.0, 1.0, 1.0
-    if nt == 0:
-        return 0.0, 0.0, 0.0
-    if np_ == 0:
-        return 0.0, 0.0, 0.0
-
-    iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
-    ps, rs, fs = _prf_series_over_thresholds(iou_matrix, thresholds)
-    return float(np.mean(ps)), float(np.mean(rs)), float(np.mean(fs))
-
-
 def compute_instance_metrics_dict(
     true_instances: np.ndarray, pred_instances: np.ndarray
 ) -> dict[str, float]:

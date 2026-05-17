@@ -1,0 +1,15 @@
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint.extend-per-file-ignores]
+"src/data_prep/crop_unet_masks_from_yolo_patches.py" = ["E402"]
+"src/data_prep/split_tiff_channels.py" = ["E402"]
+"src/data_prep/split_tiff_gpkg_to_yolo.py" = ["E402"]
+"src/data_prep/stack_tiff_channels.py" = ["E402"]
+"src/evaluation/evaluate.py" = ["E402"]
+"src/evaluation/inference.py" = ["E402"]
+"src/evaluation/plot_results.py" = ["E402"]
+"src/evaluation/tune_watershed.py" = ["E402"]
+"src/yolo/coco_instance_ap.py" = ["E402"]
+"src/yolo/evaluate.py" = ["E402"]
+"src/yolo/visualize_dataset.py" = ["E402"]

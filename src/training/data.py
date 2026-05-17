@@ -6,7 +6,7 @@ import tensorflow as tf
 
 from common.patching import build_coverage_bin_ids, compute_starts_tf, region_bounds
 from common.samples import (
-    list_samples,
+    list_samples,  # noqa: F401
     load_rgb_image,
     load_raster_mask,
     validate_loaded_sample,

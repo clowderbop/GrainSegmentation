@@ -24,6 +24,7 @@ from common.image_io import (
     validate_image_mask_sample,
     validate_semantic_labels,
 )
+from common.samples import list_samples, load_rgb_image, load_raster_mask
 
 
 def _raise_argument_error(message: str, parser: argparse.ArgumentParser | None = None):
@@ -225,8 +226,6 @@ def _ridge_level_grid(args: argparse.Namespace) -> list[float | None]:
 def _collect_samples(
     args: argparse.Namespace,
 ) -> tuple[list[str], list[np.ndarray], list[np.ndarray]]:
-    from training.data import list_samples, _load_rgb_image, _load_raster_mask
-
     samples = list_samples(
         image_dir=args.image_dir,
         mask_dir=args.mask_dir,
@@ -260,11 +259,11 @@ def _collect_samples(
         for sample in samples:
             sid = sample["id"]
             print(f"Inference: {sid}")
-            images = [_load_rgb_image(p) for p in sample["images"]]
+            images = [load_rgb_image(p) for p in sample["images"]]
             if len(images) != args.num_inputs:
                 raise ValueError("Mismatch between num_inputs and loaded images.")
             true_mask = _validate_sample_data(
-                images, _load_raster_mask(sample["mask"]), sample["mask"]
+                images, load_raster_mask(sample["mask"]), sample["mask"]
             )
             height, width = true_mask.shape
             pred_classes, _ = predict_full_image(
@@ -288,10 +287,10 @@ def _collect_samples(
             if not pred_path.is_file():
                 raise SystemExit(f"Missing prediction file: {pred_path}")
             print(f"Loading pred: {pred_path}")
-            img0 = _load_rgb_image(sample["images"][0])
+            img0 = load_rgb_image(sample["images"][0])
             images = [img0]
             true_mask = _validate_sample_data(
-                images, _load_raster_mask(sample["mask"]), sample["mask"]
+                images, load_raster_mask(sample["mask"]), sample["mask"]
             )
             height, width = true_mask.shape
             pred_arr = _load_pred_tiff(pred_path)

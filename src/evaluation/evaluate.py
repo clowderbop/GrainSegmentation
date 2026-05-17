@@ -15,6 +15,7 @@ from common.geometry import load_image_space_polygons
 from common.image_io import validate_image_mask_sample, validate_semantic_labels
 from common.instance_maps import gt_annotations_to_instance_map
 from common.patching import sample_origin_xy, sample_origin_xy_or_whole_image
+from common.samples import list_samples, load_rgb_image, load_raster_mask
 from evaluation.instance_masks import (
     semantic_to_instance_label_map,
     semantic_to_instance_label_map_watershed,
@@ -295,7 +296,6 @@ def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> 
 
 def main():
     args = parse_args()
-    from training.data import _load_raster_mask, _load_rgb_image, list_samples
 
     gt_gpkg_path = Path(args.gt_gpkg).resolve()
     gt_gpkg_polygons = _load_gpkg_polygons(gt_gpkg_path)
@@ -343,12 +343,12 @@ def main():
         print(f"Evaluating sample: {sample_id}")
         t0 = time.perf_counter()
 
-        images = [_load_rgb_image(p) for p in sample["images"]]
+        images = [load_rgb_image(p) for p in sample["images"]]
         if len(images) != args.num_inputs:
             raise ValueError("Mismatch between num_inputs and loaded images.")
         if "mask" in sample:
             _validate_sample_data(
-                images, _load_raster_mask(sample["mask"]), sample["mask"]
+                images, load_raster_mask(sample["mask"]), sample["mask"]
             )
             t_load = time.perf_counter()
             print(f"  Loaded inputs + raster mask (validated): {t_load - t0:.2f}s")

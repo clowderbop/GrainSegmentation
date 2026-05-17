@@ -287,7 +287,7 @@ def main():
         nonlocal model
         if model is None:
             import tensorflow as tf
-            from training.model import weighted_crossentropy
+            from unet.model import weighted_crossentropy
 
             print(f"Loading model from {args.model_path}...")
             model = tf.keras.models.load_model(

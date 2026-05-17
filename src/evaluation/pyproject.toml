@@ -13,11 +13,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-unet = ["training-pipeline"]
+unet = ["unet-pipeline"]
 
 [tool.uv.sources]
 grainsegmentation-common = { path = "../common", editable = true }
-training-pipeline = { path = "../training", editable = true }
+unet-pipeline = { path = "../unet", editable = true }
 
 [build-system]
 requires = ["setuptools>=81.0.0"]

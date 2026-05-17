@@ -14,11 +14,11 @@ This project runs on an interactive node of a SLURM cluster.
 
 ```bash
 # ❌ BAD
-uv run src/training/train.py --epochs 200
+uv run src/unet/train.py --epochs 200
 python large_experiment.py
 
 # ✅ GOOD
-srun --partition=gpu --gpus=1 uv run src/training/train.py --epochs 200
+srun --partition=gpu --gpus=1 uv run src/unet/train.py --epochs 200
 sbatch SLURM/unet/run_unet_tune_and_train_variant.sh
 
 # ✅ RTX Pro 6000 only when explicitly needed

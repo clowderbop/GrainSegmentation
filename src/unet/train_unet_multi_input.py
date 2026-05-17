@@ -1,6 +1,6 @@
 import argparse
 
-from training.train import train_model
+from unet.train import train_model
 
 
 def _print_start_message(

@@ -233,7 +233,7 @@ def _collect_samples(
     if args.model_path:
         import tensorflow as tf
 
-        from training.model import weighted_crossentropy
+        from unet.model import weighted_crossentropy
         from evaluation.inference import predict_full_image
 
         print(f"Loading model from {args.model_path}...")

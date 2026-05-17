@@ -220,7 +220,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.3" },
     { name = "scikit-image", specifier = ">=0.25.0" },
     { name = "scipy", specifier = ">=1.17.1" },
-    { name = "training-pipeline", marker = "extra == 'unet'", editable = "../training" },
+    { name = "unet-pipeline", marker = "extra == 'unet'", editable = "../unet" },
 ]
 provides-extras = ["unet"]
 

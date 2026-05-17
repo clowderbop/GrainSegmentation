@@ -101,7 +101,7 @@ LOCAL_DIR="$TMPDIR/dataset/cropped"
 export TF_CPP_MIN_LOG_LEVEL=2
 
 echo "Syncing training environment..."
-cd "$REPO_ROOT/src/training"
+cd "$REPO_ROOT/src/unet"
 uv sync
 
 echo "Installing TensorFlow wheel..."

@@ -1,7 +1,7 @@
 [project]
-name = "training-pipeline"
+name = "unet-pipeline"
 version = "0.1.0"
-description = "Training pipeline for GrainSegmentation"
+description = "UNet training pipeline for GrainSegmentation"
 requires-python = "==3.12.*"
 dependencies = [
     "grainsegmentation-common",
@@ -27,7 +27,7 @@ requires = ["setuptools>=81.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["training"]
+packages = ["unet"]
 
 [tool.setuptools.package-dir]
-training = "."
+unet = "."

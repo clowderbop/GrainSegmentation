@@ -16,28 +16,17 @@ import numpy as np
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from evaluation.instance_masks import semantic_to_instance_label_map_watershed
-from evaluation.metrics import compute_aji
-from common.ground_truth import gpkg_to_instance_map
+from common.geometry import load_image_space_polygons
+from common.ground_truth import scene_polygons_to_patch_instance_map
 from common.image_io import (
     load_tiff_single_channel_mask,
-    validate_image_mask_sample,
     validate_semantic_labels,
 )
 from common.samples import list_samples, load_rgb_image, load_raster_mask
-
-
-def _raise_argument_error(message: str, parser: argparse.ArgumentParser | None = None):
-    if parser is None:
-        raise ValueError(message)
-    parser.error(message)
-
-
-def _validate_sample_data(
-    images: list[np.ndarray], mask: np.ndarray, mask_path: str
-) -> np.ndarray:
-    validate_image_mask_sample(images, mask, mask_path)
-    return validate_semantic_labels(mask, mask_path)
+from evaluation.arg_errors import raise_cli_argument_error
+from evaluation.instance_masks import semantic_to_instance_label_map_watershed
+from evaluation.metrics import compute_aji
+from evaluation.sample_checks import semantic_mask_after_sample_validation
 
 
 def _validate_pred_semantic(pred: np.ndarray, mask_path: str) -> np.ndarray:
@@ -51,10 +40,6 @@ def _sanitize_csv_key(sample_id: str) -> str:
 def _load_pred_tiff(path: Path) -> np.ndarray:
     arr = load_tiff_single_channel_mask(path)
     return validate_semantic_labels(arr, str(path))
-
-
-def _load_gpkg_instance_map(gpkg_path: Path, height: int, width: int) -> np.ndarray:
-    return gpkg_to_instance_map(gpkg_path, height=height, width=width)
 
 
 @dataclass(frozen=True)
@@ -117,6 +102,13 @@ def _parse_args() -> argparse.Namespace:
         "--gt-gpkg",
         required=True,
         )
+    parser.add_argument(
+        "--gt-origin",
+        choices=("patch_stem", "whole_image"),
+        default="whole_image",
+        help="How to translate GPKG scene coordinates into patch image space "
+        "(default whole_image preserves legacy tune_watershed behavior).",
+    )
     parser.add_argument("--num-inputs", type=int, default=7)
     parser.add_argument(
         "--image-suffixes",
@@ -191,28 +183,31 @@ def _validate_tune_args(
     args: argparse.Namespace, parser: argparse.ArgumentParser | None = None
 ) -> None:
     if args.num_inputs not in {1, 2, 7}:
-        _raise_argument_error("num_inputs must be one of: 1, 2, 7", parser)
+        raise_cli_argument_error(
+            "num_inputs must be one of: 1, 2, 7", parser=parser
+        )
     if len(args.image_suffixes) < args.num_inputs:
-        _raise_argument_error(
-            "image_suffixes must provide at least num_inputs suffixes", parser
+        raise_cli_argument_error(
+            "image_suffixes must provide at least num_inputs suffixes",
+            parser=parser,
         )
     if args.patch_size <= 0 or args.stride <= 0:
-        _raise_argument_error("patch_size and stride must be > 0", parser)
+        raise_cli_argument_error("patch_size and stride must be > 0", parser=parser)
     if args.stride > args.patch_size:
-        _raise_argument_error("stride must be <= patch_size", parser)
+        raise_cli_argument_error("stride must be <= patch_size", parser=parser)
     if args.batch_size <= 0:
-        _raise_argument_error("batch_size must be > 0", parser)
+        raise_cli_argument_error("batch_size must be > 0", parser=parser)
     if not Path(args.gt_gpkg).is_file():
-        _raise_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser)
+        raise_cli_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser)
     for name, vals in (
         ("min_distance", args.min_distance),
         ("boundary_dilate_iter", args.boundary_dilate_iter),
         ("min_area_px", args.min_area_px),
     ):
         if any(v < 0 for v in vals):
-            _raise_argument_error(f"{name} values must be >= 0", parser)
+            raise_cli_argument_error(f"{name} values must be >= 0", parser=parser)
     if args.max_samples is not None and args.max_samples <= 0:
-        _raise_argument_error("max_samples must be positive", parser)
+        raise_cli_argument_error("max_samples must be positive", parser=parser)
 
 
 def _ridge_level_grid(args: argparse.Namespace) -> list[float | None]:
@@ -240,6 +235,7 @@ def _collect_samples(
         samples = samples[: args.max_samples]
 
     gpkg_path = Path(args.gt_gpkg).resolve()
+    gt_scene_polygons = load_image_space_polygons(gpkg_path)
     sample_ids: list[str] = []
     true_instances: list[np.ndarray] = []
     pred_semantic: list[np.ndarray] = []
@@ -262,7 +258,7 @@ def _collect_samples(
             images = [load_rgb_image(p) for p in sample["images"]]
             if len(images) != args.num_inputs:
                 raise ValueError("Mismatch between num_inputs and loaded images.")
-            true_mask = _validate_sample_data(
+            true_mask = semantic_mask_after_sample_validation(
                 images, load_raster_mask(sample["mask"]), sample["mask"]
             )
             height, width = true_mask.shape
@@ -274,7 +270,15 @@ def _collect_samples(
                 batch_size=args.batch_size,
             )
             sample_ids.append(sid)
-            true_instances.append(_load_gpkg_instance_map(gpkg_path, height, width))
+            true_instances.append(
+                scene_polygons_to_patch_instance_map(
+                    gt_scene_polygons,
+                    sample_id=sid,
+                    height=height,
+                    width=width,
+                    gt_origin=args.gt_origin,
+                )
+            )
             pred_semantic.append(_validate_pred_semantic(pred_classes, sid))
     else:
         preds_dir = Path(args.preds_dir).resolve()
@@ -289,7 +293,7 @@ def _collect_samples(
             print(f"Loading pred: {pred_path}")
             img0 = load_rgb_image(sample["images"][0])
             images = [img0]
-            true_mask = _validate_sample_data(
+            true_mask = semantic_mask_after_sample_validation(
                 images, load_raster_mask(sample["mask"]), sample["mask"]
             )
             height, width = true_mask.shape
@@ -299,7 +303,15 @@ def _collect_samples(
                     f"Pred shape {pred_arr.shape} != mask shape {true_mask.shape} for {sid}"
                 )
             sample_ids.append(sid)
-            true_instances.append(_load_gpkg_instance_map(gpkg_path, height, width))
+            true_instances.append(
+                scene_polygons_to_patch_instance_map(
+                    gt_scene_polygons,
+                    sample_id=sid,
+                    height=height,
+                    width=width,
+                    gt_origin=args.gt_origin,
+                )
+            )
             pred_semantic.append(pred_arr)
 
     return sample_ids, true_instances, pred_semantic

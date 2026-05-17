@@ -10,12 +10,10 @@ import numpy as np
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from common.coco_annotations import build_gt_annotations
 from common.geometry import load_image_space_polygons
-from common.image_io import validate_image_mask_sample, validate_semantic_labels
-from common.instance_maps import gt_annotations_to_instance_map
-from common.patching import sample_origin_xy, sample_origin_xy_or_whole_image
+from common.ground_truth import scene_polygons_to_patch_instance_map
 from common.samples import list_samples, load_rgb_image, load_raster_mask
+from evaluation.arg_errors import raise_cli_argument_error
 from evaluation.instance_masks import (
     semantic_to_instance_label_map,
     semantic_to_instance_label_map_watershed,
@@ -27,6 +25,7 @@ from evaluation.reporting import (
     count_instances,
     json_safe_for_dump,
 )
+from evaluation.sample_checks import semantic_mask_after_sample_validation
 
 
 def parse_args():
@@ -129,41 +128,42 @@ def parse_args():
     return args
 
 
-def _raise_argument_error(message: str, parser: argparse.ArgumentParser | None = None):
-    if parser is None:
-        raise ValueError(message)
-    parser.error(message)
-
-
 def _validate_args(
     args: argparse.Namespace, parser: argparse.ArgumentParser | None = None
 ) -> None:
     if args.num_inputs not in {1, 2, 7}:
-        _raise_argument_error("num_inputs must be one of: 1, 2, 7", parser)
+        raise_cli_argument_error("num_inputs must be one of: 1, 2, 7", parser=parser)
     if len(args.image_suffixes) < args.num_inputs:
-        _raise_argument_error(
-            "image_suffixes must provide at least num_inputs suffixes", parser
+        raise_cli_argument_error(
+            "image_suffixes must provide at least num_inputs suffixes",
+            parser=parser,
         )
     if args.patch_size <= 0 or args.stride <= 0:
-        _raise_argument_error("patch_size and stride must be > 0", parser)
+        raise_cli_argument_error("patch_size and stride must be > 0", parser=parser)
     if args.stride > args.patch_size:
-        _raise_argument_error("stride must be <= patch_size", parser)
+        raise_cli_argument_error("stride must be <= patch_size", parser=parser)
     if args.batch_size <= 0:
-        _raise_argument_error("batch_size must be > 0", parser)
+        raise_cli_argument_error("batch_size must be > 0", parser=parser)
     if args.watershed_min_distance < 1:
-        _raise_argument_error("watershed_min_distance must be >= 1", parser)
+        raise_cli_argument_error("watershed_min_distance must be >= 1", parser=parser)
     if args.watershed_boundary_dilate_iter < 0:
-        _raise_argument_error("watershed_boundary_dilate_iter must be >= 0", parser)
+        raise_cli_argument_error(
+            "watershed_boundary_dilate_iter must be >= 0", parser=parser
+        )
     if args.watershed_min_area_px < 0:
-        _raise_argument_error("watershed_min_area_px must be >= 0", parser)
+        raise_cli_argument_error("watershed_min_area_px must be >= 0", parser=parser)
     if args.watershed_ridge_level is not None and not np.isfinite(
         args.watershed_ridge_level
     ):
-        _raise_argument_error("watershed_ridge_level must be finite when set", parser)
+        raise_cli_argument_error(
+            "watershed_ridge_level must be finite when set", parser=parser
+        )
     if not Path(args.gt_gpkg).is_file():
-        _raise_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser)
+        raise_cli_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser)
     if args.mask_dir is not None and not Path(args.mask_dir).is_dir():
-        _raise_argument_error(f"mask-dir is not a directory: {args.mask_dir}", parser)
+        raise_cli_argument_error(
+            f"mask-dir is not a directory: {args.mask_dir}", parser=parser
+        )
 
 
 def _prediction_tiff_path(save_dir: str, sample_id: str) -> str:
@@ -225,13 +225,6 @@ def _load_cached_prediction_tiff(path: str, expected_hw: tuple[int, int]) -> np.
     return arr.astype(np.int32)
 
 
-def _validate_sample_data(
-    images: list[np.ndarray], mask: np.ndarray, mask_path: str
-) -> np.ndarray:
-    validate_image_mask_sample(images, mask, mask_path)
-    return validate_semantic_labels(mask, mask_path)
-
-
 def _instances_for_metrics(
     semantic: np.ndarray, args: argparse.Namespace
 ) -> np.ndarray:
@@ -246,37 +239,6 @@ def _instances_for_metrics(
         exclude_border=args.watershed_exclude_border,
         ridge_level=args.watershed_ridge_level,
     )
-
-
-def _load_gpkg_polygons(gpkg_path: Path):
-    return load_image_space_polygons(gpkg_path)
-
-
-def _gpkg_instance_map(
-    polygons,
-    *,
-    sample_id: str,
-    height: int,
-    width: int,
-    gt_origin_mode: str,
-) -> np.ndarray:
-    from shapely.affinity import translate
-
-    if gt_origin_mode == "whole_image":
-        origin_x, origin_y = sample_origin_xy_or_whole_image(sample_id)
-    else:
-        origin_x, origin_y = sample_origin_xy(sample_id)
-    if origin_x or origin_y:
-        polygons = [
-            translate(p, xoff=-float(origin_x), yoff=-float(origin_y)) for p in polygons
-        ]
-    gt_anns = build_gt_annotations(
-        polygons,
-        image_id=1,
-        height=height,
-        width=width,
-    )
-    return gt_annotations_to_instance_map(gt_anns, height, width)
 
 
 def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> None:
@@ -298,7 +260,7 @@ def main():
     args = parse_args()
 
     gt_gpkg_path = Path(args.gt_gpkg).resolve()
-    gt_gpkg_polygons = _load_gpkg_polygons(gt_gpkg_path)
+    gt_scene_polygons = load_image_space_polygons(gt_gpkg_path)
 
     samples = list_samples(
         image_dir=args.image_dir,
@@ -347,7 +309,7 @@ def main():
         if len(images) != args.num_inputs:
             raise ValueError("Mismatch between num_inputs and loaded images.")
         if "mask" in sample:
-            _validate_sample_data(
+            semantic_mask_after_sample_validation(
                 images, load_raster_mask(sample["mask"]), sample["mask"]
             )
             t_load = time.perf_counter()
@@ -426,12 +388,12 @@ def main():
                     mf.write("\n")
 
         t_inst = time.perf_counter()
-        true_instances = _gpkg_instance_map(
-            gt_gpkg_polygons,
+        true_instances = scene_polygons_to_patch_instance_map(
+            gt_scene_polygons,
             sample_id=sample_id,
             height=height,
             width=width,
-            gt_origin_mode=args.gt_origin,
+            gt_origin=args.gt_origin,
         )
         pred_instances = _instances_for_metrics(pred_classes, args)
         print(f"  Instance maps (GT + pred): {time.perf_counter() - t_inst:.2f}s")

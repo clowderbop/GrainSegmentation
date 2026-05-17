@@ -81,6 +81,8 @@ Two segmentation model families are evaluated:
 
 ### YOLO Workflow
 
+All input variants are loaded as a single TIFF image. `PPL` and `PPLPPXblend` are 3-channel TIFFs, `PPL+PPXblend` is a 6-channel stacked TIFF, and `PPL+AllPPX` is a 21-channel stacked TIFF.
+
 For each input variant, the YOLO workflow is:
 
 1. Tune hyperparameters with the Ultralytics tuner over learning rate and dropout.
@@ -90,6 +92,8 @@ For each input variant, the YOLO workflow is:
   - whole-section sliding-window evaluation (using SAHI)
 
 ### U-Net Workflow
+
+Input variants are built by loading individual RGB TIFF images. `PPL` and `PPLPPXblend` both use one 3-channel TIFF. `PPL+PPXblend` uses two 3-channel TIFFs (`PPL` and `PPXblend`) that are concatenated inside the model to 6 channels. `PPL+AllPPX` uses seven 3-channel TIFFs (`PPL` and `PPX1`-`PPX6`) that are concatenated inside the model to 21 channels. The U-Net loader expects each input TIFF to be exactly 3 channels and will reject stacked 6/21-channel TIFFs.
 
 For each input variant, the U-Net workflow is:
 

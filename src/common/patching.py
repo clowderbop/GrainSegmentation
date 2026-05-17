@@ -5,7 +5,6 @@ from typing import Any
 
 import numpy as np
 
-
 PATCH_STEM_RE = re.compile(r"^region_(\d+)_y(\d+)_x(\d+)$")
 
 
@@ -48,7 +47,9 @@ def compute_starts_tf(size: Any, patch_size: Any, stride: Any) -> Any:
     )
 
 
-def region_bounds(height: int, width: int, tile_size: int) -> list[tuple[int, int, int, int]]:
+def region_bounds(
+    height: int, width: int, tile_size: int
+) -> list[tuple[int, int, int, int]]:
     if tile_size <= 0:
         raise ValueError("tile_size must be > 0")
 

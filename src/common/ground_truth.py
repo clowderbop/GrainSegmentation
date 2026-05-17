@@ -5,7 +5,9 @@ from typing import Any
 
 import numpy as np
 
+from common.coco_annotations import build_gt_annotations
 from common.geometry import load_image_space_polygons
+from common.instance_maps import gt_annotations_to_instance_map
 
 
 def polygons_to_instance_map(
@@ -15,9 +17,6 @@ def polygons_to_instance_map(
     width: int,
     image_id: int = 1,
 ) -> np.ndarray:
-    from yolo.coco_instance_ap import build_gt_annotations
-    from yolo.instance_label_maps import gt_annotations_to_instance_map
-
     gt_anns = build_gt_annotations(
         polygons,
         image_id=image_id,

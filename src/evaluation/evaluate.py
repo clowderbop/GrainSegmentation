@@ -8,9 +8,13 @@ from typing import Any
 
 import numpy as np
 
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+from common.coco_annotations import build_gt_annotations
+from common.geometry import load_image_space_polygons
+from common.image_io import validate_image_mask_sample, validate_semantic_labels
+from common.instance_maps import gt_annotations_to_instance_map
+from common.patching import sample_origin_xy
 from evaluation.instance_masks import (
     semantic_to_instance_label_map,
     semantic_to_instance_label_map_watershed,
@@ -22,33 +26,38 @@ from evaluation.reporting import (
     count_instances,
     json_safe_for_dump,
 )
-from common.geometry import load_image_space_polygons
-from common.image_io import validate_image_mask_sample, validate_semantic_labels
-from common.patching import sample_origin_xy
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model-path", required=True, )
+        "--model-path",
+        required=True,
+    )
     parser.add_argument(
-        "--image-dir", required=True, )
+        "--image-dir",
+        required=True,
+    )
     parser.add_argument(
         "--mask-dir",
         default=None,
-        )
+    )
     parser.add_argument(
         "--gt-gpkg",
         required=True,
-        )
+    )
     parser.add_argument(
-        "--output-json", required=True, )
+        "--output-json",
+        required=True,
+    )
     parser.add_argument(
         "--save-predictions-dir",
-        )
+    )
     parser.add_argument(
-        "--num-inputs", type=int, default=7, )
+        "--num-inputs",
+        type=int,
+        default=7,
+    )
     parser.add_argument(
         "--image-suffixes",
         nargs="+",
@@ -63,50 +72,50 @@ def parse_args():
         "--instance-method",
         choices=("cc", "watershed"),
         default="cc",
-        )
+    )
     parser.add_argument(
         "--watershed-min-distance",
         type=int,
         default=1,
-        )
+    )
     parser.add_argument(
         "--watershed-boundary-dilate-iter",
         type=int,
         default=0,
-        )
+    )
     parser.add_argument(
         "--watershed-connectivity",
         type=int,
         choices=(1, 2),
         default=1,
-        )
+    )
     parser.add_argument(
         "--watershed-min-area-px",
         type=int,
         default=0,
-        )
+    )
     parser.add_argument(
         "--watershed-exclude-border",
         action=argparse.BooleanOptionalAction,
         default=False,
-        )
+    )
     parser.add_argument(
         "--watershed-ridge-level",
         type=float,
         default=None,
-        )
+    )
     parser.add_argument(
         "--model-type",
         default="unet",
-        )
+    )
     parser.add_argument(
         "--variant",
         default=None,
-        )
+    )
     parser.add_argument(
         "--unit",
         default="patch",
-        )
+    )
     args = parser.parse_args()
     _validate_args(args, parser)
     return args
@@ -163,9 +172,7 @@ def _load_cached_prediction_tiff(path: str, expected_hw: tuple[int, int]) -> np.
         elif arr.shape[2] == 1:
             arr = arr[:, :, 0]
         else:
-            raise ValueError(
-                f"Cached prediction must be single-channel TIFF: {path}"
-            )
+            raise ValueError(f"Cached prediction must be single-channel TIFF: {path}")
     if arr.ndim != 2:
         raise ValueError(f"Cached prediction must be 2D: {path}")
     if arr.shape != expected_hw:
@@ -212,14 +219,10 @@ def _gpkg_instance_map(
 ) -> np.ndarray:
     from shapely.affinity import translate
 
-    from yolo.coco_instance_ap import build_gt_annotations
-    from yolo.instance_label_maps import gt_annotations_to_instance_map
-
     origin_x, origin_y = sample_origin_xy(sample_id)
     if origin_x or origin_y:
         polygons = [
-            translate(p, xoff=-float(origin_x), yoff=-float(origin_y))
-            for p in polygons
+            translate(p, xoff=-float(origin_x), yoff=-float(origin_y)) for p in polygons
         ]
     gt_anns = build_gt_annotations(
         polygons,
@@ -247,7 +250,7 @@ def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> 
 
 def main():
     args = parse_args()
-    from training.data import list_samples, _load_rgb_image, _load_raster_mask
+    from training.data import _load_raster_mask, _load_rgb_image, list_samples
 
     gt_gpkg_path = Path(args.gt_gpkg).resolve()
     gt_gpkg_polygons = _load_gpkg_polygons(gt_gpkg_path)
@@ -279,7 +282,6 @@ def main():
         nonlocal model
         if model is None:
             import tensorflow as tf
-
             from training.model import weighted_crossentropy
 
             print(f"Loading model from {args.model_path}...")
@@ -295,7 +297,6 @@ def main():
         sample_id = sample["id"]
         print(f"Evaluating sample: {sample_id}")
         t0 = time.perf_counter()
-
 
         images = [_load_rgb_image(p) for p in sample["images"]]
         if len(images) != args.num_inputs:

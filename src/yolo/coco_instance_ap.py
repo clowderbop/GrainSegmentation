@@ -11,59 +11,12 @@ import numpy as np
 from pycocotools import mask as mask_utils
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-from shapely.geometry import GeometryCollection, MultiPolygon, Polygon, box
-from shapely.geometry.polygon import orient
 
 _SRC_ROOT = Path(__file__).resolve().parent.parent
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
 
-from common.geometry import (
-    iter_polygon_parts,
-    load_polygons_from_vector,
-    normalize_polygons_to_image_space as _normalize_polygons_to_image_space,
-)
-
-
-def _iter_polygon_parts(
-    geometry: Polygon | MultiPolygon | GeometryCollection,
-    *,
-    context: str = "coco_instance_ap",
-) -> list[Polygon]:
-    return iter_polygon_parts(geometry, context=context)
-
-
-def load_polygons_from_gpkg(path: Path) -> list[Polygon | MultiPolygon]:
-    return load_polygons_from_vector(path)
-
-
-def normalize_polygons_to_image_space(
-    polygons: list[Polygon | MultiPolygon],
-) -> list[Polygon | MultiPolygon]:
-    return _normalize_polygons_to_image_space(polygons)
-
-
-def clip_polygon_to_hw(polygon: Polygon, height: int, width: int) -> list[Polygon]:
-    frame = box(0, 0, width, height)
-    try:
-        clipped = polygon.intersection(frame)
-    except Exception:
-        return []
-    return [
-        p
-        for p in _iter_polygon_parts(clipped, context="clip_polygon_to_hw")
-        if not p.is_empty and p.area > 0
-    ]
-
-
-def polygon_to_coco_polygon(polygon: Polygon) -> list[float]:
-    coords = list(orient(polygon, sign=1.0).exterior.coords[:-1])
-    if len(coords) < 3:
-        return []
-    flat: list[float] = []
-    for x, y in coords:
-        flat.extend((float(x), float(y)))
-    return flat
+from common.coco_annotations import build_gt_annotations
 
 
 def _ensure_dt_bbox_area(record: dict[str, Any], *, height: int, width: int) -> None:
@@ -84,43 +37,6 @@ def _ensure_dt_bbox_area(record: dict[str, Any], *, height: int, width: int) -> 
     )
     record["area"] = float(mask_utils.area(rle))
     record["bbox"] = [float(x) for x in mask_utils.toBbox(rle)]
-
-
-def build_gt_annotations(
-    polygons: list[Polygon | MultiPolygon],
-    *,
-    image_id: int,
-    height: int,
-    width: int,
-    category_id: int = 1,
-) -> list[dict[str, Any]]:
-    anns: list[dict[str, Any]] = []
-    ann_id = 1
-    for geom in polygons:
-        for part in _iter_polygon_parts(geom, context="build_gt_annotations"):
-            for clipped in clip_polygon_to_hw(part, height, width):
-                seg_flat = polygon_to_coco_polygon(clipped)
-                if len(seg_flat) < 6:
-                    continue
-                xs = seg_flat[0::2]
-                ys = seg_flat[1::2]
-                x0, x1 = min(xs), max(xs)
-                y0, y1 = min(ys), max(ys)
-                w, h = x1 - x0, y1 - y0
-                area = float(clipped.area)
-                anns.append(
-                    {
-                        "id": ann_id,
-                        "image_id": image_id,
-                        "category_id": category_id,
-                        "segmentation": [seg_flat],
-                        "area": area,
-                        "bbox": [float(x0), float(y0), float(w), float(h)],
-                        "iscrowd": 0,
-                    }
-                )
-                ann_id += 1
-    return anns
 
 
 def object_predictions_to_coco_dt(

@@ -17,7 +17,7 @@ import numpy as np
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from common.geometry import load_image_space_polygons
-from common.ground_truth import scene_polygons_to_patch_instance_map
+from common.ground_truth import polygons_to_instance_map
 from common.image_io import (
     load_tiff_single_channel_mask,
     validate_semantic_labels,
@@ -102,13 +102,6 @@ def _parse_args() -> argparse.Namespace:
         "--gt-gpkg",
         required=True,
         )
-    parser.add_argument(
-        "--gt-origin",
-        choices=("patch_stem", "whole_image"),
-        default="whole_image",
-        help="How to translate GPKG scene coordinates into patch image space "
-        "(default whole_image preserves legacy tune_watershed behavior).",
-    )
     parser.add_argument("--num-inputs", type=int, default=7)
     parser.add_argument(
         "--image-suffixes",
@@ -221,6 +214,7 @@ def _ridge_level_grid(args: argparse.Namespace) -> list[float | None]:
 def _collect_samples(
     args: argparse.Namespace,
 ) -> tuple[list[str], list[np.ndarray], list[np.ndarray]]:
+    """Materialize GT instances in scene/full-raster coords only (never patch-stem shifted)."""
     samples = list_samples(
         image_dir=args.image_dir,
         mask_dir=args.mask_dir,
@@ -271,12 +265,10 @@ def _collect_samples(
             )
             sample_ids.append(sid)
             true_instances.append(
-                scene_polygons_to_patch_instance_map(
+                polygons_to_instance_map(
                     gt_scene_polygons,
-                    sample_id=sid,
                     height=height,
                     width=width,
-                    gt_origin=args.gt_origin,
                 )
             )
             pred_semantic.append(_validate_pred_semantic(pred_classes, sid))
@@ -304,12 +296,10 @@ def _collect_samples(
                 )
             sample_ids.append(sid)
             true_instances.append(
-                scene_polygons_to_patch_instance_map(
+                polygons_to_instance_map(
                     gt_scene_polygons,
-                    sample_id=sid,
                     height=height,
                     width=width,
-                    gt_origin=args.gt_origin,
                 )
             )
             pred_semantic.append(pred_arr)

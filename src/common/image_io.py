@@ -120,12 +120,6 @@ def load_tiff_single_channel_mask(path: str | Path) -> np.ndarray:
     return arr
 
 
-def load_rgb_float_image(path: str | Path) -> np.ndarray:
-    with Image.open(path) as img:
-        img = img.convert("RGB")
-        return np.asarray(img, dtype=np.float32) / 255.0
-
-
 def load_single_channel_mask(path: str | Path, *, allow_tiff: bool = True) -> np.ndarray:
     mask_path = Path(path)
     if allow_tiff and mask_path.suffix.lower() in TIFF_SUFFIXES:

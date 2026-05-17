@@ -6,7 +6,6 @@ import numpy as np
 from PIL import Image
 
 
-IMAGE_SUFFIXES = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
 TIFF_SUFFIXES = {".tif", ".tiff"}
 
 

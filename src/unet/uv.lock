@@ -843,7 +843,6 @@ dependencies = [
     { name = "scikit-image" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "setuptools" },
     { name = "tensorboard" },
 ]
 
@@ -860,7 +859,6 @@ requires-dist = [
     { name = "scikit-image", specifier = ">=0.25.0" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "scipy", specifier = ">=1.17.1" },
-    { name = "setuptools", specifier = "==81.0.0" },
     { name = "tensorboard", specifier = ">=2.20.0" },
 ]
 

@@ -188,8 +188,12 @@ def _validate_tune_args(
         raise_cli_argument_error("batch_size must be > 0", parser=parser)
     if not Path(args.gt_gpkg).is_file():
         raise_cli_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser)
+    if any(v < 1 for v in args.min_distance):
+        raise_cli_argument_error(
+            "min_distance values must be >= 1 (matches evaluate.py watershed)",
+            parser=parser,
+        )
     for name, vals in (
-        ("min_distance", args.min_distance),
         ("boundary_dilate_iter", args.boundary_dilate_iter),
         ("min_area_px", args.min_area_px),
     ):

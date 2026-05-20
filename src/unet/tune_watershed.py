@@ -21,9 +21,9 @@ from common.image_io import (
     validate_semantic_labels,
 )
 from common.samples import list_samples, load_rgb_image
-from evaluation.arg_errors import raise_cli_argument_error
-from evaluation.instance_masks import semantic_to_instance_label_map_watershed
-from evaluation.metrics import compute_aji
+from common.arg_errors import raise_cli_argument_error
+from unet.instance_masks import semantic_to_instance_label_map_watershed
+from common.metrics import compute_aji
 
 
 def _validate_pred_semantic(pred: np.ndarray, mask_path: str) -> np.ndarray:
@@ -231,7 +231,7 @@ def _collect_samples(
         import tensorflow as tf
 
         from unet.model import weighted_crossentropy
-        from evaluation.inference import predict_full_image
+        from unet.inference import predict_full_image
 
         print(f"Loading model from {args.model_path}...")
         model = tf.keras.models.load_model(

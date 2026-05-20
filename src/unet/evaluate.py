@@ -1,68 +1,54 @@
+"""Evaluate U-Net semantic predictions with instance-level metrics."""
+
+from __future__ import annotations
+
 import argparse
 import json
-import os
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import tifffile
 
+from common.arg_errors import raise_cli_argument_error
 from common.geometry import load_image_space_polygons
-from common.ground_truth import scene_polygons_to_patch_instance_map
-from common.samples import list_samples, load_rgb_image, load_raster_mask
-from evaluation.arg_errors import raise_cli_argument_error
-from evaluation.instance_masks import (
-    semantic_to_instance_label_map,
-    semantic_to_instance_label_map_watershed,
-)
-from evaluation.metrics import compute_aji, compute_instance_metrics_dict
-from evaluation.reporting import (
+from common.ground_truth import GtOriginMode, scene_polygons_to_patch_instance_map
+from common.metrics import compute_aji, compute_instance_metrics_dict
+from common.reporting import (
     build_instance_eval_report,
     build_sample_row,
     count_instances,
     json_safe_for_dump,
 )
-from evaluation.sample_checks import semantic_mask_after_sample_validation
+from common.samples import list_samples, load_rgb_image, load_raster_mask
+from common.semantic_instance import semantic_to_instance_label_map
+from unet.instance_masks import semantic_to_instance_label_map_watershed
+from unet.sample_checks import semantic_mask_after_sample_validation
+
+MODEL_TYPE = "unet"
+PREDICTION_CACHE_SCHEMA_VERSION = 1
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--model-path",
-        required=True,
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Run U-Net inference and compute instance segmentation metrics.",
     )
-    parser.add_argument(
-        "--image-dir",
-        required=True,
-    )
-    parser.add_argument(
-        "--mask-dir",
-        default=None,
-    )
-    parser.add_argument(
-        "--gt-gpkg",
-        required=True,
-    )
-    parser.add_argument(
-        "--output-json",
-        required=True,
-    )
-    parser.add_argument(
-        "--save-predictions-dir",
-    )
+    parser.add_argument("--model-path", required=True, type=Path)
+    parser.add_argument("--image-dir", required=True, type=Path)
+    parser.add_argument("--mask-dir", default=None, type=Path)
+    parser.add_argument("--gt-gpkg", required=True, type=Path)
+    parser.add_argument("--output-json", required=True, type=Path)
+    parser.add_argument("--save-predictions-dir", default=None, type=Path)
     parser.add_argument(
         "--gt-origin",
         choices=("patch_stem", "whole_image"),
-        default="patch_stem",
-        help="GPKG-to-raster alignment: patch_stem requires region_*_y*_x* ids "
-        "(fail if missing); whole_image uses (0,0) for non-patch stems.",
+        default=None,
+        help="GPKG-to-raster alignment. Default: patch_stem for --unit patch, "
+        "whole_image for --unit whole.",
     )
-    parser.add_argument(
-        "--num-inputs",
-        type=int,
-        default=7,
-    )
+    parser.add_argument("--num-inputs", type=int, default=7)
     parser.add_argument(
         "--image-suffixes",
         nargs="+",
@@ -78,52 +64,28 @@ def parse_args():
         choices=("cc", "watershed"),
         default="cc",
     )
-    parser.add_argument(
-        "--watershed-min-distance",
-        type=int,
-        default=1,
-    )
-    parser.add_argument(
-        "--watershed-boundary-dilate-iter",
-        type=int,
-        default=0,
-    )
-    parser.add_argument(
-        "--watershed-connectivity",
-        type=int,
-        choices=(1, 2),
-        default=1,
-    )
-    parser.add_argument(
-        "--watershed-min-area-px",
-        type=int,
-        default=0,
-    )
+    parser.add_argument("--watershed-min-distance", type=int, default=1)
+    parser.add_argument("--watershed-boundary-dilate-iter", type=int, default=0)
+    parser.add_argument("--watershed-connectivity", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--watershed-min-area-px", type=int, default=0)
     parser.add_argument(
         "--watershed-exclude-border",
         action=argparse.BooleanOptionalAction,
         default=False,
     )
-    parser.add_argument(
-        "--watershed-ridge-level",
-        type=float,
-        default=None,
-    )
-    parser.add_argument(
-        "--model-type",
-        default="unet",
-    )
+    parser.add_argument("--watershed-ridge-level", type=float, default=None)
     parser.add_argument(
         "--variant",
         default=None,
+        help="Input variant label for the metrics JSON (e.g. PPL, PPL+AllPPX).",
     )
     parser.add_argument(
         "--unit",
+        choices=("patch", "whole"),
         default="patch",
+        help="Evaluation scope recorded in the metrics JSON.",
     )
-    args = parser.parse_args()
-    _validate_args(args, parser)
-    return args
+    return parser
 
 
 def _validate_args(
@@ -156,35 +118,53 @@ def _validate_args(
         raise_cli_argument_error(
             "watershed_ridge_level must be finite when set", parser=parser
         )
-    if not Path(args.gt_gpkg).is_file():
-        raise_cli_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser)
-    if args.mask_dir is not None and not Path(args.mask_dir).is_dir():
+    if not args.gt_gpkg.is_file():
+        raise_cli_argument_error(
+            f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser
+        )
+    if args.mask_dir is not None and not args.mask_dir.is_dir():
         raise_cli_argument_error(
             f"mask-dir is not a directory: {args.mask_dir}", parser=parser
         )
 
 
-def _prediction_tiff_path(save_dir: str, sample_id: str) -> str:
-    return os.path.join(save_dir, f"{sample_id}_pred.tif")
+def _effective_gt_origin(args: argparse.Namespace) -> GtOriginMode:
+    if args.gt_origin is not None:
+        return args.gt_origin
+    return "whole_image" if args.unit == "whole" else "patch_stem"
 
 
-PREDICTION_CACHE_SCHEMA_VERSION = 1
+def _prediction_tiff_path(save_dir: Path, sample_id: str) -> Path:
+    return save_dir / f"{sample_id}_pred.tif"
 
 
-def _prediction_meta_path(save_dir: str, sample_id: str) -> str:
-    return os.path.join(save_dir, f"{sample_id}_pred.meta.json")
+def _prediction_meta_path(save_dir: Path, sample_id: str) -> Path:
+    return save_dir / f"{sample_id}_pred.meta.json"
 
 
 def _prediction_cache_record(args: argparse.Namespace) -> dict[str, Any]:
-    return {
+    record: dict[str, Any] = {
         "schema_version": PREDICTION_CACHE_SCHEMA_VERSION,
-        "model_path": str(Path(args.model_path).resolve()),
+        "model_path": str(args.model_path.resolve()),
         "patch_size": args.patch_size,
         "stride": args.stride,
         "batch_size": args.batch_size,
         "num_inputs": args.num_inputs,
         "image_suffixes": list(args.image_suffixes),
+        "instance_method": args.instance_method,
     }
+    if args.instance_method == "watershed":
+        record.update(
+            {
+                "watershed_min_distance": args.watershed_min_distance,
+                "watershed_boundary_dilate_iter": args.watershed_boundary_dilate_iter,
+                "watershed_connectivity": args.watershed_connectivity,
+                "watershed_min_area_px": args.watershed_min_area_px,
+                "watershed_exclude_border": args.watershed_exclude_border,
+                "watershed_ridge_level": args.watershed_ridge_level,
+            }
+        )
+    return record
 
 
 def _validate_prediction_cache(meta: dict[str, Any], args: argparse.Namespace) -> None:
@@ -194,17 +174,17 @@ def _validate_prediction_cache(meta: dict[str, Any], args: argparse.Namespace) -
             f"Cache schema_version {meta.get('schema_version')!r} != "
             f"{PREDICTION_CACHE_SCHEMA_VERSION}"
         )
-    for key in expected:
-        if meta.get(key) != expected[key]:
+    for key, expected_value in expected.items():
+        if meta.get(key) != expected_value:
             raise ValueError(
                 f"Cache mismatch for {key!r}: cached {meta.get(key)!r} != "
-                f"current {expected[key]!r}"
+                f"current {expected_value!r}"
             )
 
 
-def _load_cached_prediction_tiff(path: str, expected_hw: tuple[int, int]) -> np.ndarray:
-    import tifffile
-
+def _load_cached_prediction_tiff(
+    path: Path, expected_hw: tuple[int, int]
+) -> np.ndarray:
     arr = tifffile.imread(path)
     if arr.ndim == 3:
         if arr.shape[0] == 1:
@@ -243,10 +223,10 @@ def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> 
     if sample_count == 1:
         print("\n--- Single-Sample Evaluation ---")
         print(
-            "Descriptive only: one evaluation sample found; skipping aggregate mean metrics."
+            "Descriptive only: one evaluation sample found; "
+            "skipping aggregate mean metrics."
         )
         return
-
     if mean_metrics is None:
         return
     print("\n--- Mean Metrics ---")
@@ -254,49 +234,122 @@ def _print_summary(mean_metrics: dict[str, float] | None, sample_count: int) -> 
         print(f"{key}: {value:.4f}")
 
 
-def main():
-    args = parse_args()
+def _load_or_predict_semantic(
+    *,
+    args: argparse.Namespace,
+    sample_id: str,
+    images: list[np.ndarray],
+    model_loader: Any,
+) -> np.ndarray:
+    height, width = int(images[0].shape[0]), int(images[0].shape[1])
+    expected_hw = (height, width)
 
-    gt_gpkg_path = Path(args.gt_gpkg).resolve()
+    if args.save_predictions_dir is not None:
+        cache_path = _prediction_tiff_path(args.save_predictions_dir, sample_id)
+        meta_path = _prediction_meta_path(args.save_predictions_dir, sample_id)
+        if cache_path.is_file():
+            if not meta_path.is_file():
+                print(
+                    "Cached prediction TIFF exists but metadata sidecar is missing "
+                    f"({meta_path}); recomputing.",
+                    file=sys.stderr,
+                )
+            else:
+                try:
+                    with meta_path.open(encoding="utf-8") as meta_file:
+                        meta = json.load(meta_file)
+                    _validate_prediction_cache(meta, args)
+                except (OSError, json.JSONDecodeError, ValueError) as exc:
+                    print(
+                        f"Invalid or incompatible prediction cache metadata "
+                        f"({meta_path}): {exc}; recomputing.",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(f"Reusing cached prediction: {cache_path}")
+                    t_cache = time.perf_counter()
+                    pred = _load_cached_prediction_tiff(cache_path, expected_hw)
+                    print(
+                        f"  Loaded cached prediction: "
+                        f"{time.perf_counter() - t_cache:.2f}s"
+                    )
+                    return pred
+
+    from unet.inference import predict_full_image
+
+    t_inf = time.perf_counter()
+    pred_classes, _ = predict_full_image(
+        model=model_loader(),
+        inputs=tuple(images),
+        patch_size=args.patch_size,
+        stride=args.stride,
+        batch_size=args.batch_size,
+    )
+    print(f"  Inference: {time.perf_counter() - t_inf:.2f}s")
+
+    if args.save_predictions_dir is not None:
+        cache_path = _prediction_tiff_path(args.save_predictions_dir, sample_id)
+        meta_path = _prediction_meta_path(args.save_predictions_dir, sample_id)
+        tifffile.imwrite(
+            cache_path,
+            pred_classes.astype(np.uint8),
+            compression="deflate",
+        )
+        with meta_path.open("w", encoding="utf-8") as meta_file:
+            json.dump(
+                _prediction_cache_record(args), meta_file, indent=2, sort_keys=True
+            )
+            meta_file.write("\n")
+
+    return pred_classes
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
+    _validate_args(args, parser)
+
+    gt_origin = _effective_gt_origin(args)
+    gt_gpkg_path = args.gt_gpkg.resolve()
     gt_scene_polygons = load_image_space_polygons(gt_gpkg_path)
 
     samples = list_samples(
-        image_dir=args.image_dir,
-        mask_dir=args.mask_dir,
+        image_dir=str(args.image_dir),
+        mask_dir=str(args.mask_dir) if args.mask_dir is not None else None,
         image_suffixes=args.image_suffixes,
         mask_ext=args.mask_ext,
         mask_stem_suffix=args.mask_stem_suffix,
         num_inputs=args.num_inputs,
     )
-
     if not samples:
         print(
-            "ERROR: No samples matched the given image/mask directories; nothing to evaluate.",
+            "ERROR: No samples matched the given image/mask directories; "
+            "nothing to evaluate.",
             file=sys.stderr,
         )
         sys.exit(1)
 
-    print(f"Found {len(samples)} samples to evaluate.")
-
-    if args.save_predictions_dir:
-        os.makedirs(args.save_predictions_dir, exist_ok=True)
+    print(f"Found {len(samples)} samples to evaluate (gt_origin={gt_origin}).")
+    if args.save_predictions_dir is not None:
+        args.save_predictions_dir.mkdir(parents=True, exist_ok=True)
 
     model: Any | None = None
 
-    def _ensure_model() -> Any:
+    def model_loader() -> Any:
         nonlocal model
         if model is None:
             import tensorflow as tf
+
             from unet.model import weighted_crossentropy
 
             print(f"Loading model from {args.model_path}...")
             model = tf.keras.models.load_model(
-                args.model_path,
+                str(args.model_path),
                 custom_objects={"weighted_crossentropy": weighted_crossentropy},
             )
         return model
 
-    sample_rows: list[dict] = []
+    sample_rows: list[dict[str, Any]] = []
 
     for sample in samples:
         sample_id = sample["id"]
@@ -310,88 +363,28 @@ def main():
             semantic_mask_after_sample_validation(
                 images, load_raster_mask(sample["mask"]), sample["mask"]
             )
-            t_load = time.perf_counter()
-            print(f"  Loaded inputs + raster mask (validated): {t_load - t0:.2f}s")
+            print(
+                f"  Loaded inputs + raster mask (validated): "
+                f"{time.perf_counter() - t0:.2f}s"
+            )
         else:
-            t_load = time.perf_counter()
-            print(f"  Loaded inputs: {t_load - t0:.2f}s")
+            print(f"  Loaded inputs: {time.perf_counter() - t0:.2f}s")
+
+        pred_classes = _load_or_predict_semantic(
+            args=args,
+            sample_id=sample_id,
+            images=images,
+            model_loader=model_loader,
+        )
 
         height, width = int(images[0].shape[0]), int(images[0].shape[1])
-
-        expected_hw = (height, width)
-        pred_classes: np.ndarray | None = None
-
-        if args.save_predictions_dir:
-            cache_path = _prediction_tiff_path(args.save_predictions_dir, sample_id)
-            meta_path = _prediction_meta_path(args.save_predictions_dir, sample_id)
-            if os.path.isfile(cache_path):
-                if not os.path.isfile(meta_path):
-                    print(
-                        "Cached prediction TIFF exists but metadata sidecar is missing "
-                        f"({meta_path}); recomputing.",
-                        file=sys.stderr,
-                    )
-                else:
-                    try:
-                        with open(meta_path, encoding="utf-8") as mf:
-                            meta = json.load(mf)
-                        _validate_prediction_cache(meta, args)
-                    except (OSError, json.JSONDecodeError, ValueError) as e:
-                        print(
-                            f"Invalid or incompatible prediction cache metadata "
-                            f"({meta_path}): {e}; recomputing.",
-                            file=sys.stderr,
-                        )
-                    else:
-                        print(f"Reusing cached prediction: {cache_path}")
-                        t_cache = time.perf_counter()
-                        pred_classes = _load_cached_prediction_tiff(
-                            cache_path, expected_hw
-                        )
-                        print(
-                            f"  Loaded cached prediction: "
-                            f"{time.perf_counter() - t_cache:.2f}s"
-                        )
-
-        if pred_classes is None:
-            from evaluation.inference import predict_full_image
-
-            t_inf = time.perf_counter()
-            pred_classes, _ = predict_full_image(
-                model=_ensure_model(),
-                inputs=tuple(images),
-                patch_size=args.patch_size,
-                stride=args.stride,
-                batch_size=args.batch_size,
-            )
-            print(f"  Inference: {time.perf_counter() - t_inf:.2f}s")
-
-            if args.save_predictions_dir:
-                import tifffile
-
-                out_img_path = _prediction_tiff_path(
-                    args.save_predictions_dir, sample_id
-                )
-                out_meta_path = _prediction_meta_path(
-                    args.save_predictions_dir, sample_id
-                )
-                tifffile.imwrite(
-                    out_img_path,
-                    pred_classes.astype(np.uint8),
-                    compression="deflate",
-                )
-                cache_meta = _prediction_cache_record(args)
-                with open(out_meta_path, "w", encoding="utf-8") as mf:
-                    json.dump(cache_meta, mf, indent=2, sort_keys=True)
-                    mf.write("\n")
-
         t_inst = time.perf_counter()
         true_instances = scene_polygons_to_patch_instance_map(
             gt_scene_polygons,
             sample_id=sample_id,
             height=height,
             width=width,
-            gt_origin=args.gt_origin,
+            gt_origin=gt_origin,
         )
         pred_instances = _instances_for_metrics(pred_classes, args)
         print(f"  Instance maps (GT + pred): {time.perf_counter() - t_inst:.2f}s")
@@ -417,34 +410,31 @@ def main():
             )
         )
 
-        line = (
+        print(
             f"Metrics for {sample_id}: AJI: {metrics['aji']:.4f}, "
             f"F1@0.5: {metrics['f1_iou50']:.4f}, F1@0.75: {metrics['f1_iou75']:.4f}, "
             f"mF1@0.5:0.95: {metrics['mF1_iou50_95']:.4f}"
         )
-        print(line)
         print(f"  Sample total (so far): {time.perf_counter() - t0:.2f}s")
 
-    if not sample_rows:
-        print(
-            "ERROR: Evaluation produced no metric rows (internal inconsistency).",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     results = build_instance_eval_report(
-        model_type=args.model_type,
+        model_type=MODEL_TYPE,
         variant=args.variant,
         unit=args.unit,
         samples=sample_rows,
-        extras={"ground_truth_instance_source": str(gt_gpkg_path)},
+        extras={
+            "ground_truth_instance_source": str(gt_gpkg_path),
+            "gt_origin": gt_origin,
+            "instance_method": args.instance_method,
+            "model_path": str(args.model_path.resolve()),
+        },
     )
-    mean_for_print = results.get("mean")
-    _print_summary(mean_for_print, len(sample_rows))
+    _print_summary(results.get("mean"), len(sample_rows))
 
+    args.output_json.parent.mkdir(parents=True, exist_ok=True)
     t_json = time.perf_counter()
-    with open(args.output_json, "w", encoding="utf-8") as f:
-        f.write(
+    with args.output_json.open("w", encoding="utf-8") as out_file:
+        out_file.write(
             json.dumps(
                 json_safe_for_dump(results),
                 indent=4,
@@ -452,7 +442,6 @@ def main():
                 ensure_ascii=False,
             )
         )
-
     print(f"Saved metrics to {args.output_json} ({time.perf_counter() - t_json:.2f}s)")
 
 

@@ -1,4 +1,4 @@
-"""Shared argparse / CLI helpers for evaluation scripts."""
+"""Shared argparse / CLI helpers."""
 
 from __future__ import annotations
 

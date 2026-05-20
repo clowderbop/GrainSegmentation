@@ -362,9 +362,9 @@ cp -r "$IMAGE_DIR"/. "$LOCAL_IMAGE_DIR"/
 cp -r "$MASK_DIR"/. "$LOCAL_MASK_DIR"/
 cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 
-cd "$REPO_ROOT/src/evaluation"
-echo "Syncing evaluation environment..."
-uv sync --extra unet
+cd "$REPO_ROOT/src/unet"
+echo "Syncing U-Net environment..."
+uv sync
 
 WHEEL_PATH="$SCRATCH/GrainSeg/wheels/$TF_WHEEL_NAME"
 require_file "$WHEEL_PATH" "TensorFlow wheel not found"
@@ -429,7 +429,7 @@ if [ "${#MODEL_PATHS[@]}" -eq 0 ]; then
     exit 1
 fi
 
-WATERSHED_JSON_HELPER="$REPO_ROOT/src/evaluation/watershed_json_to_eval_args.py"
+WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
 
 echo "Running evaluations..."
 for i in "${!MODEL_PATHS[@]}"; do
@@ -444,7 +444,7 @@ for i in "${!MODEL_PATHS[@]}"; do
     mkdir -p "$pred_dir"
 
     eval_cmd=(
-        uv run --no-sync python -u -m evaluation.evaluate
+        uv run --no-sync python -u -m unet.evaluate
         --model-path "$model_path"
         --image-dir "$LOCAL_IMAGE_DIR"
         --mask-dir "$LOCAL_MASK_DIR"
@@ -458,6 +458,7 @@ for i in "${!MODEL_PATHS[@]}"; do
         --stride "$STRIDE"
         --batch-size "$BATCH_SIZE"
         --mask-stem-suffix "$MASK_STEM_SUFFIX"
+        --unit whole
     )
 
     if [ -n "$MASK_EXT" ]; then
@@ -513,7 +514,7 @@ done
 
 echo "Generating comparison plots..."
 plot_cmd=(
-    uv run --no-sync python -u -m evaluation.plot_results
+    uv run --no-sync python -u -m unet.plot_results
     --json-files
     "${JSON_FILES[@]}"
     --labels
@@ -523,7 +524,7 @@ plot_cmd=(
 "${plot_cmd[@]}"
 
 overlay_cmd=(
-    uv run --no-sync python -u -m evaluation.plot_results
+    uv run --no-sync python -u -m unet.plot_results
     --image-path "$LOCAL_PPL_IMAGE"
     --gt-path "$LOCAL_GT_PATH"
     --pred-paths

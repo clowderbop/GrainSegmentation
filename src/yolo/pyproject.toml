@@ -4,19 +4,14 @@ version = "0.1.0"
 description = "YOLO26 segmentation training pipeline for GrainSegmentation"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "evaluation",
     "grainsegmentation-common",
-    "geopandas>=1.0.0",
-    "pycocotools>=2.0.8",
+    "matplotlib>=3.10.8",
     "sahi>=0.11.21",
-    "scipy>=1.17.1",
-    "tifffile>=2024.12.12",
     "torchvision>=0.25.0",
     "ultralytics-opencv-headless>=8.4.21",
 ]
 
 [tool.uv.sources]
-evaluation = { path = "../evaluation", editable = true }
 grainsegmentation-common = { path = "../common", editable = true }
 
 [build-system]

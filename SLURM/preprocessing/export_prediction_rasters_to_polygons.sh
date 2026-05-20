@@ -49,7 +49,7 @@ if [[ -n "$EVAL_DIR" ]]; then
         exit 1
     fi
 
-    echo "Copying evaluation directory to fast local storage ($TMP_ROOT)..."
+    echo "Copying prediction outputs directory to fast local storage ($TMP_ROOT)..."
     LOCAL_EVAL_DIR="$WORK_DIR/eval"
     mkdir -p "$LOCAL_EVAL_DIR"
     cp -r "$EVAL_DIR"/. "$LOCAL_EVAL_DIR"/

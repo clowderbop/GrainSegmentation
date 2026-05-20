@@ -1,7 +1,6 @@
 import numpy as np
 
-from evaluation.instance_masks import semantic_to_instance_label_map
-
+from common.semantic_instance import semantic_to_instance_label_map
 
 IOU_THRESHOLDS_50_95 = tuple(np.arange(0.50, 1.0, 0.05))
 

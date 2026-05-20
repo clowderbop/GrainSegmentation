@@ -12,13 +12,13 @@ import numpy as np
 from tifffile import TiffFile
 
 
-from evaluation.metrics import (
+from common.metrics import (
     compute_aji,
     compute_instance_metrics_dict,
     get_instances,
 )
 
-from evaluation.reporting import (
+from common.reporting import (
     build_instance_eval_report,
     build_sample_row,
     count_instances,

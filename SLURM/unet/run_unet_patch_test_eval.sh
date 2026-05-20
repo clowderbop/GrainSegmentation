@@ -158,9 +158,9 @@ cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 LOCAL_MODEL_PATH="$LOCAL_MODEL_DIR/$(basename "$MODEL_PATH")"
 cp -f "$MODEL_PATH" "$LOCAL_MODEL_PATH"
 
-cd "$REPO_ROOT/src/evaluation"
-echo "Syncing evaluation environment..."
-uv sync --extra unet
+cd "$REPO_ROOT/src/unet"
+echo "Syncing U-Net environment..."
+uv sync
 
 WHEEL_PATH="$SCRATCH/GrainSeg/wheels/$TF_WHEEL_NAME"
 require_file "$WHEEL_PATH" "TensorFlow wheel not found"
@@ -194,9 +194,9 @@ fi
 
 echo "Running evaluate.py on patch directories (TMPDIR)..."
 eval_cmd=(
-    uv run --no-sync python -u -m evaluation.evaluate
-    --model-type unet
+    uv run --no-sync python -u -m unet.evaluate
     --variant "$VARIANT"
+    --unit patch
     --model-path "$LOCAL_MODEL_PATH"
     --image-dir "$LOCAL_IMAGES"
     --gt-gpkg "$LOCAL_GT_GPKG"
@@ -210,7 +210,7 @@ eval_cmd=(
     --batch-size "$BATCH_SIZE"
 )
 
-WATERSHED_JSON_HELPER="$REPO_ROOT/src/evaluation/watershed_json_to_eval_args.py"
+WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
 if [[ -n "$RESOLVED_WATERSHED_JSON" ]]; then
     mapfile -t _watershed_eval_args < <(python3 "$WATERSHED_JSON_HELPER" "$RESOLVED_WATERSHED_JSON")
     eval_cmd+=("${_watershed_eval_args[@]}")

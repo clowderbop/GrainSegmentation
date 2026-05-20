@@ -4,9 +4,9 @@ Run from the repo root (`GrainSegmentation/`). Persistent data lives under `$SCR
 
 ## Order
 
-1. `**download_source_data.sh**` — Raw microscopy downloads → `dataset/source/`.
-2. `**generate_sam2_starting_masks.sh**` — PPL sliding-window SAM2 → `GrainSeg/out/*.geojson` (starting polygons).
-3. **Manual (QGIS)** — Correct/refine polygons, fix overlaps offline, export train/test sections → `dataset/uncropped/train_raw.gpkg`, `test_raw.gpkg`, and full-section `PPL.tif` / `PPX*.tif`.
+1. `**download_source_data.sh**` — Download `uncropped.tar.lz4` from Google Drive → extract to `dataset/uncropped/` (`PPL.tif`, `PPX*.tif`, `train_raw.gpkg`, `test_raw.gpkg`). Archive is cached as `dataset/uncropped.tar.lz4`.
+2. `**generate_sam2_starting_masks.sh**` — (Optional, for regenerating data) PPL sliding-window SAM2 → `GrainSeg/out/*.geojson` (starting polygons).
+3. **Manual (QGIS)** — (Optional, for regenerating data) Correct/refine polygons, fix overlaps offline, export train/test sections → `dataset/uncropped/train_raw.gpkg`, `test_raw.gpkg`, and full-section `PPL.tif` / `PPX*.tif`.
 4. `**split_overlaps_and_crop_train_test.sh`**
   `uncropped/*.gpkg` + mosaics → `dataset/train/train_{PPL,PPX1..6}.tif`, `train_labels.gpkg`, and the same under `dataset/test/` (`test_*`).
 5. `**create_ppx_and_ppl_ppx_blends.sh**`

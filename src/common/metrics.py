@@ -1,7 +1,5 @@
 import numpy as np
 
-from common.semantic_instance import semantic_to_instance_label_map
-
 IOU_THRESHOLDS_50_95 = tuple(np.arange(0.50, 1.0, 0.05))
 
 
@@ -11,12 +9,6 @@ def _index_for_reported_threshold(threshold: float) -> int:
             return i
     raise ValueError(
         f"threshold {threshold} not found in IOU_THRESHOLDS_50_95: {IOU_THRESHOLDS_50_95!r}"
-    )
-
-
-def get_instances(semantic_mask: np.ndarray, interior_class: int = 1):
-    return semantic_to_instance_label_map(
-        semantic_mask, interior_class=interior_class, connectivity=1, min_area_px=0
     )
 
 

@@ -12,11 +12,7 @@ import numpy as np
 from tifffile import TiffFile
 
 
-from common.metrics import (
-    compute_aji,
-    compute_instance_metrics_dict,
-    get_instances,
-)
+from common.metrics import compute_aji, compute_instance_metrics_dict
 
 from common.reporting import (
     build_instance_eval_report,
@@ -25,7 +21,6 @@ from common.reporting import (
     json_safe_for_dump,
 )
 from common.geometry import load_image_space_polygons
-from common.image_io import load_tiff_single_channel_mask, validate_semantic_labels
 from common.instance_maps import (
     binary_masks_to_instance_map_by_confidence,
     dt_annotations_to_instance_map,
@@ -45,6 +40,7 @@ from yolo.dataset_yaml import (
 )
 from yolo.pipeline import resolve_variant_paths
 from yolo.train import _parse_device
+from yolo.yolo_seg_label_io import yolo_seg_labels_to_instance_map
 
 
 def _visualization_image(image: np.ndarray) -> np.ndarray:
@@ -395,10 +391,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         )
     parser.add_argument(
-        "--mask-stem-suffix",
-        default="_labels",
-        )
-    parser.add_argument(
         "--output-json",
         type=Path,
         default=None,
@@ -549,11 +541,6 @@ def load_image_for_yolo(path: Path) -> np.ndarray:
     return image
 
 
-def load_semantic_patch_mask(path: Path) -> np.ndarray:
-    arr = load_tiff_single_channel_mask(path)
-    return validate_semantic_labels(arr, path, allow_float=True)
-
-
 def _optional_metric_attr(obj: Any, name: str) -> Any:
     if obj is None:
         return None
@@ -625,26 +612,17 @@ def run_patches(args: argparse.Namespace, data_yaml: Path) -> dict[str, Any]:
     model = YOLO(str(Path(args.weights).resolve()))
     sample_rows: list[dict[str, Any]] = []
 
-    mask_suffix = str(args.mask_stem_suffix)
-
     for image_path in image_paths:
         image = load_image_for_yolo(image_path)
         h, w = int(image.shape[0]), int(image.shape[1])
-        mask_path = label_dir / (f"{image_path.stem}{mask_suffix}{image_path.suffix}")
-        if not mask_path.is_file():
+        label_path = label_dir / f"{image_path.stem}.txt"
+        if not label_path.is_file():
             raise FileNotFoundError(
-                f"Pre-computed semantic mask not found for {image_path}: expected {mask_path}. "
-                "Write UNet-aligned `{stem}_labels.<ext>` rasters next to YOLO labels "
-                "(see SLURM/preprocessing/create_unet_test_patches_from_yolo_patches.sh or "
-                "src/data_prep/crop_unet_masks_from_yolo_patches.py). "
-                "Polygon .txt labels are not used for patch metrics."
+                f"YOLO segmentation label not found for {image_path}: expected {label_path}"
             )
-        sem = load_semantic_patch_mask(mask_path)
-        if sem.shape != (h, w):
-            raise ValueError(
-                f"Mask shape {sem.shape} does not match image shape {(h, w)} for {mask_path}"
-            )
-        gt_map = get_instances(sem, interior_class=1)
+        gt_map = yolo_seg_labels_to_instance_map(
+            label_path, image_width=w, image_height=h
+        )
 
         results = model.predict(
             source=np.ascontiguousarray(image),
@@ -686,10 +664,13 @@ def run_patches(args: argparse.Namespace, data_yaml: Path) -> dict[str, Any]:
         )
         sys.exit(1)
 
-    extras: dict[str, Any] | None = None
+    extras: dict[str, Any] = {
+        "ground_truth_instance_source": "yolo_segmentation_txt",
+        "labels_dir": str(label_dir.resolve()),
+    }
     if args.run_ultralytics_val:
         val_metrics = run_val(args, data_yaml)
-        extras = {"ultralytics": _collect_val_metrics(val_metrics)}
+        extras["ultralytics"] = _collect_val_metrics(val_metrics)
 
     report = build_instance_eval_report(
         model_type="yolo",

@@ -514,7 +514,7 @@ done
 
 echo "Generating comparison plots..."
 plot_cmd=(
-    uv run --no-sync python -u -m unet.plot_results
+    uv run --no-sync python -u -m common.plot_results
     --json-files
     "${JSON_FILES[@]}"
     --labels
@@ -524,7 +524,7 @@ plot_cmd=(
 "${plot_cmd[@]}"
 
 overlay_cmd=(
-    uv run --no-sync python -u -m unet.plot_results
+    uv run --no-sync python -u -m unet.plot_overlay
     --image-path "$LOCAL_PPL_IMAGE"
     --gt-path "$LOCAL_GT_PATH"
     --pred-paths

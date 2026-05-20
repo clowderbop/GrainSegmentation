@@ -6,6 +6,7 @@ import csv
 import itertools
 import json
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -16,13 +17,13 @@ from common.geometry import load_image_space_polygons
 from common.ground_truth import polygons_to_instance_map
 from common.image_io import (
     load_tiff_single_channel_mask,
+    validate_input_images,
     validate_semantic_labels,
 )
-from common.samples import list_samples, load_rgb_image, load_raster_mask
+from common.samples import list_samples, load_rgb_image
 from evaluation.arg_errors import raise_cli_argument_error
 from evaluation.instance_masks import semantic_to_instance_label_map_watershed
 from evaluation.metrics import compute_aji
-from evaluation.sample_checks import semantic_mask_after_sample_validation
 
 
 def _validate_pred_semantic(pred: np.ndarray, mask_path: str) -> np.ndarray:
@@ -90,22 +91,14 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         )
 
-    parser.add_argument(
-        "--image-dir", required=True, )
-    parser.add_argument(
-        "--mask-dir", required=True, )
-    parser.add_argument(
-        "--gt-gpkg",
-        required=True,
-        )
+    parser.add_argument("--image-dir", required=True)
+    parser.add_argument("--gt-gpkg", required=True)
     parser.add_argument("--num-inputs", type=int, default=7)
     parser.add_argument(
         "--image-suffixes",
         nargs="+",
         default=["_PPL", "_PPX1", "_PPX2", "_PPX3", "_PPX4", "_PPX5", "_PPX6"],
     )
-    parser.add_argument("--mask-ext", default=None)
-    parser.add_argument("--mask-stem-suffix", default="")
     parser.add_argument("--patch-size", type=int, default=3008)
     parser.add_argument("--stride", type=int, default=1504)
     parser.add_argument("--batch-size", type=int, default=4)
@@ -217,10 +210,10 @@ def _collect_samples(
     """Materialize GT instances in scene/full-raster coords only (never patch-stem shifted)."""
     samples = list_samples(
         image_dir=args.image_dir,
-        mask_dir=args.mask_dir,
+        mask_dir=None,
         image_suffixes=args.image_suffixes,
-        mask_ext=args.mask_ext,
-        mask_stem_suffix=args.mask_stem_suffix,
+        mask_ext=None,
+        mask_stem_suffix="",
         num_inputs=args.num_inputs,
     )
     if not samples:
@@ -252,10 +245,7 @@ def _collect_samples(
             images = [load_rgb_image(p) for p in sample["images"]]
             if len(images) != args.num_inputs:
                 raise ValueError("Mismatch between num_inputs and loaded images.")
-            true_mask = semantic_mask_after_sample_validation(
-                images, load_raster_mask(sample["mask"]), sample["mask"]
-            )
-            height, width = true_mask.shape
+            height, width = validate_input_images(images)
             pred_classes, _ = predict_full_image(
                 model=model,
                 inputs=tuple(images),
@@ -283,16 +273,12 @@ def _collect_samples(
             if not pred_path.is_file():
                 raise SystemExit(f"Missing prediction file: {pred_path}")
             print(f"Loading pred: {pred_path}")
-            img0 = load_rgb_image(sample["images"][0])
-            images = [img0]
-            true_mask = semantic_mask_after_sample_validation(
-                images, load_raster_mask(sample["mask"]), sample["mask"]
-            )
-            height, width = true_mask.shape
+            images = [load_rgb_image(p) for p in sample["images"]]
+            height, width = validate_input_images(images)
             pred_arr = _load_pred_tiff(pred_path)
-            if pred_arr.shape != true_mask.shape:
+            if pred_arr.shape != (height, width):
                 raise ValueError(
-                    f"Pred shape {pred_arr.shape} != mask shape {true_mask.shape} for {sid}"
+                    f"Pred shape {pred_arr.shape} != image shape {(height, width)} for {sid}"
                 )
             sample_ids.append(sid)
             true_instances.append(
@@ -305,6 +291,18 @@ def _collect_samples(
             pred_semantic.append(pred_arr)
 
     return sample_ids, true_instances, pred_semantic
+
+
+def _format_ridge_level(ridge_level: float | None) -> str:
+    return "auto" if ridge_level is None else f"{ridge_level:g}"
+
+
+def _format_param_set(params: WatershedParamSet) -> str:
+    return (
+        f"min_dist={params.min_distance}, dilate={params.boundary_dilate_iter}, "
+        f"conn={params.watershed_connectivity}, min_area={params.min_area_px}, "
+        f"exclude_border={params.exclude_border}, ridge={_format_ridge_level(params.ridge_level)}"
+    )
 
 
 def _iter_param_grid(args: argparse.Namespace) -> Iterable[WatershedParamSet]:
@@ -362,9 +360,15 @@ def main() -> None:
     with out_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for params in _iter_param_grid(args):
+        for combo_idx, params in enumerate(_iter_param_grid(args), start=1):
+            t0 = time.perf_counter()
             mean_aji, per = mean_aji_for_watershed_params(
                 true_instances, pred_semantic, params
+            )
+            elapsed = time.perf_counter() - t0
+            print(
+                f"[{combo_idx}/{grid_size}] mean_aji={mean_aji:.6f} "
+                f"({_format_param_set(params)}) {elapsed:.2f}s"
             )
             row: dict[str, Any] = {
                 "min_distance": params.min_distance,
@@ -382,6 +386,10 @@ def main() -> None:
             writer.writerow(row)
 
             if mean_aji > best_mean:
+                if best_mean >= 0:
+                    print(f"  -> new best (was {best_mean:.6f})")
+                else:
+                    print("  -> new best")
                 best_mean = mean_aji
                 best_params = params
                 best_per_sample = per
@@ -393,9 +401,7 @@ def main() -> None:
     print(f"  watershed_connectivity: {best_params.watershed_connectivity}")
     print(f"  min_area_px: {best_params.min_area_px}")
     print(f"  exclude_border: {best_params.exclude_border}")
-    print(
-        f"  ridge_level: {'auto' if best_params.ridge_level is None else best_params.ridge_level}"
-    )
+    print(f"  ridge_level: {_format_ridge_level(best_params.ridge_level)}")
     print(f"  mean_aji: {best_mean:.6f}")
     for sid, a in zip(sample_ids, best_per_sample):
         print(f"    {sid}: {a:.6f}")

@@ -9,14 +9,19 @@
 set -euo pipefail
 
 THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    REPO_ROOT="$SLURM_SUBMIT_DIR"
+    SLURM_ROOT="$REPO_ROOT/SLURM"
+else
+    SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
+    REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
+fi
 mkdir -p "$REPO_ROOT/logs"
 
 GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
-DATASET_CROPPED="$GRAINSEG_ROOT/dataset/MWD-1#121/cropped"
-GT_GPKG="$GRAINSEG_ROOT/dataset/MWD-1#121/labels_cropped.gpkg"
-MODEL_PATH="$GRAINSEG_ROOT/models/unet_finetuned_PPL+AllPPX.keras"
+DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
+GT_GPKG="${GT_GPKG:-$DATASET_DIR/train_labels.gpkg}"
+MODEL_PATH="$GRAINSEG_ROOT/models/unet/unet_finetuned_PPL+AllPPX.keras"
 OUTPUT_DIR="$GRAINSEG_ROOT/runs/watershed_tune"
 
 PREDS_DIR=""
@@ -25,8 +30,6 @@ NUM_INPUTS=7
 PATCH_SIZE=1024
 STRIDE=512
 BATCH_SIZE=1
-MASK_EXT=".tif"
-MASK_STEM_SUFFIX="_labels"
 IMAGE_SUFFIXES=(_PPL _PPX1 _PPX2 _PPX3 _PPX4 _PPX5 _PPX6)
 IMAGE_SUFFIXES_CLI=""
 
@@ -39,7 +42,30 @@ EXCLUDE_BORDER=(0 1)
 TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
 
 function usage {
-    exit 1
+    local status="${1:-1}"
+    cat <<'EOF' >&2
+Usage: run_unet_watershed_tuning.sh [options]
+
+Tune watershed postprocessing on U-Net semantic predictions for the train
+section. Runs sliding-window inference on train_*.tif mosaics and grid-searches
+watershed parameters against train_labels.gpkg (AJI).
+
+Expects:
+  models/unet/unet_finetuned_<variant>.keras
+  dataset/train/train_labels.gpkg (instance GT for AJI)
+  dataset/train/train_<suffix>.tif inputs per variant
+
+Options:
+  --model-path PATH
+  --dataset-dir PATH      (default: $SCRATCH/GrainSeg/dataset/train)
+  --dataset-cropped PATH  (alias for --dataset-dir)
+  --gt-gpkg PATH          (default: <dataset-dir>/train_labels.gpkg)
+  --num-inputs N
+  --image-suffixes "_PPL ..."
+  --output-dir PATH
+  --help
+EOF
+    exit "$status"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -56,8 +82,8 @@ while [[ $# -gt 0 ]]; do
             IMAGE_SUFFIXES_CLI="$2"
             shift 2
             ;;
-        --dataset-cropped)
-            DATASET_CROPPED="$2"
+        --dataset-dir|--dataset-cropped)
+            DATASET_DIR="$2"
             shift 2
             ;;
         --gt-gpkg)
@@ -100,26 +126,51 @@ function require_dir {
     fi
 }
 
+function stage_train_inputs {
+    local src_dir="$1"
+    local dst_dir="$2"
+    mkdir -p "$dst_dir"
+    for suffix in "${IMAGE_SUFFIXES[@]}"; do
+        local found=false
+        for ext in tif tiff; do
+            local candidate="$src_dir/train${suffix}.${ext}"
+            if [ -f "$candidate" ]; then
+                cp "$candidate" "$dst_dir/"
+                found=true
+                break
+            fi
+        done
+        if [ "$found" = false ]; then
+            echo "Missing train input for suffix ${suffix}: expected train${suffix}.tif under $src_dir"
+            exit 1
+        fi
+    done
+}
+
 if [ -z "$PREDS_DIR" ]; then
     require_file "$MODEL_PATH" "Model not found"
 else
     require_dir "$PREDS_DIR" "PREDS_DIR is not a directory"
 fi
 
-require_dir "$DATASET_CROPPED" "Dataset (cropped) not found"
+require_dir "$DATASET_DIR" "Dataset dir not found"
 require_file "$GT_GPKG" "Ground-truth GeoPackage not found"
 
+if [ ! -f "$SLURM_ROOT/prepare_env.sh" ]; then
+    echo "prepare_env.sh not found at: $SLURM_ROOT/prepare_env.sh" >&2
+    echo "Submit from the repo root, e.g.: cd $REPO_ROOT && sbatch SLURM/unet/run_unet_watershed_tuning.sh ..." >&2
+    exit 1
+fi
 source "$SLURM_ROOT/prepare_env.sh"
 export TF_CPP_MIN_LOG_LEVEL=2
 
 WORK_DIR="${TMPDIR:-/tmp}/tune_watershed_${SLURM_JOB_ID:-$$}"
-mkdir -p "$WORK_DIR/dataset"
-echo "Staging dataset to $WORK_DIR ..."
-cp -r "$DATASET_CROPPED" "$WORK_DIR/dataset/"
+mkdir -p "$WORK_DIR"
+echo "Staging train-section inputs to $WORK_DIR ..."
 cp "$GT_GPKG" "$WORK_DIR/gt.gpkg"
-LOCAL_IMAGE_DIR="$WORK_DIR/dataset/cropped"
-LOCAL_MASK_DIR="$WORK_DIR/dataset/cropped"
+LOCAL_IMAGE_DIR="$WORK_DIR/dataset"
 LOCAL_GT_GPKG="$WORK_DIR/gt.gpkg"
+stage_train_inputs "$DATASET_DIR" "$LOCAL_IMAGE_DIR"
 
 mkdir -p "$OUTPUT_DIR"
 JOB_TAG="${SLURM_JOB_ID:-manual}"
@@ -138,7 +189,6 @@ uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~
 TUNE_CMD=(
     uv run --no-sync python -u -m evaluation.tune_watershed
     --image-dir "$LOCAL_IMAGE_DIR"
-    --mask-dir "$LOCAL_MASK_DIR"
     --gt-gpkg "$LOCAL_GT_GPKG"
     --output-csv "$OUT_CSV"
     --output-json "$OUT_JSON"
@@ -148,8 +198,6 @@ TUNE_CMD=(
     --patch-size "$PATCH_SIZE"
     --stride "$STRIDE"
     --batch-size "$BATCH_SIZE"
-    --mask-ext "$MASK_EXT"
-    --mask-stem-suffix "$MASK_STEM_SUFFIX"
     --min-distance "${MIN_DISTANCE[@]}"
     --boundary-dilate-iter "${BOUNDARY_DILATE_ITER[@]}"
     --watershed-connectivity "${WATERSHED_CONNECTIVITY[@]}"
@@ -166,8 +214,10 @@ else
 fi
 
 echo "Running watershed tuning..."
-echo "  CSV: $OUT_CSV"
-echo "  JSON: $OUT_JSON"
+echo "  dataset: $DATASET_DIR"
+echo "  model:   $MODEL_PATH"
+echo "  CSV:     $OUT_CSV"
+echo "  JSON:    $OUT_JSON"
 "${TUNE_CMD[@]}"
 
 echo "Done."

@@ -149,9 +149,7 @@ def validate_semantic_labels(
     return mask_int
 
 
-def validate_image_mask_sample(
-    images: list[np.ndarray], mask: np.ndarray, mask_path: str | Path
-) -> None:
+def validate_input_images(images: list[np.ndarray]) -> tuple[int, int]:
     if not images:
         raise ValueError("Sample must contain at least one input image.")
 
@@ -161,13 +159,18 @@ def validate_image_mask_sample(
     for img in images[1:]:
         if img.shape != expected_shape:
             raise ValueError("All input images must share the same shape.")
+    return int(expected_shape[0]), int(expected_shape[1])
 
+
+def validate_image_mask_sample(
+    images: list[np.ndarray], mask: np.ndarray, mask_path: str | Path
+) -> None:
+    height, width = validate_input_images(images)
     if mask.ndim != 2:
         raise ValueError(f"Raster mask must be 2D: {mask_path}")
 
-    image_shape = expected_shape[:2]
-    if mask.shape != image_shape:
+    if mask.shape != (height, width):
         raise ValueError(
-            f"Mask shape {mask.shape} does not match image shape {image_shape} "
+            f"Mask shape {mask.shape} does not match image shape {(height, width)} "
             f"for {mask_path}"
         )

@@ -4,10 +4,21 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
+TRAIN_DIR="$GRAINSEG_ROOT/dataset/train"
+MODELS_DIR="$GRAINSEG_ROOT/models/unet"
+GT_GPKG="$TRAIN_DIR/train_labels.gpkg"
 DRY_RUN=false
 
 function usage {
-    exit 1
+    cat <<'EOF' >&2
+Usage: submit_unet_watershed_tuning.sh [--dry-run]
+
+Submit watershed hyperparameter tuning for all four U-Net input variants.
+
+Expects finetuned models under models/unet/ and train-section data under
+dataset/train/ (train_*.tif mosaics and train_labels.gpkg).
+EOF
+    exit "${1:-1}"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -33,7 +44,7 @@ submit_one() {
     local suffixes="$4"
     local out_subdir="$5"
 
-    local model_path="$GRAINSEG_ROOT/models/$model_basename"
+    local model_path="$MODELS_DIR/$model_basename"
     local out_dir="$GRAINSEG_ROOT/runs/watershed_tune/$out_subdir"
 
     local -a cmd=(
@@ -41,6 +52,8 @@ submit_one() {
         "--job-name=$job_name"
         "$REPO_ROOT/SLURM/unet/run_unet_watershed_tuning.sh"
         --model-path "$model_path"
+        --dataset-dir "$TRAIN_DIR"
+        --gt-gpkg "$GT_GPKG"
         --num-inputs "$num_inputs"
         --image-suffixes "$suffixes"
         --output-dir "$out_dir"

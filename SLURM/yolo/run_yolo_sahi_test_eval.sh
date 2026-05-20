@@ -45,15 +45,12 @@ case "$VARIANT" in
 esac
 
 WEIGHTS="$SCRATCH/GrainSeg/runs/yolo26-seg/$VARIANT/weights/best.pt"
-SAHI_OUT="$SCRATCH/GrainSeg/eval/yolo_${VARIANT}"
-OUTPUT_JSON="$SAHI_OUT/metrics-${VARIANT}-${SLURM_JOB_ID}.json"
+SAHI_OUT="${SAHI_OUT:-$SCRATCH/GrainSeg/eval/yolo_${VARIANT}}"
+OUT_ROOT="${OUTPUT_ROOT:-$SAHI_OUT}"
+INSTANCE_METRICS_JSON="$OUT_ROOT/instance_metrics.json"
+MASK_AP_JSON="$OUT_ROOT/mask_ap_metrics.json"
 
-if [[ -n "$OUTPUT_JSON" ]]; then
-    mkdir -p "$(dirname "$OUTPUT_JSON")"
-fi
-if [[ -n "$SAHI_OUT" ]]; then
-    mkdir -p "$SAHI_OUT"
-fi
+mkdir -p "$OUT_ROOT"
 
 if [[ -z "$MANIFEST" ]]; then
     echo "Staging test TIFF to TMPDIR..."
@@ -70,29 +67,95 @@ uv sync
 
 export YOLO_DISABLE_TQDM=True
 
-EVAL_CMD=(
-    uv run python -u evaluate.py
-    --mode sahi
+PREDICT_CMD=(
+    uv run python -u -m yolo.predict
+    --unit whole
     --weights "$WEIGHTS"
+    --variant "$VARIANT"
     --device "$DEVICE"
+    --imgsz "$SLICE_H"
+    --conf "${CONF:-0.25}"
     --slice-height "$SLICE_H"
     --slice-width "$SLICE_W"
     --overlap-height-ratio "$OV_H"
     --overlap-width-ratio "$OV_W"
+    --output-dir "$OUT_ROOT"
 )
 
 if [[ -n "$MANIFEST" ]]; then
-    EVAL_CMD+=(--manifest "$MANIFEST")
+    PREDICT_CMD+=(--manifest "$MANIFEST")
 else
-    EVAL_CMD+=(--test-tiff "$TEST_TIFF" --test-gpkg "$TEST_GPKG")
+    PREDICT_CMD+=(--test-tiff "$TEST_TIFF")
 fi
 
-if [[ -n "$OUTPUT_JSON" ]]; then
-    EVAL_CMD+=(--output-json "$OUTPUT_JSON")
+echo "1/4 yolo.predict (whole-image SAHI labels)..."
+"${PREDICT_CMD[@]}"
+
+MANIFEST_PATH="$OUT_ROOT/eval_manifest.json"
+if [[ -n "$MANIFEST" ]]; then
+    MANIFEST_PATH="$MANIFEST"
+else
+    SAMPLE_ID="$(basename "$TEST_TIFF" .tif)"
+    SAMPLE_ID="${SAMPLE_ID%.tiff}"
+    python3 - "$MANIFEST_PATH" "$SAMPLE_ID" "$TEST_TIFF" "$TEST_GPKG" "$OUT_ROOT/labels" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+out_path, sample_id, tiff, gpkg, labels_dir = sys.argv[1:6]
+payload = [
+    {
+        "sample_id": sample_id,
+        "image": tiff,
+        "gt_gpkg": gpkg,
+        "gt_origin": "whole_image",
+        "pred_txt": str(Path(labels_dir) / f"{sample_id}.txt"),
+    }
+]
+with open(out_path, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2)
+    handle.write("\n")
+PY
 fi
 
-if [[ -n "$SAHI_OUT" ]]; then
-    EVAL_CMD+=(--sahi-out-dir "$SAHI_OUT")
+echo "2/4 yolo.export_sahi_visualization (prediction overlay TIFF)..."
+EXPORT_CMD=(
+    uv run python -u -m yolo.export_sahi_visualization
+    --output-dir "$OUT_ROOT"
+    --pred-labels-dir "$OUT_ROOT/labels"
+)
+if [[ -n "$MANIFEST" ]]; then
+    EXPORT_CMD+=(--manifest "$MANIFEST_PATH")
+else
+    EXPORT_CMD+=(--test-tiff "$TEST_TIFF")
 fi
+"${EXPORT_CMD[@]}"
 
-"${EVAL_CMD[@]}"
+echo "3/4 common.evaluate_instances..."
+INSTANCE_CMD=(
+    uv run python -u -m common.evaluate_instances
+    --unit whole
+    --model-type yolo
+    --variant "$VARIANT"
+    --manifest "$MANIFEST_PATH"
+    --pred-labels-dir "$OUT_ROOT/labels"
+    --gt-gpkg "$TEST_GPKG"
+    --output-json "$INSTANCE_METRICS_JSON"
+)
+"${INSTANCE_CMD[@]}"
+
+echo "4/4 yolo.evaluate_mask_ap (COCO mask AP from pred txt scores)..."
+MASK_AP_CMD=(
+    uv run python -u -m yolo.evaluate_mask_ap
+    --variant "$VARIANT"
+    --pred-labels-dir "$OUT_ROOT/labels"
+    --output-json "$MASK_AP_JSON"
+)
+if [[ -n "$MANIFEST" ]]; then
+    MASK_AP_CMD+=(--manifest "$MANIFEST_PATH")
+else
+    MASK_AP_CMD+=(--test-tiff "$TEST_TIFF" --test-gpkg "$TEST_GPKG")
+fi
+"${MASK_AP_CMD[@]}"
+
+echo "Wrote $INSTANCE_METRICS_JSON and $MASK_AP_JSON"

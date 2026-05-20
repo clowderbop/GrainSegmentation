@@ -99,8 +99,8 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         default=["_PPL", "_PPX1", "_PPX2", "_PPX3", "_PPX4", "_PPX5", "_PPX6"],
     )
-    parser.add_argument("--patch-size", type=int, default=3008)
-    parser.add_argument("--stride", type=int, default=1504)
+    parser.add_argument("--patch-size", type=int, default=1024)
+    parser.add_argument("--stride", type=int, default=512)
     parser.add_argument("--batch-size", type=int, default=4)
 
     parser.add_argument(
@@ -183,7 +183,7 @@ def _validate_tune_args(
         raise_cli_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser)
     if any(v < 1 for v in args.min_distance):
         raise_cli_argument_error(
-            "min_distance values must be >= 1 (matches evaluate.py watershed)",
+            "min_distance values must be >= 1 (matches extract_instances watershed)",
             parser=parser,
         )
     for name, vals in (

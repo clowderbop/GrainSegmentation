@@ -14,6 +14,9 @@ dependencies = [
 [tool.uv.sources]
 grainsegmentation-common = { path = "../common", editable = true }
 
+[dependency-groups]
+dev = ["pytest>=9.0.2"]
+
 [build-system]
 requires = ["setuptools>=81.0.0"]
 build-backend = "setuptools.build_meta"

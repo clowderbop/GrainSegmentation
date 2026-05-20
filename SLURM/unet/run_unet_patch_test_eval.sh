@@ -7,8 +7,10 @@
 #SBATCH --time=04:00:00
 
 # Patch-wise U-Net test evaluation for one input variant (VARIANT).
+# Staged pipeline: predict -> extract_instances -> evaluate_instances.
+# Semantic metrics (evaluate_semantic) are skipped when test patches have no raster masks.
 # Optional env: MODEL_PATH, WATERSHED_JSON, WATERSHED_TUNE_ROOT, OUTPUT_ROOT, GT_GPKG,
-# PATCH_SIZE, STRIDE, BATCH_SIZE, TEST_ROOT.
+# PATCH_SIZE, STRIDE, BATCH_SIZE, TEST_ROOT, MASK_DIR (enables semantic metrics).
 
 set -euo pipefail
 
@@ -22,7 +24,6 @@ TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
 JOB_TAG="${SLURM_JOB_ID:-local}"
 
 PATCH_SIZE="${PATCH_SIZE:-1024}"
-
 STRIDE="${STRIDE:-$PATCH_SIZE}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 
@@ -30,10 +31,10 @@ TEST_ROOT="${TEST_ROOT:-$SCRATCH/GrainSeg/dataset/test}"
 UNET_SRC_ROOT="$TEST_ROOT/unet_from_yolo/$VARIANT"
 UNET_SRC_IMAGES="$UNET_SRC_ROOT/images"
 GT_GPKG="${GT_GPKG:-$TEST_ROOT/test_labels.gpkg}"
+MASK_DIR="${MASK_DIR:-}"
 
 OUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/GrainSeg/eval/unet_patches/$VARIANT/$JOB_TAG}"
-OUTPUT_JSON="$OUT_ROOT/metrics.json"
-PRED_DIR="$OUT_ROOT/preds"
+INSTANCE_METRICS_JSON="$OUT_ROOT/instance_metrics.json"
 
 function require_dir {
     local path="$1"
@@ -146,11 +147,10 @@ WORK_ROOT="$TMPDIR/unet_patch_eval_${VARIANT}_$JOB_TAG"
 LOCAL_IMAGES="$WORK_ROOT/images"
 LOCAL_MODEL_DIR="$WORK_ROOT/model"
 LOCAL_GT_GPKG="$WORK_ROOT/$(basename "$GT_GPKG")"
-TMP_OUTPUT_JSON="$WORK_ROOT/metrics.json"
-TMP_PRED_DIR="$WORK_ROOT/preds"
+TMP_OUT="$WORK_ROOT/out"
 
 rm -rf "$WORK_ROOT"
-mkdir -p "$LOCAL_IMAGES" "$LOCAL_MODEL_DIR" "$TMP_PRED_DIR"
+mkdir -p "$LOCAL_IMAGES" "$LOCAL_MODEL_DIR" "$TMP_OUT"
 
 echo "Staging UNet patch images and model to TMPDIR ($WORK_ROOT)..."
 cp -r "$UNET_SRC_IMAGES"/. "$LOCAL_IMAGES"/
@@ -192,16 +192,21 @@ elif [[ -n "$WATERSHED_TUNE_ROOT" ]]; then
     fi
 fi
 
-echo "Running evaluate.py on patch directories (TMPDIR)..."
-eval_cmd=(
-    uv run --no-sync python -u -m unet.evaluate
+WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
+extract_args=(--instance-method watershed)
+if [[ -n "$RESOLVED_WATERSHED_JSON" ]]; then
+    mapfile -t _watershed_eval_args < <(python3 "$WATERSHED_JSON_HELPER" "$RESOLVED_WATERSHED_JSON")
+    extract_args=("${_watershed_eval_args[@]}")
+fi
+
+echo "1/3 unet.predict (semantic TIFFs)..."
+predict_cmd=(
+    uv run --no-sync python -u -m unet.predict
     --variant "$VARIANT"
     --unit patch
     --model-path "$LOCAL_MODEL_PATH"
     --image-dir "$LOCAL_IMAGES"
-    --gt-gpkg "$LOCAL_GT_GPKG"
-    --output-json "$TMP_OUTPUT_JSON"
-    --save-predictions-dir "$TMP_PRED_DIR"
+    --output-dir "$TMP_OUT"
     --num-inputs "$NUM_INPUTS"
     --image-suffixes
     "${IMAGE_SUFFIXES[@]}"
@@ -209,20 +214,48 @@ eval_cmd=(
     --stride "$STRIDE"
     --batch-size "$BATCH_SIZE"
 )
+"${predict_cmd[@]}"
 
-WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
-if [[ -n "$RESOLVED_WATERSHED_JSON" ]]; then
-    mapfile -t _watershed_eval_args < <(python3 "$WATERSHED_JSON_HELPER" "$RESOLVED_WATERSHED_JSON")
-    eval_cmd+=("${_watershed_eval_args[@]}")
+echo "2/3 unet.extract_instances (YOLO pred labels, confidence=1.0)..."
+extract_cmd=(
+    uv run --no-sync python -u -m unet.extract_instances
+    --semantic-dir "$TMP_OUT/semantic"
+    --output-dir "$TMP_OUT"
+    "${extract_args[@]}"
+)
+"${extract_cmd[@]}"
+
+if [[ -n "$MASK_DIR" && -d "$MASK_DIR" ]]; then
+    echo "Optional: unet.evaluate_semantic (raster GT masks provided)..."
+    semantic_cmd=(
+        uv run --no-sync python -u -m unet.evaluate_semantic
+        --semantic-dir "$TMP_OUT/semantic"
+        --mask-dir "$MASK_DIR"
+        --output-json "$TMP_OUT/semantic_metrics.json"
+        --variant "$VARIANT"
+        --unit patch
+    )
+    "${semantic_cmd[@]}"
 else
-    eval_cmd+=(--instance-method watershed)
+    echo "Skipping unet.evaluate_semantic (no MASK_DIR; patch test set often lacks raster masks)."
 fi
 
-"${eval_cmd[@]}"
+echo "3/3 common.evaluate_instances..."
+instance_cmd=(
+    uv run --no-sync python -u -m common.evaluate_instances
+    --variant "$VARIANT"
+    --unit patch
+    --model-type unet
+    --image-dir "$LOCAL_IMAGES"
+    --pred-labels-dir "$TMP_OUT/labels"
+    --gt-gpkg "$LOCAL_GT_GPKG"
+    --gt-origin patch_stem
+    --image-stem-suffix "${IMAGE_SUFFIXES[0]}"
+    --output-json "$TMP_OUT/instance_metrics.json"
+)
+"${instance_cmd[@]}"
 
-echo "Copying metrics and predictions to $OUT_ROOT..."
-mkdir -p "$OUT_ROOT" "$PRED_DIR"
-cp -f "$TMP_OUTPUT_JSON" "$OUTPUT_JSON"
-cp -r "$TMP_PRED_DIR"/. "$PRED_DIR"/
-
-echo "Wrote $OUTPUT_JSON"
+echo "Copying artifacts to $OUT_ROOT..."
+mkdir -p "$OUT_ROOT"
+cp -r "$TMP_OUT"/. "$OUT_ROOT"/
+echo "Wrote $INSTANCE_METRICS_JSON"

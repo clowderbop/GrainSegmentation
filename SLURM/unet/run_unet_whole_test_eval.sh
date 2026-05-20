@@ -431,26 +431,24 @@ fi
 
 WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
 
-echo "Running evaluations..."
+echo "Running staged evaluations (predict -> extract -> semantic -> instances)..."
 for i in "${!MODEL_PATHS[@]}"; do
     model_path="${MODEL_PATHS[$i]}"
     model_file="$(basename "$model_path")"
     model_stem="${model_file%.keras}"
-    pred_dir="$OUTPUT_DIR/preds_${model_stem}"
-    json_path="$OUTPUT_DIR/${model_stem}.json"
+    pred_root="$OUTPUT_DIR/run_${model_stem}"
+    instance_json="$pred_root/instance_metrics.json"
     suffix_csv="${MODEL_SUFFIXES[$i]}"
     IFS=',' read -r -a suffix_array <<< "$suffix_csv"
 
-    mkdir -p "$pred_dir"
+    mkdir -p "$pred_root"
 
-    eval_cmd=(
-        uv run --no-sync python -u -m unet.evaluate
+    predict_cmd=(
+        uv run --no-sync python -u -m unet.predict
         --model-path "$model_path"
         --image-dir "$LOCAL_IMAGE_DIR"
         --mask-dir "$LOCAL_MASK_DIR"
-        --gt-gpkg "$LOCAL_GT_GPKG"
-        --output-json "$json_path"
-        --save-predictions-dir "$pred_dir"
+        --output-dir "$pred_root"
         --num-inputs "${MODEL_NUM_INPUTS[$i]}"
         --image-suffixes
         "${suffix_array[@]}"
@@ -460,9 +458,8 @@ for i in "${!MODEL_PATHS[@]}"; do
         --mask-stem-suffix "$MASK_STEM_SUFFIX"
         --unit whole
     )
-
     if [ -n "$MASK_EXT" ]; then
-        eval_cmd+=(--mask-ext "$MASK_EXT")
+        predict_cmd+=(--mask-ext "$MASK_EXT")
     fi
 
     explicit_ws="${MODEL_WATERSHED_JSONS[$i]:-}"
@@ -473,6 +470,7 @@ for i in "${!MODEL_PATHS[@]}"; do
         exit 1
     fi
 
+    extract_args=(--instance-method watershed)
     if [ -n "$resolved_ws_json" ]; then
         require_file "$resolved_ws_json" "Watershed tuning JSON not found"
         if [ ! -f "$WATERSHED_JSON_HELPER" ]; then
@@ -480,14 +478,51 @@ for i in "${!MODEL_PATHS[@]}"; do
             exit 1
         fi
         mapfile -t _watershed_eval_args < <(python3 "$WATERSHED_JSON_HELPER" "$resolved_ws_json")
-        eval_cmd+=("${_watershed_eval_args[@]}")
+        extract_args=("${_watershed_eval_args[@]}")
     fi
 
-    echo "Evaluating ${MODEL_LABELS[$i]} from $model_file"
-    "${eval_cmd[@]}"
+    echo "Model ${MODEL_LABELS[$i]}: predict"
+    "${predict_cmd[@]}"
 
-    JSON_FILES+=("$json_path")
-    PRED_PATHS+=("$pred_dir")
+    echo "Model ${MODEL_LABELS[$i]}: extract_instances"
+    extract_cmd=(
+        uv run --no-sync python -u -m unet.extract_instances
+        --semantic-dir "$pred_root/semantic"
+        --output-dir "$pred_root"
+        "${extract_args[@]}"
+    )
+    "${extract_cmd[@]}"
+
+    echo "Model ${MODEL_LABELS[$i]}: evaluate_semantic"
+    semantic_cmd=(
+        uv run --no-sync python -u -m unet.evaluate_semantic
+        --semantic-dir "$pred_root/semantic"
+        --mask-dir "$LOCAL_MASK_DIR"
+        --mask-stem-suffix "$MASK_STEM_SUFFIX"
+        --output-json "$pred_root/semantic_metrics.json"
+        --unit whole
+    )
+    if [ -n "$MASK_EXT" ]; then
+        semantic_cmd+=(--mask-ext "$MASK_EXT")
+    fi
+    "${semantic_cmd[@]}"
+
+    echo "Model ${MODEL_LABELS[$i]}: evaluate_instances"
+    instance_cmd=(
+        uv run --no-sync python -u -m common.evaluate_instances
+        --model-type unet
+        --unit whole
+        --image-dir "$LOCAL_IMAGE_DIR"
+        --pred-labels-dir "$pred_root/labels"
+        --gt-gpkg "$LOCAL_GT_GPKG"
+        --gt-origin whole_image
+        --image-stem-suffix "${suffix_array[0]}"
+        --output-json "$instance_json"
+    )
+    "${instance_cmd[@]}"
+
+    JSON_FILES+=("$instance_json")
+    PRED_PATHS+=("$pred_root/semantic")
 done
 
 LOCAL_PPL_IMAGE="$(stage_optional_path "$PPL_IMAGE" "$IMAGE_DIR" "$LOCAL_IMAGE_DIR")"
@@ -507,7 +542,7 @@ OVERLAY_PRED_PATHS=()
 for i in "${!MODEL_PATHS[@]}"; do
     model_path="${MODEL_PATHS[$i]}"
     model_stem="$(basename "${model_path%.keras}")"
-    pred_path="$OUTPUT_DIR/preds_${model_stem}/${OVERLAY_SAMPLE_ID}_pred.tif"
+    pred_path="$OUTPUT_DIR/run_${model_stem}/semantic/${OVERLAY_SAMPLE_ID}_pred.tif"
     require_file "$pred_path" "Overlay prediction not found"
     OVERLAY_PRED_PATHS+=("$pred_path")
 done

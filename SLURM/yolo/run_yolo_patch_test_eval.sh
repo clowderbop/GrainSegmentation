@@ -21,7 +21,7 @@ RUN_NAME="test"
 PROJECT_DIR="$SCRATCH/GrainSeg/runs/yolo26-seg-val/$VARIANT"
 JOB_TAG="${SLURM_JOB_ID:-local}"
 OUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/GrainSeg/eval/yolo_patches/$VARIANT/$JOB_TAG}"
-OUTPUT_JSON="$OUT_ROOT/metrics.json"
+INSTANCE_METRICS_JSON="$OUT_ROOT/instance_metrics.json"
 RUN_ULTRALYTICS_VAL="${RUN_ULTRALYTICS_VAL:-0}"
 
 DATA_YAML=""
@@ -95,19 +95,42 @@ export YOLO_DISABLE_TQDM=True
 
 mkdir -p "$OUT_ROOT"
 
-PATCH_EVAL_FLAGS=(
-    --mode patches
-    --weights "$WEIGHTS"
-    --variant "$VARIANT"
-    --data "$DATA_YAML"
-    --device "$DEVICE"
-    --imgsz "$IMGSZ"
-    --conf "${CONF:-0.25}"
-    --output-json "$OUTPUT_JSON"
-)
+echo "1/2 yolo.predict (patch labels with confidence)..."
+uv run python -u -m yolo.predict \
+    --unit patch \
+    --weights "$WEIGHTS" \
+    --variant "$VARIANT" \
+    --data "$DATA_YAML" \
+    --device "$DEVICE" \
+    --imgsz "$IMGSZ" \
+    --conf "${CONF:-0.25}" \
+    --output-dir "$OUT_ROOT"
+
+DATASET_ROOT="$(dirname "$DATA_YAML")"
+IMAGE_DIR="$DATASET_ROOT/images/test"
+LABEL_DIR="$DATASET_ROOT/labels/test"
+
+echo "2/2 common.evaluate_instances..."
+uv run python -u -m common.evaluate_instances \
+    --unit patch \
+    --model-type yolo \
+    --variant "$VARIANT" \
+    --image-dir "$IMAGE_DIR" \
+    --pred-labels-dir "$OUT_ROOT/labels" \
+    --gt-labels-dir "$LABEL_DIR" \
+    --output-json "$INSTANCE_METRICS_JSON"
 
 if [[ "$RUN_ULTRALYTICS_VAL" == "1" ]]; then
-    PATCH_EVAL_FLAGS+=(--run-ultralytics-val --batch "$BATCH" --name "$RUN_NAME" --project "$PROJECT_DIR")
+    echo "Optional: yolo.val (Ultralytics test split metrics)..."
+    uv run python -u -m yolo.val \
+        --weights "$WEIGHTS" \
+        --variant "$VARIANT" \
+        --data "$DATA_YAML" \
+        --device "$DEVICE" \
+        --imgsz "$IMGSZ" \
+        --batch "$BATCH" \
+        --name "$RUN_NAME" \
+        --project "$PROJECT_DIR"
 fi
 
-uv run python -u evaluate.py "${PATCH_EVAL_FLAGS[@]}"
+echo "Wrote $INSTANCE_METRICS_JSON"

@@ -118,6 +118,7 @@ def build_instance_eval_report(
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "model_type": model_type,
+        "metric_kind": "instance",
         "variant": variant,
         "unit": unit,
         "samples": samples,

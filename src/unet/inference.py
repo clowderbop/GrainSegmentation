@@ -7,8 +7,8 @@ from common.patching import compute_starts
 def predict_full_image(
     model: tf.keras.Model,
     inputs: tuple[np.ndarray, ...],
-    patch_size: int = 3008,
-    stride: int = 1504,
+    patch_size: int = 1024,
+    stride: int = 512,
     batch_size: int = 4,
 ):
     if not inputs:

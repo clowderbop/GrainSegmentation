@@ -635,7 +635,7 @@ def run_patches(args: argparse.Namespace, data_yaml: Path) -> dict[str, Any]:
             raise FileNotFoundError(
                 f"Pre-computed semantic mask not found for {image_path}: expected {mask_path}. "
                 "Write UNet-aligned `{stem}_labels.<ext>` rasters next to YOLO labels "
-                "(see SLURM/preprocessing/08_create_unet_test_patches_from_yolo_patches.sh or "
+                "(see SLURM/preprocessing/create_unet_test_patches_from_yolo_patches.sh or "
                 "src/data_prep/crop_unet_masks_from_yolo_patches.py). "
                 "Polygon .txt labels are not used for patch metrics."
             )

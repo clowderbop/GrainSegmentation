@@ -16,31 +16,56 @@ TF_STDERR_FILTER="$REPO_ROOT/SLURM/filter_tensorflow_stderr.py"
 # Only attempt to cancel if running as a SLURM job
 if [ -n "${SLURM_JOB_NAME:-}" ] && [ -n "${SLURM_JOB_ID:-}" ]; then
     OLD_JOBS=$(squeue -u "$USER" -n "$SLURM_JOB_NAME" -h -o %i | grep -v "^$SLURM_JOB_ID$" || true)
-    
+
     if [ -n "$OLD_JOBS" ]; then
         echo "Canceling previous jobs with name $SLURM_JOB_NAME: $OLD_JOBS"
-
         scancel $OLD_JOBS
-        
-
         sleep 10
     fi
 fi
 
 function usage {
+    local status="${1:-1}"
+    cat <<'EOF' >&2
+Usage: run_unet_tune_and_train_variant.sh [options]
+
+Train one U-Net input variant on the preprocessed train section. Expects
+dataset/train/train_labels.tif (from SLURM/preprocessing/rasterize_labels.sh)
+and per-channel train_*.tif mosaics from the preprocessing pipeline.
+
+Options:
+  --num-inputs N
+  --image-suffixes "_PPL _PPX1 ..."
+  --run-name NAME
+  --dataset-dir PATH   (default: $SCRATCH/GrainSeg/dataset/train)
+  --output-model PATH
+  --resume [CHECKPOINT]
+  --skip-tuning
+  --verbose
+  --help
+EOF
+    exit "$status"
+}
+
+function require_file {
+    local path="$1"
+    local message="$2"
+    if [ ! -f "$path" ]; then
+        echo "$message: $path" >&2
         exit 1
+    fi
 }
 
 NUM_INPUTS=7
 IMAGE_SUFFIXES="_PPL _PPX1 _PPX2 _PPX3 _PPX4 _PPX5 _PPX6"
 RUN_NAME="7in_PPL_AllPPX"
+DATASET_DIR=""
 OUTPUT_MODEL=""
 RESUME_MODEL=""
 SKIP_TUNING_FLAG=""
 VALIDATION_FRACTION="0.2"
 VERBOSE=false
 
-# Process flags
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --num-inputs)
@@ -53,6 +78,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --run-name)
             RUN_NAME="$2"
+            shift 2
+            ;;
+        --dataset-dir)
+            DATASET_DIR="$2"
             shift 2
             ;;
         --output-model)
@@ -77,10 +106,10 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help)
-            usage
+            usage 0
             ;;
         *)
-            echo "Unknown option: $1"
+            echo "Unknown option: $1" >&2
             usage
             ;;
     esac
@@ -88,15 +117,30 @@ done
 
 source "$SLURM_ROOT/prepare_env.sh"
 
+GRAINSEG_ROOT="${SCRATCH}/GrainSeg"
+DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
+LABELS_RASTER="$DATASET_DIR/train_labels.tif"
+
 if [ -z "$OUTPUT_MODEL" ]; then
-    OUTPUT_MODEL="$SCRATCH/GrainSeg/models/unet_finetuned_${RUN_NAME}.keras"
+    OUTPUT_MODEL="$GRAINSEG_ROOT/models/unet_finetuned_${RUN_NAME}.keras"
 fi
 
-echo "Copying dataset to TMPDIR..."
-mkdir -p "$TMPDIR/dataset"
-cp -r "$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped" "$TMPDIR/dataset/"
+read -r -a IMAGE_SUFFIX_ARGS <<< "$IMAGE_SUFFIXES"
 
-LOCAL_DIR="$TMPDIR/dataset/cropped"
+require_file "$LABELS_RASTER" \
+    "Semantic label raster not found (run SLURM/preprocessing/rasterize_labels.sh)"
+
+echo "Staging train mosaics to TMPDIR..."
+LOCAL_DIR="$TMPDIR/unet_train_${RUN_NAME}_${SLURM_JOB_ID:-local}"
+rm -rf "$LOCAL_DIR"
+mkdir -p "$LOCAL_DIR"
+cp "$LABELS_RASTER" "$LOCAL_DIR/"
+
+for suffix in "${IMAGE_SUFFIX_ARGS[@]}"; do
+    src="$DATASET_DIR/train${suffix}.tif"
+    require_file "$src" "Missing training image for suffix ${suffix}"
+    cp "$src" "$LOCAL_DIR/"
+done
 
 export TF_CPP_MIN_LOG_LEVEL=2
 
@@ -105,8 +149,8 @@ cd "$REPO_ROOT/src/unet"
 uv sync
 
 echo "Installing TensorFlow wheel..."
-
-WHEEL_PATH="$SCRATCH/GrainSeg/wheels/tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
+WHEEL_PATH="$GRAINSEG_ROOT/wheels/tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
+require_file "$WHEEL_PATH" "TensorFlow wheel not found"
 uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~=12.8.0 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-cusolver-cu12 nvidia-cuda-nvcc-cu12 nvidia-cuda-nvrtc-cu12 "$WHEEL_PATH"
 
 LATEST_MODEL="${OUTPUT_MODEL%.keras}_latest.keras"
@@ -116,18 +160,19 @@ if [ "$RESUME_MODEL" = "__LATEST__" ]; then
 fi
 
 if [ -n "$RESUME_MODEL" ]; then
-    if [ ! -f "$RESUME_MODEL" ]; then
-        echo "Resume checkpoint not found: $RESUME_MODEL"
-        exit 1
-    fi
+    require_file "$RESUME_MODEL" "Resume checkpoint not found"
     CHECKPOINT_ARGS=("--resume" "$RESUME_MODEL")
     echo "Resuming final training from: $RESUME_MODEL"
 else
-    CHECKPOINT_ARGS=("--checkpoint" "../../models/pretrained/starting_point.keras")
+    PRETRAINED_CHECKPOINT="$GRAINSEG_ROOT/models/pretrained/starting_point.keras"
+    if [ ! -f "$PRETRAINED_CHECKPOINT" ]; then
+        PRETRAINED_CHECKPOINT="$REPO_ROOT/models/pretrained/starting_point.keras"
+    fi
+    require_file "$PRETRAINED_CHECKPOINT" "Pretrained starting checkpoint not found"
+    CHECKPOINT_ARGS=("--checkpoint" "$PRETRAINED_CHECKPOINT")
 fi
 
-echo "Running training..."
-read -r -a IMAGE_SUFFIX_ARGS <<< "$IMAGE_SUFFIXES"
+echo "Running training (run_name=$RUN_NAME, inputs=$NUM_INPUTS)..."
 TRAIN_CMD=(uv run --no-sync python -u train_unet_multi_input.py)
 
 if [ -n "$SKIP_TUNING_FLAG" ]; then
@@ -136,7 +181,7 @@ fi
 
 TRAIN_CMD+=(
     --run-name "$RUN_NAME"
-    --tuning-dir "$SCRATCH/GrainSeg/tuning_logs"
+    --tuning-dir "$GRAINSEG_ROOT/tuning_logs"
     --image-dir "$LOCAL_DIR"
     --mask-dir "$LOCAL_DIR"
     --validation-fraction "$VALIDATION_FRACTION"
@@ -160,4 +205,4 @@ else
     "${TRAIN_CMD[@]}" 2> >(python -u "$TF_STDERR_FILTER" >&2)
 fi
 
-echo "Done."
+echo "Done. Wrote model to $OUTPUT_MODEL"

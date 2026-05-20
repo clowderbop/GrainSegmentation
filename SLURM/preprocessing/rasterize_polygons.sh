@@ -12,9 +12,9 @@ REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
 cd "$REPO_ROOT"
 source "$SLURM_ROOT/prepare_env.sh"
 
-INPUT_GPKG="${INPUT_GPKG:-$SCRATCH/GrainSeg/dataset/MWD-1#121/labels_cropped.gpkg}"
-REFERENCE_TIFF="${REFERENCE_TIFF:-$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/PPL.tif}"
-OUTPUT_RASTER="${OUTPUT_RASTER:-$SCRATCH/GrainSeg/dataset/MWD-1#121/cropped/labels_raster.tif}"
+INPUT_GPKG="${INPUT_GPKG:-$SCRATCH/GrainSeg/dataset/test/test_labels.gpkg}"
+REFERENCE_TIFF="${REFERENCE_TIFF:-$SCRATCH/GrainSeg/dataset/test/test_PPL.tif}"
+OUTPUT_RASTER="${OUTPUT_RASTER:-$SCRATCH/GrainSeg/dataset/test/test_labels.tif}"
 BOUNDARY_WIDTH="${BOUNDARY_WIDTH:-3.0}"
 
 if [[ -z "$INPUT_GPKG" || -z "$REFERENCE_TIFF" || -z "$OUTPUT_RASTER" ]]; then

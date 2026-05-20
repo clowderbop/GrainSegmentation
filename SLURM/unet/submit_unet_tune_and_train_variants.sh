@@ -5,8 +5,34 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
+TRAIN_LABELS_RASTER="$GRAINSEG_ROOT/dataset/train/train_labels.tif"
+RUN_SCRIPT="$REPO_ROOT/SLURM/unet/run_unet_tune_and_train_variant.sh"
+
 function usage {
-    exit 1
+    local status="${1:-1}"
+    cat <<EOF >&2
+Usage: $(basename "$0") [options]
+
+Submit U-Net tune+train jobs for one or more input variants.
+Requires preprocessed train mosaics under:
+  $GRAINSEG_ROOT/dataset/train/train_*.tif
+and rasterized labels:
+  $TRAIN_LABELS_RASTER
+(from SLURM/preprocessing/rasterize_labels.sh).
+
+Options:
+  --ppl                  PPL only (1 input)
+  --ppl-ppx-composite    PPLPPXblend (1 input)
+  --ppl-plus-ppx-composite  PPL + PPXblend (2 inputs)
+  --all-ppx              PPL + all PPX (7 inputs)
+  --all                  all four variants
+  --resume               pass --resume to training jobs
+  --skip-tuning          pass --skip-tuning to training jobs
+  --verbose              pass --verbose to training jobs
+  --help
+EOF
+    exit "$status"
 }
 
 run_ppl=false
@@ -17,7 +43,6 @@ resume_args=()
 skip_tuning_args=()
 verbose_args=()
 
-# Process flags
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --ppl)
@@ -55,8 +80,8 @@ while [[ $# -gt 0 ]]; do
             verbose_args=(--verbose)
             shift
             ;;
-        --help)
-            usage
+        --help|-h)
+            usage 0
             ;;
         *)
             echo "Unknown option: $1" >&2
@@ -65,69 +90,69 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ "$run_ppl" = false ] && [ "$run_ppl_ppx_composite" = false ] && [ "$run_ppl_plus_ppx_composite" = false ] && [ "$run_all_ppx" = false ]; then
+if [ "$run_ppl" = false ] && [ "$run_ppl_ppx_composite" = false ] && \
+   [ "$run_ppl_plus_ppx_composite" = false ] && [ "$run_all_ppx" = false ]; then
     usage
 fi
+
+if [ ! -f "$TRAIN_LABELS_RASTER" ]; then
+    echo "Error: $TRAIN_LABELS_RASTER not found." >&2
+    echo "Run SLURM/preprocessing/rasterize_labels.sh before submitting training." >&2
+    exit 1
+fi
+
+submit_variant() {
+    local mem="$1"
+    local job_name="$2"
+    shift 2
+    local -a train_args=("$@")
+
+    sbatch \
+        --mem="$mem" \
+        --job-name="$job_name" \
+        --export=ALL,DATASET_DIR="$GRAINSEG_ROOT/dataset/train" \
+        "$RUN_SCRIPT" \
+        "${train_args[@]}" \
+        "${resume_args[@]}" \
+        "${skip_tuning_args[@]}" \
+        "${verbose_args[@]}"
+}
 
 submitted=false
 
 if [ "$run_ppl" = true ]; then
     echo "Submitting PPL only (1 input) job..."
-    sbatch \
-        --mem=256G \
-        --job-name=Train_PPL \
-        SLURM/unet/run_unet_tune_and_train_variant.sh \
+    submit_variant 256G Train_PPL \
         --num-inputs 1 \
         --image-suffixes "_PPL" \
-        --run-name "PPL" \
-        "${resume_args[@]}" \
-        "${skip_tuning_args[@]}" \
-        "${verbose_args[@]}"
+        --run-name "PPL"
     submitted=true
 fi
 
 if [ "$run_ppl_ppx_composite" = true ]; then
     echo "Submitting PPLPPXBlend (1 input) job..."
-    sbatch \
-        --mem=256G \
-        --job-name=Train_PPLPPXBlend \
-        SLURM/unet/run_unet_tune_and_train_variant.sh \
+    submit_variant 256G Train_PPLPPXBlend \
         --num-inputs 1 \
         --image-suffixes "_PPLPPXblend" \
-        --run-name "PPLPPXblend" \
-        "${resume_args[@]}" \
-        "${skip_tuning_args[@]}" \
-        "${verbose_args[@]}"
+        --run-name "PPLPPXblend"
     submitted=true
 fi
 
 if [ "$run_ppl_plus_ppx_composite" = true ]; then
     echo "Submitting PPL + PPXblend (2 inputs) job..."
-    sbatch \
-        --mem=512G \
-        --job-name=Train_PPL+PPXblend \
-        SLURM/unet/run_unet_tune_and_train_variant.sh \
+    submit_variant 512G Train_PPL+PPXblend \
         --num-inputs 2 \
         --image-suffixes "_PPL _PPXblend" \
-        --run-name "PPL+PPXblend" \
-        "${resume_args[@]}" \
-        "${skip_tuning_args[@]}" \
-        "${verbose_args[@]}"
+        --run-name "PPL+PPXblend"
     submitted=true
 fi
 
 if [ "$run_all_ppx" = true ]; then
     echo "Submitting PPL + All PPX (7 inputs) job..."
-    sbatch \
-        --mem=950G \
-        --job-name=Train_PPL+AllPPX \
-        SLURM/unet/run_unet_tune_and_train_variant.sh \
+    submit_variant 950G Train_PPL+AllPPX \
         --num-inputs 7 \
         --image-suffixes "_PPL _PPX1 _PPX2 _PPX3 _PPX4 _PPX5 _PPX6" \
-        --run-name "PPL+AllPPX" \
-        "${resume_args[@]}" \
-        "${skip_tuning_args[@]}" \
-        "${verbose_args[@]}"
+        --run-name "PPL+AllPPX"
     submitted=true
 fi
 

@@ -11,14 +11,10 @@ import numpy as np
 
 from common.geometry import load_image_space_polygons
 from common.instance_predictions import MASKS_SUBDIR, yolo_mask_npz_path, yolo_mask_npz_to_coco_dt
-from common.manifest_io import (
-    load_manifest_json,
-    manifest_gt_gpkg_field,
-    manifest_image_field,
-    resolve_manifest_path,
-)
+from common.coco_annotations import build_gt_annotations
+from common.manifest_io import load_manifest_json, resolve_manifest_path
 from common.reporting import json_safe_for_dump
-from yolo.coco_instance_ap import build_gt_annotations, evaluate_mask_ap
+from yolo.coco_instance_ap import evaluate_mask_ap
 from yolo.config import variant_choices
 from yolo.predict import load_image_for_yolo
 
@@ -57,21 +53,23 @@ def _resolve_manifest_pairs(args: argparse.Namespace) -> list[tuple[Path, Path, 
         manifest_dir = manifest_path.parent
         pairs: list[tuple[Path, Path, str]] = []
         for index, entry in enumerate(load_manifest_json(manifest_path)):
-            tiff = manifest_image_field(entry)
-            gpkg = manifest_gt_gpkg_field(entry)
+            image_raw = entry.get("image")
+            gpkg_raw = entry.get("gt_gpkg")
             sample_id = str(entry.get("sample_id") or "")
-            if not tiff or not gpkg:
-                raise ValueError(f"manifest[{index}] needs tiff and gpkg")
-            tiff_path = resolve_manifest_path(tiff, manifest_dir)
-            gpkg_path = resolve_manifest_path(gpkg, manifest_dir)
+            if not image_raw or not gpkg_raw:
+                raise ValueError(
+                    f'manifest samples[{index}] requires "image" and "gt_gpkg"'
+                )
+            image_path = resolve_manifest_path(str(image_raw), manifest_dir)
+            gpkg_path = resolve_manifest_path(str(gpkg_raw), manifest_dir)
             if not sample_id:
-                sample_id = tiff_path.stem
-            pairs.append((tiff_path, gpkg_path, sample_id))
+                sample_id = image_path.stem
+            pairs.append((image_path, gpkg_path, sample_id))
         return pairs
-    if args.test_tiff is None or args.test_gpkg is None:
-        raise ValueError("Provide --manifest or both --test-tiff and --test-gpkg")
-    tiff = args.test_tiff.resolve()
-    return [(tiff, args.test_gpkg.resolve(), tiff.stem)]
+    if args.image is None or args.gt_gpkg is None:
+        raise ValueError("Provide --manifest or both --image and --gt-gpkg")
+    image_path = args.image.resolve()
+    return [(image_path, args.gt_gpkg.resolve(), image_path.stem)]
 
 
 def run_evaluate_mask_ap(args: argparse.Namespace) -> dict[str, Any]:
@@ -79,13 +77,13 @@ def run_evaluate_mask_ap(args: argparse.Namespace) -> dict[str, Any]:
     pairs = _resolve_manifest_pairs(args)
     sample_rows: list[dict[str, Any]] = []
 
-    for image_id, (tiff_path, gpkg_path, sample_id) in enumerate(pairs, start=1):
-        if not tiff_path.is_file():
-            raise FileNotFoundError(f"test TIFF not found: {tiff_path}")
+    for image_id, (image_path, gpkg_path, sample_id) in enumerate(pairs, start=1):
+        if not image_path.is_file():
+            raise FileNotFoundError(f"Image not found: {image_path}")
         if not gpkg_path.is_file():
-            raise FileNotFoundError(f"test GPKG not found: {gpkg_path}")
+            raise FileNotFoundError(f"GPKG not found: {gpkg_path}")
 
-        image = load_image_for_yolo(tiff_path)
+        image = load_image_for_yolo(image_path)
         height, width = image.shape[:2]
         polygons = load_image_space_polygons(gpkg_path)
         gt_anns = build_gt_annotations(
@@ -102,7 +100,7 @@ def run_evaluate_mask_ap(args: argparse.Namespace) -> dict[str, Any]:
         )
         summary = evaluate_mask_ap(
             image_id=image_id,
-            file_name=tiff_path.name,
+            file_name=image_path.name,
             height=height,
             width=width,
             gt_annotations=gt_anns,
@@ -110,14 +108,14 @@ def run_evaluate_mask_ap(args: argparse.Namespace) -> dict[str, Any]:
         )
         row = {
             "sample_id": sample_id,
-            "test_tiff": str(tiff_path),
-            "test_gpkg": str(gpkg_path),
+            "image": str(image_path),
+            "gt_gpkg": str(gpkg_path),
             "pred_npz": str(pred_npz),
             "coco_mask_ap": summary.to_dict(),
         }
         sample_rows.append(row)
         print(
-            f"{tiff_path.name}: AP={summary.ap_50_95:.4f} AP50={summary.ap_50:.4f} "
+            f"{image_path.name}: AP={summary.ap_50_95:.4f} AP50={summary.ap_50:.4f} "
             f"Pred={len(dt_anns)} GT={len(gt_anns)}"
         )
 
@@ -150,16 +148,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-json", required=True, type=Path)
     parser.add_argument("--variant", choices=variant_choices(), default=None)
     parser.add_argument("--manifest", default=None, type=Path)
-    parser.add_argument("--test-tiff", default=None, type=Path)
-    parser.add_argument("--test-gpkg", default=None, type=Path)
+    parser.add_argument("--image", default=None, type=Path)
+    parser.add_argument("--gt-gpkg", default=None, type=Path)
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
-    if args.manifest is None and (args.test_tiff is None or args.test_gpkg is None):
-        parser.error("Provide --manifest or both --test-tiff and --test-gpkg")
+    if args.manifest is None and (args.image is None or args.gt_gpkg is None):
+        parser.error("Provide --manifest or both --image and --gt-gpkg")
 
     report = run_evaluate_mask_ap(args)
     args.output_json.parent.mkdir(parents=True, exist_ok=True)

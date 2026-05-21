@@ -92,20 +92,6 @@ def aggregate_mean_metrics(
     return mean
 
 
-def build_legacy_flat_dict(
-    rows: list[dict[str, Any]],
-    *,
-    mean: dict[str, float] | None,
-) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for row in rows:
-        sid = str(row["sample_id"])
-        out[sid] = {k: float(row[k]) for k in INSTANCE_METRIC_KEYS}
-    if mean is not None:
-        out["mean"] = {k: float(v) for k, v in mean.items()}
-    return out
-
-
 def build_instance_eval_report(
     *,
     model_type: str,
@@ -113,7 +99,6 @@ def build_instance_eval_report(
     unit: str,
     samples: list[dict[str, Any]],
     extras: dict[str, Any] | None = None,
-    include_legacy_flat: bool = True,
 ) -> dict[str, Any]:
     report: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -123,15 +108,8 @@ def build_instance_eval_report(
         "unit": unit,
         "samples": samples,
     }
-    mean_block: dict[str, float] | None = None
     if len(samples) > 1:
-        mean_block = aggregate_mean_metrics(samples)
-        report["mean"] = mean_block
-    merged_extras: dict[str, Any] = dict(extras) if extras else {}
-    if include_legacy_flat:
-        leg = dict(merged_extras.get("legacy") or {})
-        leg["per_sample_flat"] = build_legacy_flat_dict(samples, mean=mean_block)
-        merged_extras["legacy"] = leg
-    if merged_extras:
-        report["extras"] = merged_extras
+        report["mean"] = aggregate_mean_metrics(samples)
+    if extras:
+        report["extras"] = extras
     return report

@@ -81,9 +81,9 @@ def collect_yolo_patch_image_paths(
 def _load_whole_image_paths(args: argparse.Namespace) -> list[Path]:
     if args.manifest is not None:
         return [image_path for image_path, _ in collect_manifest_image_paths(args.manifest)]
-    if args.test_tiff is None:
-        raise ValueError("whole mode requires --manifest or --test-tiff")
-    return [args.test_tiff.resolve()]
+    if args.image is None:
+        raise ValueError("whole mode requires --manifest or --image")
+    return [args.image.resolve()]
 
 
 class _NumpyPredictionResult:
@@ -378,7 +378,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--variant", choices=variant_choices(), default=None)
     parser.add_argument("--data", default=None, type=Path)
     parser.add_argument("--manifest", default=None, type=Path)
-    parser.add_argument("--test-tiff", default=None, type=Path)
+    parser.add_argument("--image", default=None, type=Path)
     parser.add_argument("--imgsz", type=int, default=1024)
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--device", default="0")
@@ -400,8 +400,8 @@ def main(argv: list[str] | None = None) -> None:
         run_patch_predict(args, data_yaml)
         return
 
-    if args.manifest is None and args.test_tiff is None:
-        parser.error("whole mode requires --manifest or --test-tiff")
+    if args.manifest is None and args.image is None:
+        parser.error("whole mode requires --manifest or --image")
     run_whole_predict(args)
 
 

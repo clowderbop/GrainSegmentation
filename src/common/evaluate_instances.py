@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
 from dataclasses import dataclass
@@ -17,12 +16,7 @@ from common.instance_predictions import (
     instance_map_filename,
     read_instance_map_tiff,
 )
-from common.manifest_io import (
-    load_manifest_json,
-    manifest_gt_gpkg_field,
-    manifest_image_field,
-    resolve_manifest_path,
-)
+from common.manifest_io import load_manifest_json, resolve_manifest_path
 from common.ground_truth import GtOriginMode, scene_polygons_to_patch_instance_map
 from common.metrics import compute_aji, compute_instance_metrics_dict
 from common.reporting import build_instance_eval_report, build_sample_row, count_instances
@@ -119,38 +113,34 @@ def collect_manifest_samples(
     pred_instances_dir: Path | None = None,
     default_gt_gpkg: Path | None = None,
 ) -> list[InstanceEvalSample]:
-    rows: list[dict[str, str]]
     manifest = manifest.resolve()
+    if manifest.suffix.lower() != ".json":
+        raise ValueError(f"Manifest must be a .json file: {manifest}")
     manifest_dir = manifest.parent
-    if manifest.suffix.lower() == ".json":
-        rows = load_manifest_json(manifest)
-    else:
-        with manifest.open(newline="", encoding="utf-8") as handle:
-            rows = list(csv.DictReader(handle))
+    rows = load_manifest_json(manifest)
 
     samples: list[InstanceEvalSample] = []
     for idx, row in enumerate(rows):
-        image_raw = manifest_image_field(row)
+        image_raw = row.get("image")
         if not image_raw:
-            raise ValueError(
-                f"Manifest row {idx} requires image, test_tiff, or tiff field"
-            )
-        image_path = resolve_manifest_path(image_raw, manifest_dir)
+            raise ValueError(f'Manifest samples[{idx}] requires "image" field')
+        image_path = resolve_manifest_path(str(image_raw), manifest_dir)
 
         sample_id = row.get("sample_id") or image_path.stem
 
-        pred_raw = row.get("pred_instances") or row.get("pred_txt")
+        pred_raw = row.get("pred_instances")
         if pred_raw:
-            pred_instances = resolve_manifest_path(pred_raw, manifest_dir)
+            pred_instances = resolve_manifest_path(str(pred_raw), manifest_dir)
         elif pred_instances_dir is not None:
             pred_instances = _pred_instances_path(pred_instances_dir, sample_id)
         else:
             raise ValueError(
-                f"Manifest row {idx} requires pred_instances or --pred-instances-dir"
+                f'Manifest samples[{idx}] requires "pred_instances" or '
+                "--pred-instances-dir"
             )
 
         gt_txt_raw = row.get("gt_txt") or None
-        gt_gpkg_raw = manifest_gt_gpkg_field(row)
+        gt_gpkg_raw = row.get("gt_gpkg")
         if gt_gpkg_raw is None and default_gt_gpkg is not None:
             gt_gpkg_raw = str(default_gt_gpkg)
 

@@ -85,7 +85,7 @@ PREDICT_CMD=(
 if [[ -n "$MANIFEST" ]]; then
     PREDICT_CMD+=(--manifest "$MANIFEST")
 else
-    PREDICT_CMD+=(--test-tiff "$TEST_TIFF")
+    PREDICT_CMD+=(--image "$TEST_TIFF")
 fi
 
 echo "1/4 yolo.predict (whole-image SAHI instance TIFFs and mask NPZs)..."
@@ -103,15 +103,17 @@ import sys
 from pathlib import Path
 
 out_path, sample_id, tiff, gpkg, instances_dir = sys.argv[1:6]
-payload = [
-    {
-        "sample_id": sample_id,
-        "image": tiff,
-        "gt_gpkg": gpkg,
-        "gt_origin": "whole_image",
-        "pred_instances": str(Path(instances_dir) / f"{sample_id}_instances.tif"),
-    }
-]
+payload = {
+    "samples": [
+        {
+            "sample_id": sample_id,
+            "image": tiff,
+            "gt_gpkg": gpkg,
+            "gt_origin": "whole_image",
+            "pred_instances": str(Path(instances_dir) / f"{sample_id}_instances.tif"),
+        }
+    ]
+}
 with open(out_path, "w", encoding="utf-8") as handle:
     json.dump(payload, handle, indent=2)
     handle.write("\n")
@@ -127,7 +129,7 @@ EXPORT_CMD=(
 if [[ -n "$MANIFEST" ]]; then
     EXPORT_CMD+=(--manifest "$MANIFEST_PATH")
 else
-    EXPORT_CMD+=(--test-tiff "$TEST_TIFF")
+    EXPORT_CMD+=(--image "$TEST_TIFF")
 fi
 "${EXPORT_CMD[@]}"
 
@@ -154,7 +156,7 @@ MASK_AP_CMD=(
 if [[ -n "$MANIFEST" ]]; then
     MASK_AP_CMD+=(--manifest "$MANIFEST_PATH")
 else
-    MASK_AP_CMD+=(--test-tiff "$TEST_TIFF" --test-gpkg "$TEST_GPKG")
+    MASK_AP_CMD+=(--image "$TEST_TIFF" --gt-gpkg "$TEST_GPKG")
 fi
 "${MASK_AP_CMD[@]}"
 

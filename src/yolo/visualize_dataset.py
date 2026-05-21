@@ -13,7 +13,7 @@ from yolo.dataset_yaml import (
     load_yaml_dataset_config,
     resolve_split_dir,
 )
-from yolo.yolo_seg_label_io import read_yolo_seg_label_rows
+from common.yolo_seg_labels import read_yolo_seg_label_rows
 
 
 matplotlib.use("Agg")

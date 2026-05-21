@@ -10,8 +10,6 @@ from pycocotools import mask as mask_utils
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
-from common.coco_annotations import build_gt_annotations  # noqa: F401
-
 
 def _ensure_dt_bbox_area(record: dict[str, Any], *, height: int, width: int) -> None:
     if record.get("bbox") and record.get("area"):

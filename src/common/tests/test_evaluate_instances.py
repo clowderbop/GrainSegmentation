@@ -10,6 +10,7 @@ import tifffile
 
 from common.evaluate_instances import (
     InstanceEvalSample,
+    collect_manifest_samples,
     collect_patch_samples,
     evaluate_instance_samples,
 )
@@ -91,33 +92,6 @@ def test_manifest_mode_pairs_records(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
-            [
-                {
-                    "sample_id": "whole",
-                    "image": str(image_path),
-                    "pred_instances": str(pred_path),
-                    "gt_txt": str(pred_path),
-                }
-            ]
-        ),
-        encoding="utf-8",
-    )
-    from common.evaluate_instances import collect_manifest_samples
-
-    samples = collect_manifest_samples(manifest)
-    assert len(samples) == 1
-    assert samples[0].image_path == image_path
-
-
-def test_manifest_samples_wrapper_format(tmp_path: Path) -> None:
-    width, height = 32, 32
-    image_path = tmp_path / "whole.tif"
-    _write_blank_image(image_path, width, height)
-    pred_path = instance_map_path(tmp_path, "whole")
-    write_instance_map_tiff(pred_path, np.zeros((height, width), dtype=np.int32))
-    manifest = tmp_path / "manifest_wrapped.json"
-    manifest.write_text(
-        json.dumps(
             {
                 "samples": [
                     {
@@ -131,11 +105,9 @@ def test_manifest_samples_wrapper_format(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
-    from common.evaluate_instances import collect_manifest_samples
-
     samples = collect_manifest_samples(manifest)
     assert len(samples) == 1
-    assert samples[0].sample_id == "whole"
+    assert samples[0].image_path == image_path
 
 
 def test_manifest_infers_pred_instances_from_dir(tmp_path: Path) -> None:
@@ -149,19 +121,19 @@ def test_manifest_infers_pred_instances_from_dir(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
-            [
-                {
-                    "sample_id": "whole",
-                    "test_tiff": str(image_path),
-                    "test_gpkg": str(tmp_path / "dummy.gpkg"),
-                    "gt_origin": "whole_image",
-                }
-            ]
+            {
+                "samples": [
+                    {
+                        "sample_id": "whole",
+                        "image": str(image_path),
+                        "gt_gpkg": str(tmp_path / "dummy.gpkg"),
+                        "gt_origin": "whole_image",
+                    }
+                ]
+            }
         ),
         encoding="utf-8",
     )
-    from common.evaluate_instances import collect_manifest_samples
-
     samples = collect_manifest_samples(manifest, pred_instances_dir=instances_dir)
     assert len(samples) == 1
     assert samples[0].pred_instances == pred_path

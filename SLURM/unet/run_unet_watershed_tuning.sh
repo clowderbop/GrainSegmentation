@@ -58,7 +58,6 @@ Expects:
 Options:
   --model-path PATH
   --dataset-dir PATH      (default: $SCRATCH/GrainSeg/dataset/train)
-  --dataset-cropped PATH  (alias for --dataset-dir)
   --gt-gpkg PATH          (default: <dataset-dir>/train_labels.gpkg)
   --num-inputs N
   --image-suffixes "_PPL ..."
@@ -82,7 +81,7 @@ while [[ $# -gt 0 ]]; do
             IMAGE_SUFFIXES_CLI="$2"
             shift 2
             ;;
-        --dataset-dir|--dataset-cropped)
+        --dataset-dir)
             DATASET_DIR="$2"
             shift 2
             ;;

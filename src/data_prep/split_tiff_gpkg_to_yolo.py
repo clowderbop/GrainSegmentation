@@ -25,9 +25,6 @@ from common.patching import (
 MIN_VALIDATION_COVERAGE = 0.10
 
 
-load_image_channel_first = load_tiff_channel_first
-
-
 def save_patch(path: Path, patch: np.ndarray) -> None:
     tifffile.imwrite(
         path,
@@ -321,7 +318,7 @@ def export_dataset(
     *,
     test: bool = False,
 ) -> None:
-    image = load_image_channel_first(image_path)
+    image = load_tiff_channel_first(image_path)
     polygons = _normalize_polygons_to_image_space(_load_polygons(polygons_path))
     _, height, width = image.shape
 

@@ -36,30 +36,16 @@ def compute_ci(data, confidence: float = 0.95) -> float:
 
 
 def per_sample_metrics_from_eval_json(data: dict) -> dict[str, dict]:
-    """Support legacy flat evaluate JSON and schema_version 1 ``samples`` / ``extras.legacy``."""
-    extras = data.get("extras")
-    if isinstance(extras, dict):
-        leg = extras.get("legacy")
-        if isinstance(leg, dict):
-            flat = leg.get("per_sample_flat")
-            if isinstance(flat, dict):
-                return {
-                    k: v for k, v in flat.items() if k != "mean" and isinstance(v, dict)
-                }
     samples = data.get("samples")
-    if isinstance(samples, list):
-        out: dict[str, dict] = {}
-        for row in samples:
-            if not isinstance(row, dict):
-                continue
-            sid = str(row.get("sample_id", ""))
-            out[sid] = {k: float(row[k]) for k in INSTANCE_METRIC_KEYS if k in row}
-        return out
-    return {
-        k: v
-        for k, v in data.items()
-        if k != "mean" and isinstance(v, dict) and "aji" in v
-    }
+    if not isinstance(samples, list):
+        raise ValueError('Evaluation JSON must include a "samples" list')
+    out: dict[str, dict] = {}
+    for row in samples:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("sample_id", ""))
+        out[sid] = {k: float(row[k]) for k in INSTANCE_METRIC_KEYS if k in row}
+    return out
 
 
 def _load_quantitative_metrics(

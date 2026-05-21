@@ -14,13 +14,9 @@ from common.patching import (
     tile_patch_bounds,
 )
 
-load_image_channel_first = load_tiff_channel_first
-parse_patch_stem = parse_region_patch_stem
-compute_tile_patch_bounds = tile_patch_bounds
-
 
 def _raster_hw(path: Path) -> tuple[int, int]:
-    arr = load_image_channel_first(path)
+    arr = load_tiff_channel_first(path)
     _, h, w = arr.shape
     return int(h), int(w)
 
@@ -96,8 +92,8 @@ def main(argv: list[str] | None = None) -> None:
 
     for img_path in patches:
         stem = img_path.stem
-        region_idx, py0, px0 = parse_patch_stem(stem)
-        y0, y1, x0, x1 = compute_tile_patch_bounds(
+        region_idx, py0, px0 = parse_region_patch_stem(stem)
+        y0, y1, x0, x1 = tile_patch_bounds(
             region_idx,
             py0,
             px0,

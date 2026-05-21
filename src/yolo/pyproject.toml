@@ -5,20 +5,20 @@ description = "YOLO26 segmentation training pipeline for GrainSegmentation"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "grainsegmentation-common",
-    "matplotlib>=3.10.8",
-    "sahi>=0.11.21",
-    "torchvision>=0.25.0",
-    "ultralytics-opencv-headless>=8.4.21",
+    "matplotlib==3.10.9",
+    "sahi==0.11.36",
+    "torchvision==0.27.0",
+    "ultralytics-opencv-headless==8.4.52",
 ]
 
 [tool.uv.sources]
 grainsegmentation-common = { path = "../common", editable = true }
 
 [dependency-groups]
-dev = ["pytest>=9.0.2"]
+dev = ["pytest==9.0.3"]
 
 [build-system]
-requires = ["setuptools>=81.0.0"]
+requires = ["setuptools==81.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

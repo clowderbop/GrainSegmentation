@@ -11,8 +11,8 @@ package = false
 
 [dependency-groups]
 dev = [
-    "ruff>=0.14",
-    "pytest>=9.0.2",
+    "ruff==0.15.13",
+    "pytest==9.0.3",
     "grainsegmentation-common",
     "unet-pipeline",
     "yolo",

@@ -5,12 +5,12 @@ description = "UNet training pipeline for GrainSegmentation"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "grainsegmentation-common",
-    "matplotlib>=3.10.8",
-    "keras-tuner>=1.4.8",
-    "scipy>=1.17.1",
-    "scikit-image>=0.25.0",
-    "scikit-learn>=1.8.0",
-    "tensorboard>=2.20.0",
+    "matplotlib==3.10.9",
+    "keras-tuner==1.4.8",
+    "scipy==1.17.1",
+    "scikit-image==0.26.0",
+    "scikit-learn==1.8.0",
+    "tensorboard==2.20.0",
 ]
 
 [tool.uv.sources]
@@ -18,11 +18,11 @@ grainsegmentation-common = { path = "../common", editable = true }
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
+    "pytest==9.0.3",
 ]
 
 [build-system]
-requires = ["setuptools>=81.0.0"]
+requires = ["setuptools==81.0.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]

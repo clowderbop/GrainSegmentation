@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 from shapely.affinity import translate
 
 from common.coco_annotations import build_gt_annotations
-from common.geometry import load_image_space_polygons
 from common.instance_maps import gt_annotations_to_instance_map
 from common.patching import sample_origin_xy, sample_origin_xy_or_whole_image
 
@@ -55,19 +53,3 @@ def scene_polygons_to_patch_instance_map(
         width=width,
     )
     return gt_annotations_to_instance_map(gt_anns, height, width)
-
-
-def gpkg_to_scene_instance_map(
-    gpkg_path: Path,
-    *,
-    height: int,
-    width: int,
-    image_id: int = 1,
-) -> np.ndarray:
-    """Rasterize a GIS layer at scene origin (full-section coordinates)."""
-    return polygons_to_instance_map(
-        load_image_space_polygons(gpkg_path),
-        height=height,
-        width=width,
-        image_id=image_id,
-    )

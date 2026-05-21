@@ -34,28 +34,6 @@ def gt_annotations_to_instance_map(
     return out
 
 
-def _prediction_score(record: dict[str, Any]) -> float:
-    raw = record.get("score")
-    if raw is None:
-        return 0.0
-    return float(raw)
-
-
-def dt_annotations_to_instance_map(
-    dt_annotations: list[dict[str, Any]], height: int, width: int
-) -> np.ndarray:
-    out = np.zeros((height, width), dtype=np.int32)
-    indexed = list(enumerate(dt_annotations, start=1))
-    indexed.sort(key=lambda pair: _prediction_score(pair[1]))
-    for label, ann in indexed:
-        seg = ann.get("segmentation")
-        if seg is None or seg == [] or seg == {}:
-            continue
-        m = segmentation_to_binary_mask(seg, height, width)
-        out[m] = label
-    return out
-
-
 def binary_masks_to_instance_map_by_confidence(
     masks_hw: np.ndarray, confidences: np.ndarray
 ) -> np.ndarray:

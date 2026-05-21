@@ -130,15 +130,6 @@ def ultralytics_result_mask_arrays(
     )
 
 
-def ultralytics_result_to_instance_map(
-    result: Any, height: int, width: int
-) -> np.ndarray:
-    masks, scores, _classes = ultralytics_result_mask_arrays(result)
-    if masks.shape[0] == 0:
-        return np.zeros((height, width), dtype=np.int32)
-    return instance_map_from_masks(masks, scores, height=height, width=width)
-
-
 def ultralytics_result_prediction_arrays(
     result: Any, *, height: int, width: int
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -151,19 +142,6 @@ def ultralytics_result_prediction_arrays(
             masks, scores, height=height, width=width
         )
     return instance_map, masks, scores, classes
-
-
-def save_ultralytics_result_npz(path: Path | str, result: Any) -> None:
-    masks, scores, classes = ultralytics_result_mask_arrays(result)
-    image_path = str(result.path) if getattr(result, "path", None) else ""
-    save_yolo_mask_npz(
-        path,
-        masks=masks,
-        scores=scores,
-        classes=classes,
-        orig_shape=np.array(result.orig_shape),
-        image_path=image_path,
-    )
 
 
 def yolo_mask_npz_to_coco_dt(
@@ -219,11 +197,9 @@ __all__ = [
     "instance_map_path",
     "read_instance_map_tiff",
     "resize_masks_hw",
-    "save_ultralytics_result_npz",
     "save_yolo_mask_npz",
     "ultralytics_result_mask_arrays",
     "ultralytics_result_prediction_arrays",
-    "ultralytics_result_to_instance_map",
     "write_instance_map_tiff",
     "yolo_mask_npz_path",
     "yolo_mask_npz_to_coco_dt",

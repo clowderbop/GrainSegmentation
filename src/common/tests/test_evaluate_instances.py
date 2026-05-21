@@ -15,10 +15,6 @@ from common.evaluate_instances import (
     evaluate_instance_samples,
 )
 from common.instance_predictions import instance_map_path, write_instance_map_tiff
-from common.yolo_seg_labels import (
-    YoloSegGtRow,
-    write_yolo_seg_gt_label_file,
-)
 
 
 def _write_blank_image(path: Path, width: int, height: int) -> None:
@@ -54,18 +50,26 @@ def test_evaluate_two_synthetic_instance_maps(tmp_path: Path) -> None:
     gt_map = np.zeros((height, width), dtype=np.int32)
     gt_map[4:20, 4:20] = 1
 
-    gt_rows = [
-        YoloSegGtRow(
-            class_id=0,
-            points=np.array(
-                [[4.0, 4.0], [20.0, 4.0], [20.0, 20.0], [4.0, 20.0]],
-                dtype=np.float32,
-            ),
-        )
-    ]
     gt_txt = tmp_path / "sample.txt"
+    gt_txt.write_text(
+        "0 "
+        + " ".join(
+            f"{v:.8g}"
+            for v in (
+                4 / width,
+                4 / height,
+                20 / width,
+                4 / height,
+                20 / width,
+                20 / height,
+                4 / width,
+                20 / height,
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     pred_path = instance_map_path(tmp_path, "sample")
-    write_yolo_seg_gt_label_file(gt_txt, gt_rows, image_width=width, image_height=height)
     write_instance_map_tiff(pred_path, gt_map)
 
     sample = InstanceEvalSample(

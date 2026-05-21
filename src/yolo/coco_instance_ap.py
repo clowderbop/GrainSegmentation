@@ -6,51 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from pycocotools import mask as mask_utils
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
-
-
-def _ensure_dt_bbox_area(record: dict[str, Any], *, height: int, width: int) -> None:
-    if record.get("bbox") and record.get("area"):
-        return
-    seg = record.get("segmentation")
-    if seg is None or seg == [] or seg == {}:
-        return
-    if isinstance(seg, dict):
-        record["area"] = float(mask_utils.area(seg))
-        record["bbox"] = [float(x) for x in mask_utils.toBbox(seg)]
-        return
-    rles = mask_utils.frPyObjects(seg, height, width)
-    rle = (
-        mask_utils.merge(rles)
-        if isinstance(rles, list) and len(rles) > 1
-        else (rles[0] if isinstance(rles, list) else rles)
-    )
-    record["area"] = float(mask_utils.area(rle))
-    record["bbox"] = [float(x) for x in mask_utils.toBbox(rle)]
-
-
-def object_predictions_to_coco_dt(
-    predictions: list[Any],
-    *,
-    image_id: int,
-    height: int,
-    width: int,
-) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for pred in predictions:
-        coco_p = pred.to_coco_prediction(image_id=image_id)
-        record = dict(coco_p.json)
-        record["image_id"] = image_id
-        cid = int(record.get("category_id", 0))
-        record["category_id"] = cid + 1 if cid == 0 else cid
-        seg = record.get("segmentation")
-        if seg is None or seg == [] or seg == {}:
-            continue
-        _ensure_dt_bbox_area(record, height=height, width=width)
-        out.append(record)
-    return out
 
 
 @dataclass

@@ -11,7 +11,7 @@ GT_GPKG="$TRAIN_DIR/train_labels.gpkg"
 WATERSHED_TUNE_ROOT="$GRAINSEG_ROOT/runs/watershed_tune"
 EVAL_ROOT="$GRAINSEG_ROOT/eval"
 
-sbatch "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
+sbatch --job-name=watershed_val "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
   --model-dir "$MODELS_DIR" \
   --image-dir "$TRAIN_DIR" \
   --mask-dir "$TRAIN_DIR" \
@@ -20,7 +20,7 @@ sbatch "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
   --instance-method watershed \
   --watershed-tune-root "$WATERSHED_TUNE_ROOT"
 
-sbatch "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
+sbatch --job-name=cc_val "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
   --model-dir "$MODELS_DIR" \
   --image-dir "$TRAIN_DIR" \
   --mask-dir "$TRAIN_DIR" \

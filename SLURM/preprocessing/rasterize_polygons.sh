@@ -6,19 +6,15 @@
 
 set -euo pipefail
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
-cd "$REPO_ROOT"
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
 source "$SLURM_ROOT/prepare_env.sh"
 
-INPUT_GPKG="${INPUT_GPKG:-$SCRATCH/GrainSeg/dataset/test/test_labels.gpkg}"
-REFERENCE_TIFF="${REFERENCE_TIFF:-$SCRATCH/GrainSeg/dataset/test/test_PPL.tif}"
-OUTPUT_RASTER="${OUTPUT_RASTER:-$SCRATCH/GrainSeg/dataset/test/test_labels.tif}"
+GRAINSEG_ROOT="$(grainseg_root)"
+
+INPUT_GPKG="${INPUT_GPKG:-$GRAINSEG_ROOT/dataset/test/test_labels.gpkg}"
+REFERENCE_TIFF="${REFERENCE_TIFF:-$GRAINSEG_ROOT/dataset/test/test_PPL.tif}"
+OUTPUT_RASTER="${OUTPUT_RASTER:-$GRAINSEG_ROOT/dataset/test/test_labels.tif}"
 BOUNDARY_WIDTH="${BOUNDARY_WIDTH:-3.0}"
 
 if [[ -z "$INPUT_GPKG" || -z "$REFERENCE_TIFF" || -z "$OUTPUT_RASTER" ]]; then

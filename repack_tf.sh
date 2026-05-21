@@ -5,6 +5,11 @@
 #SBATCH --time=01:00:00
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=SLURM/utils/paths.sh
+source "$SCRIPT_DIR/SLURM/utils/paths.sh"
+GRAINSEG_ROOT="$(grainseg_root)"
+
 # Set Apptainer directories to TMPDIR for fast local I/O
 export APPTAINER_CACHEDIR=$SCRATCH/apptainer_cache
 export APPTAINER_TMPDIR=$TMPDIR/apptainer_tmp
@@ -30,7 +35,7 @@ apptainer exec --bind $TMPDIR:/workspace docker://nvcr.io/nvidia/tensorflow:25.0
 "
 
 echo "Copying resulting wheel back to SCRATCH..."
-mkdir -p $SCRATCH/GrainSeg/wheels
-cp $TMPDIR/*.whl $SCRATCH/GrainSeg/wheels/
+mkdir -p "$GRAINSEG_ROOT/wheels"
+cp "$TMPDIR"/*.whl "$GRAINSEG_ROOT/wheels/"
 
-echo "Finished successfully! Wheel is at $SCRATCH/GrainSeg/wheels/"
+echo "Finished successfully! Wheel is at $GRAINSEG_ROOT/wheels/"

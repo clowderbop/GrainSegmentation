@@ -5,19 +5,15 @@
 #SBATCH --time=00:30:00
 set -euo pipefail
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
-cd "$REPO_ROOT"
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
 source "$SLURM_ROOT/prepare_env.sh"
 
+GRAINSEG_ROOT="$(grainseg_root)"
+
 WORK_DIR="$TMPDIR/merge_multichannel_tiff_$SLURM_JOB_ID"
-TRAIN_DEST="$SCRATCH/GrainSeg/dataset/train"
-TEST_DEST="$SCRATCH/GrainSeg/dataset/test"
+TRAIN_DEST="$GRAINSEG_ROOT/dataset/train"
+TEST_DEST="$GRAINSEG_ROOT/dataset/test"
 TRAIN_WORK="$WORK_DIR/train"
 TEST_WORK="$WORK_DIR/test"
 mkdir -p "$TRAIN_WORK"

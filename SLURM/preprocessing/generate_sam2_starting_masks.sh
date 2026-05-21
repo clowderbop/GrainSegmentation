@@ -11,18 +11,13 @@ module load cuDNN/9.10.1.4-CUDA-12.8.0
 module load SciPy-bundle/2025.06-gfbf-2025a
 module list
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
-cd "$REPO_ROOT"
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
 source "$SLURM_ROOT/prepare_env.sh"
 
+GRAINSEG_ROOT="$(grainseg_root)"
 
-INPUT_PATH="${1:-$SCRATCH/GrainSeg/dataset/MWD-1#121_s0c0.tif}"
+INPUT_PATH="${1:-$GRAINSEG_ROOT/dataset/MWD-1#121_s0c0.tif}"
 INPUT_NAME="$(basename "$INPUT_PATH")"
 INPUT_STEM="${INPUT_NAME%.*}"
 
@@ -45,7 +40,7 @@ uv run --no-sync python -u starting_masks.py \
     --nms-thresh 0.3 \
     --max-mask-coverage 0.5 \
     --load-mask-cache \
-    --mask-cache-dir "$SCRATCH/GrainSeg/out"
+    --mask-cache-dir "$GRAINSEG_ROOT/out"
     # --save-mask-cache
 
 
@@ -55,8 +50,8 @@ uv run --no-sync python -u convert_rle_polygon.py rle2json \
     -o "$WORK_DIR/out/${INPUT_STEM}.geojson"
 
 echo "Copying results back to persistent storage..."
-mkdir -p "$SCRATCH/GrainSeg/out"
-cp "$WORK_DIR/out/${INPUT_STEM}.json" "$SCRATCH/GrainSeg/out/"
-cp "$WORK_DIR/out/${INPUT_STEM}.geojson" "$SCRATCH/GrainSeg/out/"
+mkdir -p "$GRAINSEG_ROOT/out"
+cp "$WORK_DIR/out/${INPUT_STEM}.json" "$GRAINSEG_ROOT/out/"
+cp "$WORK_DIR/out/${INPUT_STEM}.geojson" "$GRAINSEG_ROOT/out/"
 
 echo "Done!"

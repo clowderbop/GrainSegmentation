@@ -2,9 +2,11 @@
 # Compare connected-components vs tuned watershed on the train section.
 
 set -euo pipefail
+# shellcheck source=SLURM/utils/repo_root.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/repo_root.sh"
+cd "$REPO_ROOT"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
+GRAINSEG_ROOT="$(grainseg_root)"
 TRAIN_DIR="$GRAINSEG_ROOT/dataset/train"
 MODELS_DIR="$GRAINSEG_ROOT/models/unet"
 GT_GPKG="$TRAIN_DIR/train_labels.gpkg"

@@ -5,15 +5,11 @@
 #SBATCH --time=00:30:00
 set -euo pipefail
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
-cd "$REPO_ROOT"
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
 source "$SLURM_ROOT/prepare_env.sh"
+
+GRAINSEG_ROOT="$(grainseg_root)"
 
 WORK_DIR="$TMPDIR/blend_PPX_$SLURM_JOB_ID"
 TRAIN_DIR="$WORK_DIR/train"
@@ -23,8 +19,8 @@ mkdir -p "$TRAIN_DIR"
 mkdir -p "$TEST_DIR"
 mkdir -p "$RESULT_DIR"
 
-TRAIN_DEST="$SCRATCH/GrainSeg/dataset/train"
-TEST_DEST="$SCRATCH/GrainSeg/dataset/test"
+TRAIN_DEST="$GRAINSEG_ROOT/dataset/train"
+TEST_DEST="$GRAINSEG_ROOT/dataset/test"
 
 echo "Syncing data prep environment..."
 cd "$REPO_ROOT/src/data_prep"

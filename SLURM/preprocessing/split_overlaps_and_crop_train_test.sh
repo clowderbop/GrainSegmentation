@@ -7,15 +7,11 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=10
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
-cd "$REPO_ROOT"
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
 source "$SLURM_ROOT/prepare_env.sh"
+
+GRAINSEG_ROOT="$(grainseg_root)"
 
 echo "Copying input files to fast local storage ($TMPDIR)..."
 WORK_DIR="$TMPDIR/split_overlaps_$SLURM_JOB_ID"
@@ -25,11 +21,11 @@ TRAIN_DIR="$WORK_DIR/train"
 mkdir -p "$TRAIN_DIR"
 mkdir -p "$TEST_DIR"
 
-cp $SCRATCH/GrainSeg/dataset/uncropped/train_raw.gpkg "$TRAIN_DIR/"
-cp $SCRATCH/GrainSeg/dataset/uncropped/test_raw.gpkg "$TEST_DIR/"
+cp $GRAINSEG_ROOT/dataset/uncropped/train_raw.gpkg "$TRAIN_DIR/"
+cp $GRAINSEG_ROOT/dataset/uncropped/test_raw.gpkg "$TEST_DIR/"
 
-cp $SCRATCH/GrainSeg/dataset/uncropped/PPL.tif "$WORK_DIR/"
-cp $SCRATCH/GrainSeg/dataset/uncropped/PPX*.tif "$WORK_DIR/"
+cp $GRAINSEG_ROOT/dataset/uncropped/PPL.tif "$WORK_DIR/"
+cp $GRAINSEG_ROOT/dataset/uncropped/PPX*.tif "$WORK_DIR/"
 
 cd "$REPO_ROOT/src/data_prep"
 echo "Running split overlaps script on train..."
@@ -65,20 +61,20 @@ uv run python -u crop_images.py \
     --bbox "0, -30000, 10000, -40000"
 
 echo "Copying results back to persistent storage..."
-cp "$TRAIN_DIR/train_cropped.gpkg" $SCRATCH/GrainSeg/dataset/train/train_labels.gpkg
-cp "$TEST_DIR/test_cropped.gpkg" $SCRATCH/GrainSeg/dataset/test/test_labels.gpkg
+cp "$TRAIN_DIR/train_cropped.gpkg" $GRAINSEG_ROOT/dataset/train/train_labels.gpkg
+cp "$TEST_DIR/test_cropped.gpkg" $GRAINSEG_ROOT/dataset/test/test_labels.gpkg
 
-cp -r "$TRAIN_DIR/cropped/"* $SCRATCH/GrainSeg/dataset/train/
-cp -r "$TEST_DIR/cropped/"* $SCRATCH/GrainSeg/dataset/test/
+cp -r "$TRAIN_DIR/cropped/"* $GRAINSEG_ROOT/dataset/train/
+cp -r "$TEST_DIR/cropped/"* $GRAINSEG_ROOT/dataset/test/
 
 for base in PPL PPX1 PPX2 PPX3 PPX4 PPX5 PPX6; do
-  if [[ -f $SCRATCH/GrainSeg/dataset/train/${base}.tif ]]; then
-    mv -f $SCRATCH/GrainSeg/dataset/train/${base}.tif \
-      $SCRATCH/GrainSeg/dataset/train/train_${base}.tif
+  if [[ -f $GRAINSEG_ROOT/dataset/train/${base}.tif ]]; then
+    mv -f $GRAINSEG_ROOT/dataset/train/${base}.tif \
+      $GRAINSEG_ROOT/dataset/train/train_${base}.tif
   fi
-  if [[ -f $SCRATCH/GrainSeg/dataset/test/${base}.tif ]]; then
-    mv -f $SCRATCH/GrainSeg/dataset/test/${base}.tif \
-      $SCRATCH/GrainSeg/dataset/test/test_${base}.tif
+  if [[ -f $GRAINSEG_ROOT/dataset/test/${base}.tif ]]; then
+    mv -f $GRAINSEG_ROOT/dataset/test/${base}.tif \
+      $GRAINSEG_ROOT/dataset/test/test_${base}.tif
   fi
 done
 

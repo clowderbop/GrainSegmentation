@@ -7,30 +7,23 @@
 #SBATCH --time=12:00:00
 
 set -euo pipefail
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/assertions.sh
+source "$SLURM_ROOT/utils/assertions.sh"
+# shellcheck source=SLURM/utils/cancel_duplicate_jobs.sh
+source "$SLURM_ROOT/utils/cancel_duplicate_jobs.sh"
+# shellcheck source=SLURM/utils/tensorflow.sh
+source "$SLURM_ROOT/utils/tensorflow.sh"
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
+GRAINSEG_ROOT="$(grainseg_root)"
+
 TF_STDERR_FILTER="$REPO_ROOT/SLURM/filter_tensorflow_stderr.py"
-
-# Only attempt to cancel if running as a SLURM job
-if [ -n "${SLURM_JOB_NAME:-}" ] && [ -n "${SLURM_JOB_ID:-}" ]; then
-    OLD_JOBS=$(squeue -u "$USER" -n "$SLURM_JOB_NAME" -h -o %i | grep -v "^$SLURM_JOB_ID$" || true)
-
-    if [ -n "$OLD_JOBS" ]; then
-        echo "Canceling previous jobs with name $SLURM_JOB_NAME: $OLD_JOBS"
-        scancel $OLD_JOBS
-        sleep 10
-    fi
-fi
+cancel_duplicate_slurm_jobs
 
 function usage {
     local status="${1:-1}"
-    cat <<'EOF' >&2
+    cat <<EOF >&2
 Usage: run_unet_tune_and_train_variant.sh [options]
 
 Train one U-Net input variant on the preprocessed train section. Expects
@@ -41,7 +34,7 @@ Options:
   --num-inputs N
   --image-suffixes "_PPL _PPX1 ..."
   --run-name NAME
-  --dataset-dir PATH   (default: $SCRATCH/GrainSeg/dataset/train)
+  --dataset-dir PATH   (default: $GRAINSEG_ROOT/dataset/train)
   --output-model PATH
   --resume [CHECKPOINT]
   --skip-tuning
@@ -49,15 +42,6 @@ Options:
   --help
 EOF
     exit "$status"
-}
-
-function require_file {
-    local path="$1"
-    local message="$2"
-    if [ ! -f "$path" ]; then
-        echo "$message: $path" >&2
-        exit 1
-    fi
 }
 
 NUM_INPUTS=7
@@ -121,12 +105,11 @@ done
 
 source "$SLURM_ROOT/prepare_env.sh"
 
-GRAINSEG_ROOT="${SCRATCH}/GrainSeg"
 DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
 LABELS_RASTER="$DATASET_DIR/train_labels.tif"
 
 if [ -z "$OUTPUT_MODEL" ]; then
-    OUTPUT_MODEL="$GRAINSEG_ROOT/models/unet_finetuned_${RUN_NAME}.keras"
+    OUTPUT_MODEL="$GRAINSEG_ROOT/models/unet/unet_finetuned_${RUN_NAME}.keras"
 fi
 
 read -r -a IMAGE_SUFFIX_ARGS <<< "$IMAGE_SUFFIXES"
@@ -152,10 +135,7 @@ echo "Syncing training environment..."
 cd "$REPO_ROOT/src/unet"
 uv sync
 
-echo "Installing TensorFlow wheel..."
-WHEEL_PATH="$GRAINSEG_ROOT/wheels/tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
-require_file "$WHEEL_PATH" "TensorFlow wheel not found"
-uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~=12.8.0 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-cusolver-cu12 nvidia-cuda-nvcc-cu12 nvidia-cuda-nvrtc-cu12 "$WHEEL_PATH"
+install_unet_tensorflow_wheel
 
 LATEST_MODEL="${OUTPUT_MODEL%.keras}_latest.keras"
 
@@ -168,7 +148,7 @@ if [ -n "$RESUME_MODEL" ]; then
     CHECKPOINT_ARGS=("--resume" "$RESUME_MODEL")
     echo "Resuming final training from: $RESUME_MODEL"
 else
-    PRETRAINED_CHECKPOINT="$GRAINSEG_ROOT/models/pretrained/starting_point.keras"
+    PRETRAINED_CHECKPOINT="$GRAINSEG_ROOT/models/unet/pretrained/starting_point.keras"
     if [ ! -f "$PRETRAINED_CHECKPOINT" ]; then
         PRETRAINED_CHECKPOINT="$REPO_ROOT/models/pretrained/starting_point.keras"
     fi

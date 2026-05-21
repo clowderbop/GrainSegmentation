@@ -7,15 +7,14 @@
 #SBATCH --time=04:00:00
 
 set -euo pipefail
-
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
-TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/variants.sh
+source "$SLURM_ROOT/utils/variants.sh"
+# shellcheck source=SLURM/utils/watershed.sh
+source "$SLURM_ROOT/utils/watershed.sh"
+# shellcheck source=SLURM/utils/tensorflow.sh
+source "$SLURM_ROOT/utils/tensorflow.sh"
 
 MODEL_DIR=""
 IMAGE_DIR=""
@@ -52,34 +51,6 @@ EOF
     exit 1
 }
 
-function require_file {
-    local path="$1"
-    local message="$2"
-    if [ ! -f "$path" ]; then
-        echo "$message: $path"
-        exit 1
-    fi
-}
-
-function require_dir {
-    local path="$1"
-    local message="$2"
-    if [ ! -d "$path" ]; then
-        echo "$message: $path"
-        exit 1
-    fi
-}
-
-function strip_prefix {
-    local value="$1"
-    local prefix="$2"
-    if [[ "$value" == "$prefix"* ]]; then
-        printf '%s\n' "${value#"$prefix"}"
-    else
-        printf '%s\n' "$value"
-    fi
-}
-
 function stage_optional_path {
     local original="$1"
     local original_root="$2"
@@ -114,119 +85,6 @@ function resolve_config_model_path {
     printf '%s\n' "$LOCAL_MODEL_DIR/$model_ref"
 }
 
-function infer_model_config {
-    local model_path="$1"
-    local model_file
-    local model_stem
-    local label
-
-    model_file="$(basename "$model_path")"
-    model_stem="${model_file%.keras}"
-    label="$(strip_prefix "$model_stem" "unet_finetuned_")"
-
-    if [[ "$model_stem" == *"PPL+AllPPX"* ]]; then
-        printf '%s\t7\t_PPL,_PPX1,_PPX2,_PPX3,_PPX4,_PPX5,_PPX6\n' "$label"
-        return 0
-    fi
-    if [[ "$model_stem" == *"PPL+PPXblend"* ]]; then
-        printf '%s\t2\t_PPL,_PPXblend\n' "$label"
-        return 0
-    fi
-    if [[ "$model_stem" == *"PPLPPXblend"* ]]; then
-        printf '%s\t1\t_PPLPPXblend\n' "$label"
-        return 0
-    fi
-    if [[ "$model_stem" == *"PPL"* ]]; then
-        printf '%s\t1\t_PPL\n' "$label"
-        return 0
-    fi
-
-    return 1
-}
-
-function infer_watershed_tune_subdir_from_stem {
-    local model_stem="$1"
-
-    if [[ "$model_stem" == *"PPL+AllPPX"* ]]; then
-        printf '%s\n' "PPL_AllPPX"
-        return 0
-    fi
-    if [[ "$model_stem" == *"PPL+PPXblend"* ]]; then
-        printf '%s\n' "PPL_PlusPPXblend"
-        return 0
-    fi
-    if [[ "$model_stem" == *"PPLPPXblend"* ]]; then
-        printf '%s\n' "PPLPPXblend"
-        return 0
-    fi
-    if [[ "$model_stem" == *"PPL"* ]]; then
-        printf '%s\n' "PPL"
-        return 0
-    fi
-
-    return 1
-}
-
-function pick_latest_watershed_best_json {
-    local dir="$1"
-    shopt -s nullglob
-    local matches=("$dir"/watershed_best_*.json)
-    shopt -u nullglob
-
-    if [ "${#matches[@]}" -eq 0 ]; then
-        echo "No watershed_best_*.json files in: $dir" >&2
-        return 1
-    fi
-
-    local newest=""
-    local newest_mtime=0
-    for f in "${matches[@]}"; do
-        local m
-        m="$(stat -c '%Y' "$f" 2>/dev/null || stat -f '%m' "$f")"
-        if [ "$m" -gt "$newest_mtime" ]; then
-            newest_mtime="$m"
-            newest="$f"
-        fi
-    done
-    printf '%s\n' "$newest"
-}
-
-function resolve_watershed_json_for_model {
-    local model_path="$1"
-    local explicit_json="${2:-}"
-
-    if [ -n "$explicit_json" ]; then
-        if [[ "$explicit_json" = /* ]]; then
-            printf '%s\n' "$explicit_json"
-            return 0
-        fi
-        printf '%s\n' "$MODEL_DIR/$explicit_json"
-        return 0
-    fi
-
-    if [ -z "$WATERSHED_TUNE_ROOT" ]; then
-        printf '\n'
-        return 0
-    fi
-
-    local model_file model_stem subdir variant_dir
-    model_file="$(basename "$model_path")"
-    model_stem="${model_file%.keras}"
-
-    if ! subdir="$(infer_watershed_tune_subdir_from_stem "$model_stem")"; then
-        echo "Cannot infer watershed tune subdir for model stem: $model_stem" >&2
-        return 1
-    fi
-
-    variant_dir="$WATERSHED_TUNE_ROOT/$subdir"
-    if [ ! -d "$variant_dir" ]; then
-        echo "Watershed tune variant directory not found: $variant_dir" >&2
-        return 1
-    fi
-
-    pick_latest_watershed_best_json "$variant_dir"
-}
-
 function build_extract_instance_args {
     local model_path="$1"
     local explicit_ws="${2:-}"
@@ -245,19 +103,11 @@ function build_extract_instance_args {
     fi
 
     local resolved_ws_json=""
-    if ! resolved_ws_json="$(resolve_watershed_json_for_model "$model_path" "$explicit_ws")"; then
+    if ! resolved_ws_json="$(resolve_watershed_json_for_model "$MODEL_DIR" "$explicit_ws" "$model_path")"; then
         return 1
     fi
 
-    extract_args=(--instance-method watershed)
-    if [[ -n "$resolved_ws_json" ]]; then
-        require_file "$resolved_ws_json" "Watershed tuning JSON not found"
-        if [[ ! -f "$WATERSHED_JSON_HELPER" ]]; then
-            echo "Missing helper script: $WATERSHED_JSON_HELPER" >&2
-            return 1
-        fi
-        mapfile -t extract_args < <(python3 "$WATERSHED_JSON_HELPER" "$resolved_ws_json")
-    fi
+    build_watershed_extract_args "$resolved_ws_json" "$WATERSHED_JSON_HELPER"
 }
 
 function find_default_ppl_image {
@@ -434,10 +284,7 @@ cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
 uv sync
 
-WHEEL_PATH="$SCRATCH/GrainSeg/wheels/$TF_WHEEL_NAME"
-require_file "$WHEEL_PATH" "TensorFlow wheel not found"
-echo "Installing TensorFlow wheel..."
-uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~=12.8.0 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-cusolver-cu12 nvidia-cuda-nvcc-cu12 nvidia-cuda-nvrtc-cu12 "$WHEEL_PATH"
+install_unet_tensorflow_wheel
 
 MODEL_LABELS=()
 MODEL_PATHS=()

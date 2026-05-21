@@ -1,9 +1,9 @@
 #!/bin/bash
 
 set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
+# shellcheck source=SLURM/utils/repo_root.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/repo_root.sh"
+GRAINSEG_ROOT="$(grainseg_root)"
 TEST_DIR="$GRAINSEG_ROOT/dataset/test"
 
 sbatch "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \

@@ -7,15 +7,12 @@
 #SBATCH --time=04:00:00
 
 set -euo pipefail
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/variants.sh
+source "$SLURM_ROOT/utils/variants.sh"
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
-cd "$REPO_ROOT"
+GRAINSEG_ROOT="$(grainseg_root)"
 
 VARIANT="${VARIANT:-PPL}"
 DEVICE="0"
@@ -25,31 +22,14 @@ OV_H=0.5
 OV_W=0.5
 
 MANIFEST=""
-TEST_GPKG="$SCRATCH/GrainSeg/dataset/test/test_labels.gpkg"
+TEST_GPKG="$GRAINSEG_ROOT/dataset/test/test_labels.gpkg"
 
 source "$SLURM_ROOT/prepare_env.sh"
 
-case "$VARIANT" in
-    PPL)
-        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/test_PPL.tif"
-        ;;
-    PPLPPXblend)
-        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/test_PPLPPXblend.tif"
-        ;;
-    PPL+PPXblend)
-        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/test_PPL+PPXblend.tif"
-        ;;
-    PPL+AllPPX)
-        TEST_TIFF="$SCRATCH/GrainSeg/dataset/test/test_PPL+AllPPX.tif"
-        ;;
-    *)
-        echo "Unknown YOLO variant: $VARIANT" >&2
-        exit 1
-        ;;
-esac
+TEST_TIFF="$(yolo_test_tiff_for_variant "$VARIANT")"
 
-WEIGHTS="$SCRATCH/GrainSeg/runs/yolo26-seg/$VARIANT/weights/best.pt"
-SAHI_OUT="${SAHI_OUT:-$SCRATCH/GrainSeg/eval/yolo_${VARIANT}}"
+WEIGHTS="$GRAINSEG_ROOT/runs/yolo26-seg/$VARIANT/weights/best.pt"
+SAHI_OUT="${SAHI_OUT:-$GRAINSEG_ROOT/eval/yolo_${VARIANT}}"
 OUT_ROOT="${OUTPUT_ROOT:-$SAHI_OUT}"
 INSTANCE_METRICS_JSON="$OUT_ROOT/instance_metrics.json"
 MASK_AP_JSON="$OUT_ROOT/mask_ap_metrics.json"

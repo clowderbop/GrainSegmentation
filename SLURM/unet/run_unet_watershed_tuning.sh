@@ -7,17 +7,13 @@
 #SBATCH --time=04:00:00
 
 set -euo pipefail
-
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/tensorflow.sh
+source "$SLURM_ROOT/utils/tensorflow.sh"
 mkdir -p "$REPO_ROOT/logs"
 
-GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
+GRAINSEG_ROOT="$(grainseg_root)"
 DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
 GT_GPKG="${GT_GPKG:-$DATASET_DIR/train_labels.gpkg}"
 MODEL_PATH="$GRAINSEG_ROOT/models/unet/unet_finetuned_PPL+AllPPX.keras"
@@ -38,11 +34,9 @@ WATERSHED_CONNECTIVITY=(1 2)
 MIN_AREA_PX=(0)
 EXCLUDE_BORDER=(0 1)
 
-TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
-
 function usage {
     local status="${1:-1}"
-    cat <<'EOF' >&2
+    cat <<EOF >&2
 Usage: run_unet_watershed_tuning.sh [options]
 
 Tune watershed postprocessing on U-Net semantic predictions for the train
@@ -56,7 +50,7 @@ Expects:
 
 Options:
   --model-path PATH
-  --dataset-dir PATH      (default: $SCRATCH/GrainSeg/dataset/train)
+  --dataset-dir PATH      (default: $GRAINSEG_ROOT/dataset/train)
   --gt-gpkg PATH          (default: <dataset-dir>/train_labels.gpkg)
   --num-inputs N
   --image-suffixes "_PPL ..."
@@ -105,24 +99,6 @@ done
 if [ -n "$IMAGE_SUFFIXES_CLI" ]; then
     read -r -a IMAGE_SUFFIXES <<< "$IMAGE_SUFFIXES_CLI"
 fi
-
-function require_file {
-    local path="$1"
-    local message="$2"
-    if [ ! -f "$path" ]; then
-        echo "$message: $path"
-        exit 1
-    fi
-}
-
-function require_dir {
-    local path="$1"
-    local message="$2"
-    if [ ! -d "$path" ]; then
-        echo "$message: $path"
-        exit 1
-    fi
-}
 
 function stage_train_inputs {
     local src_dir="$1"
@@ -179,10 +155,7 @@ cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
 uv sync
 
-WHEEL_PATH="$SCRATCH/GrainSeg/wheels/$TF_WHEEL_NAME"
-require_file "$WHEEL_PATH" "TensorFlow wheel not found"
-echo "Installing TensorFlow wheel..."
-uv pip install nvidia-cudnn-cu12~=9.0 nvidia-nccl-cu12 nvidia-cuda-runtime-cu12~=12.8.0 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-cusolver-cu12 nvidia-cuda-nvcc-cu12 nvidia-cuda-nvrtc-cu12 "$WHEEL_PATH"
+install_unet_tensorflow_wheel
 
 TUNE_CMD=(
     uv run --no-sync python -u -m unet.tune_watershed

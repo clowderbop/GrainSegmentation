@@ -1,11 +1,11 @@
 #!/bin/bash
 
 set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=SLURM/utils/repo_root.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/repo_root.sh"
 cd "$REPO_ROOT"
 
-GRAINSEG_ROOT="${SCRATCH:-/scratch/${USER}}/GrainSeg"
+GRAINSEG_ROOT="$(grainseg_root)"
 TRAIN_LABELS_RASTER="$GRAINSEG_ROOT/dataset/train/train_labels.tif"
 RUN_SCRIPT="$REPO_ROOT/SLURM/unet/run_unet_tune_and_train_variant.sh"
 

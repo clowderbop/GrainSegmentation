@@ -1,6 +1,6 @@
 # Preprocessing pipeline
 
-Run from the repo root (`GrainSegmentation/`). Persistent data lives under `$SCRATCH/GrainSeg/dataset/`.
+Run from the repo root (`GrainSegmentation/`). Persistent data lives under `$(grainseg_root)/dataset/` (see `SLURM/utils/paths.sh`; uses `$SCRATCH/GrainSeg` when `SCRATCH` is set).
 
 ## Order
 

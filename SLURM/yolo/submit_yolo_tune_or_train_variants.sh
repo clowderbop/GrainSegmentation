@@ -1,8 +1,8 @@
 #!/bin/bash
 
 set -euo pipefail
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=SLURM/utils/repo_root.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/repo_root.sh"
 cd "$REPO_ROOT"
 
 function usage {

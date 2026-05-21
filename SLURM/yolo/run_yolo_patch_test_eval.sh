@@ -7,89 +7,28 @@
 #SBATCH --time=04:00:00
 
 set -euo pipefail
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/yolo_dataset.sh
+source "$SLURM_ROOT/utils/yolo_dataset.sh"
 
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
-cd "$REPO_ROOT"
+GRAINSEG_ROOT="$(grainseg_root)"
 
 VARIANT="${VARIANT:-PPL}"
 DEVICE="0"
 IMGSZ=1024
 BATCH=16
 RUN_NAME="test"
-PROJECT_DIR="$SCRATCH/GrainSeg/runs/yolo26-seg-val/$VARIANT"
+PROJECT_DIR="$GRAINSEG_ROOT/runs/yolo26-seg-val/$VARIANT"
 JOB_TAG="${SLURM_JOB_ID:-local}"
-OUT_ROOT="${OUTPUT_ROOT:-$SCRATCH/GrainSeg/eval/yolo_patches/$VARIANT/$JOB_TAG}"
+OUT_ROOT="${OUTPUT_ROOT:-$GRAINSEG_ROOT/eval/yolo_patches/$VARIANT/$JOB_TAG}"
 INSTANCE_METRICS_JSON="$OUT_ROOT/instance_metrics.json"
 RUN_ULTRALYTICS_VAL="${RUN_ULTRALYTICS_VAL:-0}"
 
-DATA_YAML=""
-
 source "$SLURM_ROOT/prepare_env.sh"
 
-case "$VARIANT" in
-    PPL)
-        DATASET_SUBDIR="PPL"
-        YAML_NAME="PPL.yaml"
-        ;;
-    PPLPPXblend)
-        DATASET_SUBDIR="PPLPPXblend"
-        YAML_NAME="PPLPPXblend.yaml"
-        ;;
-    PPL+PPXblend)
-        DATASET_SUBDIR="PPL+PPXblend"
-        YAML_NAME="PPL_PPXblend.yaml"
-        ;;
-    PPL+AllPPX)
-        DATASET_SUBDIR="PPL+AllPPX"
-        YAML_NAME="PPL+AllPPX.yaml"
-        ;;
-    *)
-        echo "Unknown YOLO variant: $VARIANT" >&2
-        exit 1
-        ;;
-esac
-
-WEIGHTS="$SCRATCH/GrainSeg/runs/yolo26-seg/$VARIANT/weights/best.pt"
-
-if [[ -z "$DATA_YAML" ]]; then
-    echo "Staging YOLO dataset to TMPDIR for patch evaluation..."
-    TMP_YOLO_ROOT="$TMPDIR/yolo"
-    TMP_DATASET_DIR="$TMP_YOLO_ROOT/$DATASET_SUBDIR"
-    mkdir -p "$TMP_YOLO_ROOT"
-    cp -r "$SCRATCH/GrainSeg/dataset/test/patches/$DATASET_SUBDIR" "$TMP_YOLO_ROOT/"
-    DATA_YAML="$TMP_DATASET_DIR/$YAML_NAME"
-
-    (
-        cd "$REPO_ROOT/src/yolo"
-        uv run python - "$DATA_YAML" "$TMP_DATASET_DIR" <<'PY'
-from pathlib import Path
-import sys
-
-yaml_path = Path(sys.argv[1])
-dataset_root = Path(sys.argv[2])
-text = yaml_path.read_text(encoding="utf-8")
-lines = text.splitlines()
-for index, line in enumerate(lines):
-    if line.startswith("path:"):
-        lines[index] = f"path: {dataset_root}"
-        break
-else:
-    raise SystemExit(f"Dataset YAML missing path entry: {yaml_path}")
-for index, line in enumerate(lines):
-    if line.strip() == "test:":
-        lines[index] = "test: images/test"
-        break
-trailing_newline = "\n" if text.endswith("\n") else ""
-yaml_path.write_text("\n".join(lines) + trailing_newline, encoding="utf-8")
-PY
-    )
-fi
+WEIGHTS="$GRAINSEG_ROOT/runs/yolo26-seg/$VARIANT/weights/best.pt"
+stage_yolo_patch_dataset "$VARIANT" test
 
 echo "Syncing YOLO environment..."
 cd "$REPO_ROOT/src/yolo"

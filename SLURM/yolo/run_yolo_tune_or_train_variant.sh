@@ -7,14 +7,10 @@
 #SBATCH --time=03:00:00
 
 set -euo pipefail
-
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
-else
-    # shellcheck source=SLURM/bootstrap_paths.sh
-    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
-fi
+# shellcheck source=SLURM/utils/source_job.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/yolo_dataset.sh
+source "$SLURM_ROOT/utils/yolo_dataset.sh"
 
 function usage {
     exit 1
@@ -114,6 +110,8 @@ done
 
 source "$SLURM_ROOT/prepare_env.sh"
 
+GRAINSEG_ROOT="$(grainseg_root)"
+
 if [[ -z "$RUN_NAME" ]]; then
     if [[ "$DATA_OVERRIDE" == true && "$VARIANT_EXPLICIT" == false ]]; then
         RUN_NAME="$(basename "${DATA_YAML%.*}")"
@@ -123,59 +121,11 @@ if [[ -z "$RUN_NAME" ]]; then
 fi
 
 if [[ -z "$PROJECT_DIR" ]]; then
-    PROJECT_DIR="$SCRATCH/GrainSeg/runs/yolo26-seg/$VARIANT"
+    PROJECT_DIR="$GRAINSEG_ROOT/runs/yolo26-seg/$VARIANT"
 fi
 
-case "$VARIANT" in
-    PPL)
-        DATASET_SUBDIR="PPL"
-        YAML_NAME="PPL.yaml"
-        ;;
-    PPLPPXblend)
-        DATASET_SUBDIR="PPLPPXblend"
-        YAML_NAME="PPLPPXblend.yaml"
-        ;;
-    PPL+PPXblend)
-        DATASET_SUBDIR="PPL+PPXblend"
-        YAML_NAME="PPL_PPXblend.yaml"
-        ;;
-    PPL+AllPPX)
-        DATASET_SUBDIR="PPL+AllPPX"
-        YAML_NAME="PPL+AllPPX.yaml"
-        ;;
-    *)
-        echo "Unknown YOLO variant: $VARIANT" >&2
-        exit 1
-        ;;
-esac
-
 if [[ -z "$DATA_YAML" ]]; then
-    echo "Copying YOLO dataset to TMPDIR..."
-    TMP_YOLO_ROOT="$TMPDIR/yolo"
-    TMP_DATASET_DIR="$TMP_YOLO_ROOT/$DATASET_SUBDIR"
-    mkdir -p "$TMP_YOLO_ROOT"
-    cp -r "$SCRATCH/GrainSeg/dataset/train/patches/$DATASET_SUBDIR" "$TMP_YOLO_ROOT/"
-    DATA_YAML="$TMP_DATASET_DIR/$YAML_NAME"
-
-    uv run python - "$DATA_YAML" "$TMP_DATASET_DIR" <<'PY'
-from pathlib import Path
-import sys
-
-yaml_path = Path(sys.argv[1])
-dataset_root = Path(sys.argv[2])
-text = yaml_path.read_text(encoding="utf-8")
-lines = text.splitlines()
-
-for index, line in enumerate(lines):
-    if line.startswith("path:"):
-        lines[index] = f"path: {dataset_root}"
-        break
-else:
-    raise SystemExit(f"Dataset YAML missing path entry: {yaml_path}")
-
-trailing_newline = "\n" if text.endswith("\n") else ""
-yaml_path.write_text("\n".join(lines) + trailing_newline, encoding="utf-8")
-PY
+    stage_yolo_patch_dataset "$VARIANT" train
 fi
 
 echo "Syncing YOLO environment..."
@@ -190,7 +140,7 @@ TRAIN_CMD=(
     --project "$PROJECT_DIR"
     --device "$DEVICE"
     --batch "$BATCH"
-    --weights "/scratch/s4361687/GrainSeg/pretrained/yolo26l-seg.pt"
+    --weights "$GRAINSEG_ROOT/pretrained/yolo26l-seg.pt"
 )
 
 if [[ -n "$EPOCHS" ]]; then

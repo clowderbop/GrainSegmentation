@@ -15,12 +15,19 @@ from matplotlib.ticker import ScalarFormatter
 matplotlib.use("Agg")
 
 
+def _grainseg_root() -> Path:
+    if grainseg := os.environ.get("GRAINSEG_ROOT"):
+        return Path(grainseg)
+    scratch = os.environ.get("SCRATCH") or f"/scratch/{os.environ.get('USER', '')}"
+    return Path(scratch) / "GrainSeg"
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         )
     parser.add_argument(
         "--runs-root",
-        default="/scratch/s4361687/GrainSeg/runs/yolo26-seg-tuning",
+        default=str(_grainseg_root() / "runs/yolo26-seg-tuning"),
         )
     parser.add_argument(
         "--glob-pattern",

@@ -12,8 +12,8 @@ import numpy as np
 import tifffile
 
 from common.arg_errors import raise_cli_argument_error
+from common.instance_predictions import instance_map_path, write_instance_map_tiff
 from common.semantic_instance import semantic_to_instance_label_map
-from common.yolo_seg_labels import instance_label_map_to_yolo_seg_pred_label_file
 from unet.instance_masks import semantic_to_instance_label_map_watershed
 from unet.prediction_cache import prediction_tiff_path
 
@@ -29,7 +29,7 @@ def list_semantic_predictions(semantic_dir: Path) -> list[str]:
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract instance YOLO labels from semantic prediction TIFFs.",
+        description="Extract instance label-map TIFFs from semantic prediction TIFFs.",
     )
     parser.add_argument("--semantic-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
@@ -109,8 +109,8 @@ def _load_semantic_tiff(path: Path) -> np.ndarray:
 
 def run_extract_instances(args: argparse.Namespace) -> None:
     _validate_args(args)
-    labels_dir = args.output_dir / "labels"
-    labels_dir.mkdir(parents=True, exist_ok=True)
+    instances_dir = args.output_dir / "instances"
+    instances_dir.mkdir(parents=True, exist_ok=True)
 
     sample_ids = list_semantic_predictions(args.semantic_dir)
     if not sample_ids:
@@ -138,16 +138,11 @@ def run_extract_instances(args: argparse.Namespace) -> None:
         pred_path = prediction_tiff_path(args.semantic_dir, sample_id)
         semantic = _load_semantic_tiff(pred_path)
         instance_map = _instances_from_semantic(semantic, args)
-        out_txt = labels_dir / f"{sample_id}.txt"
-        instance_label_map_to_yolo_seg_pred_label_file(
-            instance_map,
-            out_txt,
-            default_confidence=1.0,
-            min_area_px=export_min_area_px,
-        )
-        print(f"Wrote {out_txt}")
+        out_path = instance_map_path(args.output_dir, sample_id)
+        write_instance_map_tiff(out_path, instance_map)
+        print(f"Wrote {out_path}")
 
-    meta_path = labels_dir / ".extract_meta.json"
+    meta_path = instances_dir / ".extract_meta.json"
     meta_path.write_text(json.dumps(extract_meta, indent=2) + "\n", encoding="utf-8")
 
 

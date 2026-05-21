@@ -1,4 +1,4 @@
-"""Run YOLO segmentation inference and write instance prediction labels."""
+"""Run YOLO segmentation inference and write instance prediction artifacts."""
 
 from __future__ import annotations
 
@@ -10,75 +10,21 @@ from typing import Any
 import numpy as np
 from tifffile import TiffFile
 
-from common.manifest_io import collect_manifest_image_paths
-from common.yolo_seg_labels import YoloSegPredRow, write_yolo_seg_pred_label_file
-from yolo.config import variant_choices
-from yolo.dataset_yaml import (
-    default_labels_dir,
-    load_yaml_dataset_config,
-    resolve_split_dir,
+from common.instance_predictions import (
+    instance_map_from_masks,
+    instance_map_path,
+    save_yolo_mask_npz,
+    ultralytics_result_prediction_arrays,
+    write_instance_map_tiff,
+    yolo_mask_npz_path,
 )
+from common.manifest_io import collect_manifest_image_paths
+from yolo.config import variant_choices
+from yolo.dataset_yaml import load_yaml_dataset_config, resolve_split_dir
 from yolo.pipeline import resolve_variant_paths
 from yolo.train import _parse_device
 
 _PATCH_IMAGE_SUFFIXES = {".tif", ".tiff"}
-
-
-def _mask_to_polygons(mask: np.ndarray) -> list[np.ndarray]:
-    import cv2
-
-    contours, _ = cv2.findContours(
-        mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
-    polygons: list[np.ndarray] = []
-    for contour in contours:
-        points = contour.reshape(-1, 2)
-        if len(points) < 3:
-            continue
-        polygons.append(points.astype(np.float32))
-    return polygons
-
-
-def _contour_area(points: np.ndarray) -> float:
-    import cv2
-
-    return float(cv2.contourArea(points.reshape(-1, 1, 2)))
-
-
-def _largest_polygon_points(mask: np.ndarray) -> np.ndarray | None:
-    polygons = _mask_to_polygons(mask)
-    if not polygons:
-        return None
-    return max(polygons, key=_contour_area)
-
-
-def ultralytics_result_to_pred_rows(
-    result: Any, height: int, width: int, *, class_id: int = 0
-) -> list[YoloSegPredRow]:
-    import cv2
-
-    if result.masks is None or len(result.masks) == 0:
-        return []
-    data = result.masks.data.cpu().numpy()
-    conf = result.boxes.conf.cpu().numpy()
-    cls = result.boxes.cls.cpu().numpy()
-    rows: list[YoloSegPredRow] = []
-    for i in range(data.shape[0]):
-        mask = data[i]
-        if mask.shape != (height, width):
-            mask = cv2.resize(
-                mask.astype(np.float32),
-                (width, height),
-                interpolation=cv2.INTER_NEAREST,
-            )
-        binary = mask > 0.5
-        points = _largest_polygon_points(binary)
-        if points is None:
-            continue
-        cid = int(cls[i]) if i < len(cls) else class_id
-        score = float(conf[i]) if i < len(conf) else 0.0
-        rows.append(YoloSegPredRow(class_id=cid, points=points, confidence=score))
-    return rows
 
 
 def load_image_for_yolo(path: Path) -> np.ndarray:
@@ -105,7 +51,7 @@ def load_image_for_yolo(path: Path) -> np.ndarray:
 
 def collect_yolo_patch_image_paths(
     dataset_root: Path, config: dict[str, Any]
-) -> tuple[Path, list[Path]]:
+) -> list[Path]:
     for split_name in ("test", "val"):
         rel = config.get(split_name)
         if not rel:
@@ -128,8 +74,7 @@ def collect_yolo_patch_image_paths(
         ]
         if not image_paths:
             raise ValueError(f"No patch images found under {image_dir}")
-        label_dir = default_labels_dir(dataset_root, split_name, image_dir)
-        return label_dir, image_paths
+        return image_paths
     raise ValueError("Dataset YAML must define a `test` or `val` split")
 
 
@@ -239,31 +184,64 @@ def _get_sliced_prediction_preserve_channels(
     )
 
 
-def sahi_predictions_to_pred_rows(
+def sahi_predictions_to_mask_arrays(
     predictions: list[Any], height: int, width: int
-) -> list[YoloSegPredRow]:
-    rows: list[YoloSegPredRow] = []
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    from common.instance_predictions import resize_mask_nearest
+
+    masks: list[np.ndarray] = []
+    scores: list[float] = []
+    classes: list[int] = []
     for pred in predictions:
-        score = float(pred.score.value)
-        category_id = int(pred.category.id)
-        mask = pred.mask.bool_mask if pred.mask is not None else None
+        if pred.mask is None:
+            continue
+        mask = pred.mask.bool_mask
         if mask is None:
             continue
         if mask.shape != (height, width):
-            import cv2
-
-            mask = cv2.resize(
-                mask.astype(np.uint8),
-                (width, height),
-                interpolation=cv2.INTER_NEAREST,
-            ) > 0
-        points = _largest_polygon_points(mask)
-        if points is None:
-            continue
-        rows.append(
-            YoloSegPredRow(class_id=category_id, points=points, confidence=score)
+            mask = resize_mask_nearest(mask, height, width)
+        masks.append(np.asarray(mask, dtype=np.float32))
+        scores.append(float(pred.score.value))
+        classes.append(int(pred.category.id))
+    if not masks:
+        return (
+            np.zeros((0, height, width), dtype=np.float32),
+            np.zeros((0,), dtype=np.float32),
+            np.zeros((0,), dtype=np.float32),
         )
-    return rows
+    return (
+        np.stack(masks, axis=0),
+        np.asarray(scores, dtype=np.float32),
+        np.asarray(classes, dtype=np.float32),
+    )
+
+
+def _write_prediction_artifacts(
+    *,
+    output_dir: Path,
+    sample_id: str,
+    image_path: Path,
+    height: int,
+    width: int,
+    instance_map: np.ndarray,
+    masks: np.ndarray,
+    scores: np.ndarray,
+    classes: np.ndarray,
+    orig_shape: tuple[int, ...],
+) -> None:
+    inst_path = instance_map_path(output_dir, sample_id)
+    write_instance_map_tiff(inst_path, instance_map)
+    npz_path = yolo_mask_npz_path(output_dir, sample_id)
+    save_yolo_mask_npz(
+        npz_path,
+        masks=masks,
+        scores=scores,
+        classes=classes,
+        orig_shape=np.array(orig_shape),
+        image_path=str(image_path),
+    )
+    n_inst = int(np.sum(np.unique(instance_map) != 0))
+    print(f"Wrote {inst_path} and {npz_path} ({n_inst} instances)")
 
 
 def device_for_sahi(device: int | str | list[int]) -> str:
@@ -307,9 +285,7 @@ def run_patch_predict(args: argparse.Namespace, data_yaml: Path) -> None:
     from ultralytics import YOLO
 
     dataset_root, config = load_yaml_dataset_config(data_yaml)
-    _label_dir, image_paths = collect_yolo_patch_image_paths(dataset_root, config)
-    labels_dir = args.output_dir / "labels"
-    labels_dir.mkdir(parents=True, exist_ok=True)
+    image_paths = collect_yolo_patch_image_paths(dataset_root, config)
 
     device = _parse_device(args.device)
     model = YOLO(str(Path(args.weights).resolve()))
@@ -325,20 +301,28 @@ def run_patch_predict(args: argparse.Namespace, data_yaml: Path) -> None:
             verbose=False,
             retina_masks=True,
         )
-        rows = ultralytics_result_to_pred_rows(results[0], h, w)
-        out_path = labels_dir / f"{image_path.stem}.txt"
-        write_yolo_seg_pred_label_file(
-            out_path, rows, image_width=w, image_height=h
+        result = results[0]
+        instance_map, masks, scores, classes = ultralytics_result_prediction_arrays(
+            result, height=h, width=w
         )
-        print(f"Wrote {out_path} ({len(rows)} instances)")
+        _write_prediction_artifacts(
+            output_dir=args.output_dir,
+            sample_id=image_path.stem,
+            image_path=image_path,
+            height=h,
+            width=w,
+            instance_map=instance_map,
+            masks=masks,
+            scores=scores,
+            classes=classes,
+            orig_shape=tuple(result.orig_shape),
+        )
 
 
 def run_whole_predict(args: argparse.Namespace) -> None:
     from sahi import AutoDetectionModel
 
     image_paths = _load_whole_image_paths(args)
-    labels_dir = args.output_dir / "labels"
-    labels_dir.mkdir(parents=True, exist_ok=True)
 
     device = device_for_sahi(_parse_device(args.device))
     detection_model = AutoDetectionModel.from_pretrained(
@@ -362,14 +346,24 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             overlap_height_ratio=args.overlap_height_ratio,
             overlap_width_ratio=args.overlap_width_ratio,
         )
-        rows = sahi_predictions_to_pred_rows(
+        masks, scores, classes = sahi_predictions_to_mask_arrays(
             result.object_prediction_list, height, width
         )
-        out_path = labels_dir / f"{tiff_path.stem}.txt"
-        write_yolo_seg_pred_label_file(
-            out_path, rows, image_width=width, image_height=height
+        instance_map = instance_map_from_masks(
+            masks, scores, height=height, width=width
         )
-        print(f"Wrote {out_path} ({len(rows)} instances)")
+        _write_prediction_artifacts(
+            output_dir=args.output_dir,
+            sample_id=tiff_path.stem,
+            image_path=tiff_path,
+            height=height,
+            width=width,
+            instance_map=instance_map,
+            masks=masks,
+            scores=scores,
+            classes=classes,
+            orig_shape=(height, width),
+        )
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:

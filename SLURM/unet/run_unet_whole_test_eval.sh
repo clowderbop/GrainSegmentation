@@ -513,7 +513,7 @@ for i in "${!MODEL_PATHS[@]}"; do
         --model-type unet
         --unit whole
         --image-dir "$LOCAL_IMAGE_DIR"
-        --pred-labels-dir "$pred_root/labels"
+        --pred-instances-dir "$pred_root/instances"
         --gt-gpkg "$LOCAL_GT_GPKG"
         --gt-origin whole_image
         --image-stem-suffix "${suffix_array[0]}"

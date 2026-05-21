@@ -95,7 +95,7 @@ export YOLO_DISABLE_TQDM=True
 
 mkdir -p "$OUT_ROOT"
 
-echo "1/2 yolo.predict (patch labels with confidence)..."
+echo "1/2 yolo.predict (instance TIFFs and mask NPZs)..."
 uv run python -u -m yolo.predict \
     --unit patch \
     --weights "$WEIGHTS" \
@@ -116,7 +116,7 @@ uv run python -u -m common.evaluate_instances \
     --model-type yolo \
     --variant "$VARIANT" \
     --image-dir "$IMAGE_DIR" \
-    --pred-labels-dir "$OUT_ROOT/labels" \
+    --pred-instances-dir "$OUT_ROOT/instances" \
     --gt-labels-dir "$LABEL_DIR" \
     --output-json "$INSTANCE_METRICS_JSON"
 

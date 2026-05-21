@@ -13,10 +13,10 @@ from common.evaluate_instances import (
     collect_patch_samples,
     evaluate_instance_samples,
 )
+from common.instance_predictions import instance_map_path, write_instance_map_tiff
 from common.yolo_seg_labels import (
-    instance_label_map_to_yolo_seg_pred_label_file,
-    write_yolo_seg_gt_label_file,
     YoloSegGtRow,
+    write_yolo_seg_gt_label_file,
 )
 
 
@@ -27,19 +27,17 @@ def _write_blank_image(path: Path, width: int, height: int) -> None:
 
 def test_patch_discovery_strips_image_suffix(tmp_path: Path) -> None:
     image_dir = tmp_path / "images"
-    labels_dir = tmp_path / "labels"
+    instances_dir = tmp_path / "instances"
     image_dir.mkdir()
-    labels_dir.mkdir()
+    instances_dir.mkdir()
     _write_blank_image(image_dir / "patch001_PPL.tif", 64, 64)
-    instance_label_map_to_yolo_seg_pred_label_file(
+    write_instance_map_tiff(
+        instance_map_path(tmp_path, "patch001"),
         np.ones((64, 64), dtype=np.int32),
-        labels_dir / "patch001.txt",
-        default_confidence=1.0,
-        min_area_px=1,
     )
     samples = collect_patch_samples(
         image_dir=image_dir,
-        pred_labels_dir=labels_dir,
+        pred_instances_dir=instances_dir,
         gt_gpkg=tmp_path / "dummy.gpkg",
         image_stem_suffix="_PPL",
     )
@@ -47,7 +45,7 @@ def test_patch_discovery_strips_image_suffix(tmp_path: Path) -> None:
     assert samples[0].sample_id == "patch001"
 
 
-def test_evaluate_two_synthetic_txt_maps(tmp_path: Path) -> None:
+def test_evaluate_two_synthetic_instance_maps(tmp_path: Path) -> None:
     width, height = 48, 48
     image_path = tmp_path / "sample_PPL.tif"
     _write_blank_image(image_path, width, height)
@@ -65,16 +63,14 @@ def test_evaluate_two_synthetic_txt_maps(tmp_path: Path) -> None:
         )
     ]
     gt_txt = tmp_path / "sample.txt"
-    pred_txt = tmp_path / "pred.txt"
+    pred_path = instance_map_path(tmp_path, "sample")
     write_yolo_seg_gt_label_file(gt_txt, gt_rows, image_width=width, image_height=height)
-    instance_label_map_to_yolo_seg_pred_label_file(
-        gt_map, pred_txt, default_confidence=1.0, min_area_px=1
-    )
+    write_instance_map_tiff(pred_path, gt_map)
 
     sample = InstanceEvalSample(
         sample_id="sample",
         image_path=image_path,
-        pred_txt=pred_txt,
+        pred_instances=pred_path,
         gt_txt=gt_txt,
     )
     report = evaluate_instance_samples(
@@ -90,14 +86,8 @@ def test_manifest_mode_pairs_records(tmp_path: Path) -> None:
     width, height = 32, 32
     image_path = tmp_path / "whole.tif"
     _write_blank_image(image_path, width, height)
-    pred_txt = tmp_path / "labels" / "whole.txt"
-    pred_txt.parent.mkdir()
-    instance_label_map_to_yolo_seg_pred_label_file(
-        np.zeros((height, width), dtype=np.int32),
-        pred_txt,
-        default_confidence=1.0,
-        min_area_px=1,
-    )
+    pred_path = instance_map_path(tmp_path, "whole")
+    write_instance_map_tiff(pred_path, np.zeros((height, width), dtype=np.int32))
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
@@ -105,8 +95,8 @@ def test_manifest_mode_pairs_records(tmp_path: Path) -> None:
                 {
                     "sample_id": "whole",
                     "image": str(image_path),
-                    "pred_txt": str(pred_txt),
-                    "gt_txt": str(pred_txt),
+                    "pred_instances": str(pred_path),
+                    "gt_txt": str(pred_path),
                 }
             ]
         ),
@@ -123,14 +113,8 @@ def test_manifest_samples_wrapper_format(tmp_path: Path) -> None:
     width, height = 32, 32
     image_path = tmp_path / "whole.tif"
     _write_blank_image(image_path, width, height)
-    pred_txt = tmp_path / "labels" / "whole.txt"
-    pred_txt.parent.mkdir()
-    instance_label_map_to_yolo_seg_pred_label_file(
-        np.zeros((height, width), dtype=np.int32),
-        pred_txt,
-        default_confidence=1.0,
-        min_area_px=1,
-    )
+    pred_path = instance_map_path(tmp_path, "whole")
+    write_instance_map_tiff(pred_path, np.zeros((height, width), dtype=np.int32))
     manifest = tmp_path / "manifest_wrapped.json"
     manifest.write_text(
         json.dumps(
@@ -139,8 +123,8 @@ def test_manifest_samples_wrapper_format(tmp_path: Path) -> None:
                     {
                         "sample_id": "whole",
                         "image": str(image_path),
-                        "pred_txt": str(pred_txt),
-                        "gt_txt": str(pred_txt),
+                        "pred_instances": str(pred_path),
+                        "gt_txt": str(pred_path),
                     }
                 ]
             }
@@ -154,19 +138,14 @@ def test_manifest_samples_wrapper_format(tmp_path: Path) -> None:
     assert samples[0].sample_id == "whole"
 
 
-def test_manifest_infers_pred_txt_from_labels_dir(tmp_path: Path) -> None:
+def test_manifest_infers_pred_instances_from_dir(tmp_path: Path) -> None:
     width, height = 32, 32
     image_path = tmp_path / "whole.tif"
     _write_blank_image(image_path, width, height)
-    labels_dir = tmp_path / "labels"
-    labels_dir.mkdir()
-    pred_txt = labels_dir / "whole.txt"
-    instance_label_map_to_yolo_seg_pred_label_file(
-        np.zeros((height, width), dtype=np.int32),
-        pred_txt,
-        default_confidence=1.0,
-        min_area_px=1,
-    )
+    instances_dir = tmp_path / "instances"
+    instances_dir.mkdir()
+    pred_path = instance_map_path(tmp_path, "whole")
+    write_instance_map_tiff(pred_path, np.zeros((height, width), dtype=np.int32))
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
@@ -183,7 +162,7 @@ def test_manifest_infers_pred_txt_from_labels_dir(tmp_path: Path) -> None:
     )
     from common.evaluate_instances import collect_manifest_samples
 
-    samples = collect_manifest_samples(manifest, pred_labels_dir=labels_dir)
+    samples = collect_manifest_samples(manifest, pred_instances_dir=instances_dir)
     assert len(samples) == 1
-    assert samples[0].pred_txt == pred_txt
+    assert samples[0].pred_instances == pred_path
     assert samples[0].image_path == image_path.resolve()

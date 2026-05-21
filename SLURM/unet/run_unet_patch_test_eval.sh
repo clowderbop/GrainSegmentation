@@ -216,7 +216,7 @@ predict_cmd=(
 )
 "${predict_cmd[@]}"
 
-echo "2/3 unet.extract_instances (YOLO pred labels, confidence=1.0)..."
+echo "2/3 unet.extract_instances (instance label-map TIFFs)..."
 extract_cmd=(
     uv run --no-sync python -u -m unet.extract_instances
     --semantic-dir "$TMP_OUT/semantic"
@@ -247,7 +247,7 @@ instance_cmd=(
     --unit patch
     --model-type unet
     --image-dir "$LOCAL_IMAGES"
-    --pred-labels-dir "$TMP_OUT/labels"
+    --pred-instances-dir "$TMP_OUT/instances"
     --gt-gpkg "$LOCAL_GT_GPKG"
     --gt-origin patch_stem
     --image-stem-suffix "${IMAGE_SUFFIXES[0]}"

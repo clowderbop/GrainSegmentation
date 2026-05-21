@@ -1,4 +1,4 @@
-"""Shared instance-segmentation evaluation for YOLO-style prediction artifacts."""
+"""Shared instance-segmentation evaluation for instance label-map predictions."""
 
 from __future__ import annotations
 
@@ -13,6 +13,10 @@ from typing import Any, Literal, cast
 import numpy as np
 
 from common.geometry import load_image_space_polygons
+from common.instance_predictions import (
+    instance_map_filename,
+    read_instance_map_tiff,
+)
 from common.manifest_io import (
     load_manifest_json,
     manifest_gt_gpkg_field,
@@ -32,7 +36,7 @@ ModelType = Literal["unet", "yolo"]
 class InstanceEvalSample:
     sample_id: str
     image_path: Path
-    pred_txt: Path
+    pred_instances: Path
     gt_txt: Path | None = None
     gt_gpkg: Path | None = None
     gt_origin: GtOriginMode | None = None
@@ -68,10 +72,14 @@ def _sample_id_from_image_stem(stem: str, *, image_stem_suffix: str | None) -> s
     return stem
 
 
+def _pred_instances_path(pred_dir: Path, sample_id: str) -> Path:
+    return pred_dir / instance_map_filename(sample_id)
+
+
 def collect_patch_samples(
     *,
     image_dir: Path,
-    pred_labels_dir: Path,
+    pred_instances_dir: Path,
     gt_labels_dir: Path | None = None,
     gt_gpkg: Path | None = None,
     gt_origin: GtOriginMode = "patch_stem",
@@ -84,9 +92,9 @@ def collect_patch_samples(
         sample_id = _sample_id_from_image_stem(
             image_path.stem, image_stem_suffix=image_stem_suffix
         )
-        pred_txt = pred_labels_dir / f"{sample_id}.txt"
-        if not pred_txt.is_file():
-            raise FileNotFoundError(f"Missing prediction label file: {pred_txt}")
+        pred_path = _pred_instances_path(pred_instances_dir, sample_id)
+        if not pred_path.is_file():
+            raise FileNotFoundError(f"Missing prediction instance map: {pred_path}")
         gt_txt = gt_labels_dir / f"{sample_id}.txt" if gt_labels_dir is not None else None
         if gt_txt is not None and not gt_txt.is_file():
             raise FileNotFoundError(f"Missing GT label file: {gt_txt}")
@@ -94,7 +102,7 @@ def collect_patch_samples(
             InstanceEvalSample(
                 sample_id=sample_id,
                 image_path=image_path,
-                pred_txt=pred_txt,
+                pred_instances=pred_path,
                 gt_txt=gt_txt,
                 gt_gpkg=gt_gpkg,
                 gt_origin=gt_origin if gt_gpkg is not None else None,
@@ -108,7 +116,7 @@ def collect_patch_samples(
 def collect_manifest_samples(
     manifest: Path,
     *,
-    pred_labels_dir: Path | None = None,
+    pred_instances_dir: Path | None = None,
     default_gt_gpkg: Path | None = None,
 ) -> list[InstanceEvalSample]:
     rows: list[dict[str, str]]
@@ -131,14 +139,14 @@ def collect_manifest_samples(
 
         sample_id = row.get("sample_id") or image_path.stem
 
-        pred_txt_raw = row.get("pred_txt")
-        if pred_txt_raw:
-            pred_txt = resolve_manifest_path(pred_txt_raw, manifest_dir)
-        elif pred_labels_dir is not None:
-            pred_txt = pred_labels_dir / f"{sample_id}.txt"
+        pred_raw = row.get("pred_instances") or row.get("pred_txt")
+        if pred_raw:
+            pred_instances = resolve_manifest_path(pred_raw, manifest_dir)
+        elif pred_instances_dir is not None:
+            pred_instances = _pred_instances_path(pred_instances_dir, sample_id)
         else:
             raise ValueError(
-                f"Manifest row {idx} requires pred_txt or --pred-labels-dir"
+                f"Manifest row {idx} requires pred_instances or --pred-instances-dir"
             )
 
         gt_txt_raw = row.get("gt_txt") or None
@@ -166,7 +174,7 @@ def collect_manifest_samples(
             InstanceEvalSample(
                 sample_id=sample_id,
                 image_path=image_path,
-                pred_txt=pred_txt,
+                pred_instances=pred_instances,
                 gt_txt=gt_txt,
                 gt_gpkg=gt_gpkg,
                 gt_origin=gt_origin if gt_gpkg is not None else None,
@@ -180,7 +188,7 @@ def collect_manifest_samples(
 def collect_single_image_sample(
     *,
     image: Path,
-    pred_txt: Path,
+    pred_instances: Path,
     gt_txt: Path | None = None,
     gt_gpkg: Path | None = None,
     gt_origin: GtOriginMode = "whole_image",
@@ -192,7 +200,7 @@ def collect_single_image_sample(
         InstanceEvalSample(
             sample_id=sample_id or image.stem,
             image_path=image,
-            pred_txt=pred_txt,
+            pred_instances=pred_instances,
             gt_txt=gt_txt,
             gt_gpkg=gt_gpkg,
             gt_origin=gt_origin if gt_gpkg is not None else None,
@@ -218,15 +226,8 @@ def load_gt_instance_map(
     raise ValueError(f"No GT source configured for sample {sample.sample_id}")
 
 
-def load_pred_instance_map(
-    sample: InstanceEvalSample, *, image_width: int, image_height: int
-) -> np.ndarray:
-    return yolo_seg_labels_to_instance_map(
-        sample.pred_txt,
-        image_width=image_width,
-        image_height=image_height,
-        has_confidence=True,
-    )
+def load_pred_instance_map(sample: InstanceEvalSample) -> np.ndarray:
+    return read_instance_map_tiff(sample.pred_instances)
 
 
 def evaluate_instance_samples(
@@ -241,7 +242,12 @@ def evaluate_instance_samples(
     for sample in samples:
         height, width = image_dimensions(sample.image_path)
         gt_map = load_gt_instance_map(sample, image_width=width, image_height=height)
-        pred_map = load_pred_instance_map(sample, image_width=width, image_height=height)
+        pred_map = load_pred_instance_map(sample)
+        if pred_map.shape != (height, width):
+            raise ValueError(
+                f"Prediction map shape {pred_map.shape} does not match image "
+                f"({height}, {width}) for {sample.sample_id}"
+            )
         metrics = {
             "aji": float(compute_aji(gt_map, pred_map)),
             **{
@@ -260,7 +266,7 @@ def evaluate_instance_samples(
                 empty_gt=gt_n == 0,
                 extra={
                     "image_path": str(sample.image_path.resolve()),
-                    "pred_txt": str(sample.pred_txt.resolve()),
+                    "pred_instances_path": str(sample.pred_instances.resolve()),
                     **(
                         {"gt_txt": str(sample.gt_txt.resolve())}
                         if sample.gt_txt is not None
@@ -288,7 +294,7 @@ def evaluate_instance_samples(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pred-labels-dir", type=Path)
+    parser.add_argument("--pred-instances-dir", type=Path)
     parser.add_argument("--image-dir", type=Path)
     parser.add_argument("--gt-labels-dir", type=Path)
     parser.add_argument("--gt-gpkg", type=Path)
@@ -296,7 +302,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--gt-origin", choices=("patch_stem", "whole_image"))
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--image", type=Path)
-    parser.add_argument("--pred-txt", type=Path)
+    parser.add_argument("--pred-instances", type=Path)
     parser.add_argument("--sample-id")
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument(
@@ -325,24 +331,24 @@ def main() -> None:
             )
         samples = collect_manifest_samples(
             args.manifest,
-            pred_labels_dir=args.pred_labels_dir,
+            pred_instances_dir=args.pred_instances_dir,
             default_gt_gpkg=args.gt_gpkg,
         )
     elif args.image_dir is not None:
-        if args.pred_labels_dir is None:
-            raise ValueError("--image-dir requires --pred-labels-dir")
+        if args.pred_instances_dir is None:
+            raise ValueError("--image-dir requires --pred-instances-dir")
         samples = collect_patch_samples(
             image_dir=args.image_dir,
-            pred_labels_dir=args.pred_labels_dir,
+            pred_instances_dir=args.pred_instances_dir,
             gt_labels_dir=args.gt_labels_dir,
             gt_gpkg=args.gt_gpkg,
             gt_origin=default_gt_origin,
             image_stem_suffix=args.image_stem_suffix,
         )
-    elif args.image is not None and args.pred_txt is not None:
+    elif args.image is not None and args.pred_instances is not None:
         samples = collect_single_image_sample(
             image=args.image,
-            pred_txt=args.pred_txt,
+            pred_instances=args.pred_instances,
             gt_txt=args.gt_txt,
             gt_gpkg=args.gt_gpkg,
             gt_origin=default_gt_origin,
@@ -350,7 +356,7 @@ def main() -> None:
         )
     else:
         raise ValueError(
-            "Provide --image-dir, --manifest, or --image with --pred-txt for pairing"
+            "Provide --image-dir, --manifest, or --image with --pred-instances"
         )
 
     report = evaluate_instance_samples(

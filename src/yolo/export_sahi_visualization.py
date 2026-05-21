@@ -1,4 +1,4 @@
-"""Write SAHI whole-image prediction overlay TIFFs from prediction labels."""
+"""Write SAHI whole-image prediction overlay TIFFs from instance label maps."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
+from common.instance_predictions import instance_map_filename, read_instance_map_tiff
 from common.manifest_io import collect_manifest_image_paths
-from common.yolo_seg_labels import yolo_seg_labels_to_instance_map
 from yolo.config import variant_choices
 from yolo.predict import load_image_for_yolo
 
@@ -72,22 +72,20 @@ def _resolve_manifest_image_samples(
 def export_sample_visualization(
     *,
     image_path: Path,
-    pred_label_path: Path,
+    pred_instances_path: Path,
     sample_out_dir: Path,
 ) -> None:
     if not image_path.is_file():
         raise FileNotFoundError(f"Image not found: {image_path}")
-    if not pred_label_path.is_file():
-        raise FileNotFoundError(f"Prediction labels not found: {pred_label_path}")
+    if not pred_instances_path.is_file():
+        raise FileNotFoundError(f"Prediction instance map not found: {pred_instances_path}")
 
     image = load_image_for_yolo(image_path)
-    height, width = image.shape[:2]
-    pred_map = yolo_seg_labels_to_instance_map(
-        pred_label_path,
-        image_width=width,
-        image_height=height,
-        has_confidence=True,
-    )
+    pred_map = read_instance_map_tiff(pred_instances_path)
+    if pred_map.shape[:2] != image.shape[:2]:
+        raise ValueError(
+            f"Prediction map shape {pred_map.shape} does not match image {image.shape[:2]}"
+        )
 
     sample_out_dir.mkdir(parents=True, exist_ok=True)
     out_path = sample_out_dir / "prediction_visual.tif"
@@ -96,17 +94,17 @@ def export_sample_visualization(
 
 
 def run_export_sahi_visualization(args: argparse.Namespace) -> None:
-    pred_labels_dir = args.pred_labels_dir.resolve()
+    pred_dir = args.pred_dir.resolve()
     out_root = args.output_dir.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
     for image_path, sample_id in _resolve_manifest_image_samples(args):
-        pred_label_path = pred_labels_dir / f"{sample_id}.txt"
-        if not pred_label_path.is_file():
-            pred_label_path = pred_labels_dir / f"{image_path.stem}.txt"
+        pred_path = pred_dir / "instances" / instance_map_filename(sample_id)
+        if not pred_path.is_file():
+            pred_path = pred_dir / "instances" / instance_map_filename(image_path.stem)
         export_sample_visualization(
             image_path=image_path,
-            pred_label_path=pred_label_path,
+            pred_instances_path=pred_path,
             sample_out_dir=out_root / image_path.stem,
         )
 
@@ -116,7 +114,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description="Export SAHI prediction overlay TIFF visualizations.",
     )
     parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--pred-labels-dir", required=True, type=Path)
+    parser.add_argument(
+        "--pred-dir",
+        required=True,
+        type=Path,
+        help="YOLO predict output root containing instances/{sample_id}_instances.tif",
+    )
     parser.add_argument("--manifest", default=None, type=Path)
     parser.add_argument("--test-tiff", default=None, type=Path)
     parser.add_argument("--variant", choices=variant_choices(), default=None)

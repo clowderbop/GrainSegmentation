@@ -68,6 +68,7 @@ def binary_masks_to_instance_map_by_confidence(
     out = np.zeros((h, w), dtype=np.int32)
     order = np.argsort(confidences.astype(np.float64))
     for idx in order:
-        m = masks_hw[idx]
+        raw = masks_hw[idx]
+        m = raw > 0.5 if raw.dtype in (np.float32, np.float64) else raw.astype(bool)
         out[m] = int(idx) + 1
     return out

@@ -8,9 +8,13 @@
 
 set -euo pipefail
 
-THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SLURM_ROOT/.." && pwd)}"
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    # shellcheck source=SLURM/bootstrap_paths.sh
+    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
+else
+    # shellcheck source=SLURM/bootstrap_paths.sh
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
+fi
 TF_WHEEL_NAME="tensorflow-2.17.0+nv25.2-cp312-cp312-linux_x86_64.whl"
 
 MODEL_DIR=""
@@ -28,8 +32,23 @@ MASK_EXT=".tif"
 MASK_STEM_SUFFIX="_labels"
 
 WATERSHED_TUNE_ROOT=""
+INSTANCE_METHOD="${INSTANCE_METHOD:-watershed}"
 
 function usage {
+    cat <<'EOF' >&2
+Usage: run_unet_whole_test_eval.sh --model-dir DIR --image-dir DIR --mask-dir DIR --output-dir DIR [options]
+
+Required:
+  --model-dir, --image-dir, --mask-dir, --output-dir
+
+Options:
+  --gt-gpkg PATH
+  --config-file PATH
+  --instance-method cc|watershed   (default: watershed)
+  --watershed-tune-root DIR        (watershed only: load watershed_best_*.json)
+  --ppl-image, --gt-path, --patch-size, --stride, --batch-size
+  --mask-ext, --mask-stem-suffix
+EOF
     exit 1
 }
 
@@ -208,6 +227,39 @@ function resolve_watershed_json_for_model {
     pick_latest_watershed_best_json "$variant_dir"
 }
 
+function build_extract_instance_args {
+    local model_path="$1"
+    local explicit_ws="${2:-}"
+
+    if [[ "$INSTANCE_METHOD" == "cc" ]]; then
+        extract_args=(--instance-method cc)
+        if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
+            extract_args+=(--min-area-px "$CC_MIN_AREA_PX")
+        fi
+        return 0
+    fi
+
+    if [[ "$INSTANCE_METHOD" != "watershed" ]]; then
+        echo "Unknown --instance-method: $INSTANCE_METHOD (expected cc or watershed)" >&2
+        return 1
+    fi
+
+    local resolved_ws_json=""
+    if ! resolved_ws_json="$(resolve_watershed_json_for_model "$model_path" "$explicit_ws")"; then
+        return 1
+    fi
+
+    extract_args=(--instance-method watershed)
+    if [[ -n "$resolved_ws_json" ]]; then
+        require_file "$resolved_ws_json" "Watershed tuning JSON not found"
+        if [[ ! -f "$WATERSHED_JSON_HELPER" ]]; then
+            echo "Missing helper script: $WATERSHED_JSON_HELPER" >&2
+            return 1
+        fi
+        mapfile -t extract_args < <(python3 "$WATERSHED_JSON_HELPER" "$resolved_ws_json")
+    fi
+}
+
 function find_default_ppl_image {
     shopt -s nullglob
     local matches=("$LOCAL_IMAGE_DIR"/*_PPL.*)
@@ -319,6 +371,10 @@ while [[ $# -gt 0 ]]; do
             WATERSHED_TUNE_ROOT="$2"
             shift 2
             ;;
+        --instance-method)
+            INSTANCE_METHOD="$2"
+            shift 2
+            ;;
         --help)
             usage
             ;;
@@ -331,6 +387,18 @@ done
 
 if [ -z "$MODEL_DIR" ] || [ -z "$IMAGE_DIR" ] || [ -z "$MASK_DIR" ] || [ -z "$OUTPUT_DIR" ]; then
     usage
+fi
+
+case "$INSTANCE_METHOD" in
+    cc | watershed) ;;
+    *)
+        echo "Invalid --instance-method: $INSTANCE_METHOD (expected cc or watershed)" >&2
+        exit 1
+        ;;
+esac
+
+if [[ "$INSTANCE_METHOD" == "cc" && -n "$WATERSHED_TUNE_ROOT" ]]; then
+    echo "Note: --watershed-tune-root is ignored when --instance-method cc." >&2
 fi
 
 require_dir "$MODEL_DIR" "Model directory not found"
@@ -431,7 +499,7 @@ fi
 
 WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
 
-echo "Running staged evaluations (predict -> extract -> semantic -> instances)..."
+echo "Running staged evaluations (instance_method=$INSTANCE_METHOD: predict -> extract -> semantic -> instances)..."
 for i in "${!MODEL_PATHS[@]}"; do
     model_path="${MODEL_PATHS[$i]}"
     model_file="$(basename "$model_path")"
@@ -463,22 +531,8 @@ for i in "${!MODEL_PATHS[@]}"; do
     fi
 
     explicit_ws="${MODEL_WATERSHED_JSONS[$i]:-}"
-    resolved_ws_json=""
-    if resolved_ws_json="$(resolve_watershed_json_for_model "$model_path" "$explicit_ws")"; then
-        :
-    else
+    if ! build_extract_instance_args "$model_path" "$explicit_ws"; then
         exit 1
-    fi
-
-    extract_args=(--instance-method watershed)
-    if [ -n "$resolved_ws_json" ]; then
-        require_file "$resolved_ws_json" "Watershed tuning JSON not found"
-        if [ ! -f "$WATERSHED_JSON_HELPER" ]; then
-            echo "Missing helper script: $WATERSHED_JSON_HELPER" >&2
-            exit 1
-        fi
-        mapfile -t _watershed_eval_args < <(python3 "$WATERSHED_JSON_HELPER" "$resolved_ws_json")
-        extract_args=("${_watershed_eval_args[@]}")
     fi
 
     echo "Model ${MODEL_LABELS[$i]}: predict"

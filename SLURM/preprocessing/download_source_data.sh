@@ -4,9 +4,13 @@
 #SBATCH --mem=8GB
 #SBATCH --time=08:00:00
 
-THIS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SLURM_ROOT="$(cd "$THIS_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$SLURM_ROOT/.." && pwd)"
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    # shellcheck source=SLURM/bootstrap_paths.sh
+    source "$SLURM_SUBMIT_DIR/SLURM/bootstrap_paths.sh"
+else
+    # shellcheck source=SLURM/bootstrap_paths.sh
+    source "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/SLURM/bootstrap_paths.sh"
+fi
 cd "$REPO_ROOT"
 source "$SLURM_ROOT/prepare_env.sh"
 

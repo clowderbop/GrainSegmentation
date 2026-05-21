@@ -17,6 +17,7 @@ sbatch "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
   --mask-dir "$TRAIN_DIR" \
   --gt-gpkg "$GT_GPKG" \
   --output-dir "$EVAL_ROOT/watershed_val" \
+  --instance-method watershed \
   --watershed-tune-root "$WATERSHED_TUNE_ROOT"
 
 sbatch "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
@@ -24,6 +25,7 @@ sbatch "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
   --image-dir "$TRAIN_DIR" \
   --mask-dir "$TRAIN_DIR" \
   --gt-gpkg "$GT_GPKG" \
-  --output-dir "$EVAL_ROOT/cc_val"
+  --output-dir "$EVAL_ROOT/cc_val" \
+  --instance-method cc
 
 echo "Submitted CC vs watershed train-section eval jobs."

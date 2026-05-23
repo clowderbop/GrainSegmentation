@@ -13,6 +13,7 @@ import tifffile
 
 from common.arg_errors import raise_cli_argument_error
 from common.instance_predictions import instance_map_path, write_instance_map_tiff
+from common.manifest_io import load_dataset_manifest
 from common.semantic_instance import semantic_to_instance_label_map
 from unet.instance_masks import semantic_to_instance_label_map_watershed
 from unet.prediction_cache import prediction_tiff_path
@@ -27,12 +28,32 @@ def list_semantic_predictions(semantic_dir: Path) -> list[str]:
     return sample_ids
 
 
+def _resolve_sample_ids(args: argparse.Namespace) -> list[str]:
+    doc = load_dataset_manifest(args.manifest)
+    manifest_ids = [row.sample_id for row in doc.samples]
+    available = set(list_semantic_predictions(args.semantic_dir))
+    missing = [sid for sid in manifest_ids if sid not in available]
+    if missing:
+        raise ValueError(
+            "Manifest sample_id(s) missing semantic predictions "
+            f"under {args.semantic_dir}: {', '.join(missing)}"
+        )
+    extra = sorted(available - set(manifest_ids))
+    if extra:
+        print(
+            f"Note: ignoring {len(extra)} semantic prediction(s) not listed in manifest.",
+            file=sys.stderr,
+        )
+    return manifest_ids
+
+
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Extract instance label-map TIFFs from semantic prediction TIFFs.",
     )
     parser.add_argument("--semantic-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument(
         "--instance-method",
         choices=("cc", "watershed"),
@@ -112,7 +133,7 @@ def run_extract_instances(args: argparse.Namespace) -> None:
     instances_dir = args.output_dir / "instances"
     instances_dir.mkdir(parents=True, exist_ok=True)
 
-    sample_ids = list_semantic_predictions(args.semantic_dir)
+    sample_ids = _resolve_sample_ids(args)
     if not sample_ids:
         print(f"ERROR: No *_pred.tif files in {args.semantic_dir}", file=sys.stderr)
         sys.exit(1)
@@ -122,6 +143,7 @@ def run_extract_instances(args: argparse.Namespace) -> None:
         "instance_method": args.instance_method,
         "min_area_px": export_min_area_px,
     }
+    extract_meta["manifest"] = str(args.manifest.resolve())
     if args.instance_method == "watershed":
         extract_meta.update(
             {

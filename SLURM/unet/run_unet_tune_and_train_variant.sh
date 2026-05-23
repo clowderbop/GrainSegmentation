@@ -13,6 +13,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
 source "$SLURM_ROOT/utils/assertions.sh"
 # shellcheck source=SLURM/utils/cancel_duplicate_jobs.sh
 source "$SLURM_ROOT/utils/cancel_duplicate_jobs.sh"
+# shellcheck source=SLURM/utils/variants.sh
+source "$SLURM_ROOT/utils/variants.sh"
 # shellcheck source=SLURM/utils/tensorflow.sh
 source "$SLURM_ROOT/utils/tensorflow.sh"
 
@@ -26,15 +28,13 @@ function usage {
     cat <<EOF >&2
 Usage: run_unet_tune_and_train_variant.sh [options]
 
-Train one U-Net input variant on the preprocessed train section. Expects
-dataset/train/train_labels.tif (from SLURM/preprocessing/rasterize_labels.sh)
-and per-channel train_*.tif mosaics from the preprocessing pipeline.
+Train one U-Net input variant on the preprocessed train section. Requires
+dataset/train/manifests/{variant}.whole.json (write_whole_manifests.py).
 
 Options:
-  --num-inputs N
-  --image-suffixes "_PPL _PPX1 ..."
-  --run-name NAME
-  --dataset-dir PATH   (default: $GRAINSEG_ROOT/dataset/train)
+  --variant NAME         registry variant (default: VARIANT env or RUN_NAME)
+  --run-name NAME        training run / checkpoint stem
+  --dataset-dir PATH     (default: $GRAINSEG_ROOT/dataset/train)
   --output-model PATH
   --resume [CHECKPOINT]
   --skip-tuning
@@ -44,9 +44,8 @@ EOF
     exit "$status"
 }
 
-NUM_INPUTS=7
-IMAGE_SUFFIXES="_PPL _PPX1 _PPX2 _PPX3 _PPX4 _PPX5 _PPX6"
-RUN_NAME="7in_PPL_AllPPX"
+VARIANT="${VARIANT:-}"
+RUN_NAME=""
 DATASET_DIR=""
 OUTPUT_MODEL=""
 RESUME_MODEL=""
@@ -56,12 +55,8 @@ VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --num-inputs)
-            NUM_INPUTS="$2"
-            shift 2
-            ;;
-        --image-suffixes)
-            IMAGE_SUFFIXES="$2"
+        --variant)
+            VARIANT="$2"
             shift 2
             ;;
         --run-name)
@@ -103,31 +98,35 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-source "$SLURM_ROOT/prepare_env.sh"
-
-DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
-LABELS_RASTER="$DATASET_DIR/train_labels.tif"
-
-if [ -z "$OUTPUT_MODEL" ]; then
-    OUTPUT_MODEL="$GRAINSEG_ROOT/models/unet/unet_finetuned_${RUN_NAME}.keras"
+if [ -z "$VARIANT" ]; then
+    echo "VARIANT is required (--variant or VARIANT env)" >&2
+    usage
 fi
 
-read -r -a IMAGE_SUFFIX_ARGS <<< "$IMAGE_SUFFIXES"
+unet_patch_config_for_variant "$VARIANT"
 
-require_file "$LABELS_RASTER" \
-    "Semantic label raster not found (run SLURM/preprocessing/rasterize_labels.sh)"
+RUN_NAME="${RUN_NAME:-$VARIANT}"
+DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
 
-echo "Staging train mosaics to TMPDIR..."
+if [ -z "$OUTPUT_MODEL" ]; then
+    OUTPUT_MODEL="$GRAINSEG_ROOT/models/unet/$DEFAULT_MODEL_BASENAME"
+fi
+
+source "$SLURM_ROOT/prepare_env.sh"
+
+CANONICAL_MANIFEST="$GRAINSEG_ROOT/dataset/train/manifests/${VARIANT}.whole.json"
+require_file "$CANONICAL_MANIFEST" \
+    "Train whole manifest missing for $VARIANT; run write_whole_manifests.py"
+
 LOCAL_DIR="$TMPDIR/unet_train_${RUN_NAME}_${SLURM_JOB_ID:-local}"
 rm -rf "$LOCAL_DIR"
 mkdir -p "$LOCAL_DIR"
-cp "$LABELS_RASTER" "$LOCAL_DIR/"
 
-for suffix in "${IMAGE_SUFFIX_ARGS[@]}"; do
-    src="$DATASET_DIR/train${suffix}.tif"
-    require_file "$src" "Missing training image for suffix ${suffix}"
-    cp "$src" "$LOCAL_DIR/"
-done
+echo "Staging train whole manifest to TMPDIR..."
+uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
+    "$CANONICAL_MANIFEST" "$LOCAL_DIR"
+STAGED_MANIFEST="$LOCAL_DIR/manifest.json"
+require_file "$STAGED_MANIFEST" "Staged train manifest missing"
 
 export TF_CPP_MIN_LOG_LEVEL=2
 
@@ -156,18 +155,12 @@ else
     CHECKPOINT_ARGS=("--checkpoint" "$PRETRAINED_CHECKPOINT")
 fi
 
-echo "Running training (run_name=$RUN_NAME, inputs=$NUM_INPUTS)..."
-TRAIN_CMD=(uv run --no-sync python -u train_unet_multi_input.py)
-
-if [ -n "$SKIP_TUNING_FLAG" ]; then
-    TRAIN_CMD+=("$SKIP_TUNING_FLAG")
-fi
-
-TRAIN_CMD+=(
+echo "Running training (variant=$VARIANT, run_name=$RUN_NAME, inputs=$NUM_INPUTS)..."
+TRAIN_CMD=(
+    uv run --no-sync python -u train_unet_multi_input.py
     --run-name "$RUN_NAME"
     --tuning-dir "$GRAINSEG_ROOT/tuning_logs"
-    --image-dir "$LOCAL_DIR"
-    --mask-dir "$LOCAL_DIR"
+    --manifest "$STAGED_MANIFEST"
     --validation-fraction "$VALIDATION_FRACTION"
     "${CHECKPOINT_ARGS[@]}"
     --output-model "$OUTPUT_MODEL"
@@ -176,11 +169,13 @@ TRAIN_CMD+=(
     --patch-overlap 0.5
     --tune-epochs 50
     --num-inputs "$NUM_INPUTS"
-    --image-suffixes
-    "${IMAGE_SUFFIX_ARGS[@]}"
     --mask-ext .tif
     --mask-stem-suffix _labels
 )
+
+if [ -n "$SKIP_TUNING_FLAG" ]; then
+    TRAIN_CMD+=("$SKIP_TUNING_FLAG")
+fi
 
 if [ "$VERBOSE" = true ]; then
     echo "Verbose mode enabled. Raw TensorFlow/XLA stderr will be logged."

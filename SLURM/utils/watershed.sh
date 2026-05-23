@@ -10,15 +10,12 @@ source "$_slurm_utils/assertions.sh"
 source "$_slurm_utils/variants.sh"
 unset _slurm_utils
 
-infer_watershed_tune_subdir_from_stem() {
-    local model_stem="$1"
-    local variant
-
-    if variant="$(infer_microscopy_variant_from_model_stem "$model_stem")"; then
-        watershed_tune_subdir_for_variant "$variant"
-    else
+watershed_tune_subdir() {
+    if [ -z "${VARIANT:-}" ]; then
+        echo "VARIANT must be set to resolve watershed tune subdirectory" >&2
         return 1
     fi
+    watershed_tune_subdir_for_variant "$VARIANT"
 }
 
 pick_latest_watershed_best_json() {
@@ -46,7 +43,7 @@ pick_latest_watershed_best_json() {
 }
 
 # Args: model_dir explicit_json model_path
-# Prints resolved JSON path or empty. Uses WATERSHED_TUNE_ROOT when set.
+# Prints resolved JSON path or empty. Uses WATERSHED_TUNE_ROOT and VARIANT.
 resolve_watershed_json_for_model() {
     local model_dir="$1"
     local explicit_json="${2:-}"
@@ -66,12 +63,8 @@ resolve_watershed_json_for_model() {
         return 0
     fi
 
-    local model_file model_stem subdir variant_dir
-    model_file="$(basename "$model_path")"
-    model_stem="${model_file%.keras}"
-
-    if ! subdir="$(infer_watershed_tune_subdir_from_stem "$model_stem")"; then
-        echo "Cannot infer watershed tune subdir for model stem: $model_stem" >&2
+    local subdir variant_dir
+    if ! subdir="$(watershed_tune_subdir)"; then
         return 1
     fi
 
@@ -105,10 +98,15 @@ resolve_watershed_json_lenient() {
         return 0
     fi
 
-    local model_stem subdir variant_tune_dir picked
-    model_stem="$(basename "$model_path" .keras)"
-    if ! subdir="$(infer_watershed_tune_subdir_from_stem "$model_stem")"; then
-        echo "Note: cannot map model stem '$model_stem' to a watershed tune subdir; using default watershed args." >&2
+    if [ -z "${VARIANT:-}" ]; then
+        echo "Note: VARIANT unset; using default watershed args." >&2
+        printf '\n'
+        return 0
+    fi
+
+    local subdir variant_tune_dir picked
+    if ! subdir="$(watershed_tune_subdir_for_variant "$VARIANT")"; then
+        echo "Note: cannot resolve watershed tune subdir for VARIANT=$VARIANT; using defaults." >&2
         printf '\n'
         return 0
     fi

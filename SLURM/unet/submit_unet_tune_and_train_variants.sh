@@ -15,11 +15,8 @@ function usage {
 Usage: $(basename "$0") [options]
 
 Submit U-Net tune+train jobs for one or more input variants.
-Requires preprocessed train mosaics under:
-  $GRAINSEG_ROOT/dataset/train/train_*.tif
-and rasterized labels:
+Requires train whole manifests and rasterized labels:
   $TRAIN_LABELS_RASTER
-(from SLURM/preprocessing/rasterize_labels.sh).
 
 Options:
   --ppl                  PPL only (1 input)
@@ -104,15 +101,17 @@ fi
 submit_variant() {
     local mem="$1"
     local job_name="$2"
-    shift 2
-    local -a train_args=("$@")
+    local variant="$3"
+    shift 3
 
     sbatch \
         --mem="$mem" \
         --job-name="$job_name" \
-        --export=ALL,DATASET_DIR="$GRAINSEG_ROOT/dataset/train" \
+        --export=ALL,VARIANT="$variant",DATASET_DIR="$GRAINSEG_ROOT/dataset/train" \
         "$RUN_SCRIPT" \
-        "${train_args[@]}" \
+        --variant "$variant" \
+        --run-name "$variant" \
+        "$@" \
         "${resume_args[@]}" \
         "${skip_tuning_args[@]}" \
         "${verbose_args[@]}"
@@ -122,37 +121,25 @@ submitted=false
 
 if [ "$run_ppl" = true ]; then
     echo "Submitting PPL only (1 input) job..."
-    submit_variant 256G Train_PPL \
-        --num-inputs 1 \
-        --image-suffixes "_PPL" \
-        --run-name "PPL"
+    submit_variant 256G Train_PPL PPL
     submitted=true
 fi
 
 if [ "$run_ppl_ppx_composite" = true ]; then
     echo "Submitting PPLPPXBlend (1 input) job..."
-    submit_variant 256G Train_PPLPPXBlend \
-        --num-inputs 1 \
-        --image-suffixes "_PPLPPXblend" \
-        --run-name "PPLPPXblend"
+    submit_variant 256G Train_PPLPPXBlend PPLPPXblend
     submitted=true
 fi
 
 if [ "$run_ppl_plus_ppx_composite" = true ]; then
     echo "Submitting PPL + PPXblend (2 inputs) job..."
-    submit_variant 512G Train_PPL+PPXblend \
-        --num-inputs 2 \
-        --image-suffixes "_PPL _PPXblend" \
-        --run-name "PPL+PPXblend"
+    submit_variant 512G Train_PPL+PPXblend "PPL+PPXblend"
     submitted=true
 fi
 
 if [ "$run_all_ppx" = true ]; then
     echo "Submitting PPL + All PPX (7 inputs) job..."
-    submit_variant 950G Train_PPL+AllPPX \
-        --num-inputs 7 \
-        --image-suffixes "_PPL _PPX1 _PPX2 _PPX3 _PPX4 _PPX5 _PPX6" \
-        --run-name "PPL+AllPPX"
+    submit_variant 950G Train_PPL+AllPPX "PPL+AllPPX"
     submitted=true
 fi
 

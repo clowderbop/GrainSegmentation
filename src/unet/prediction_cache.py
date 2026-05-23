@@ -29,10 +29,14 @@ def prediction_cache_record(args: Any) -> dict[str, Any]:
         "stride": args.stride,
         "batch_size": args.batch_size,
         "num_inputs": args.num_inputs,
-        "image_suffixes": list(args.image_suffixes),
         "unit": getattr(args, "unit", None),
         "variant": getattr(args, "variant", None),
     }
+    manifest = getattr(args, "manifest", None)
+    if manifest is not None:
+        record["manifest"] = str(Path(manifest).resolve())
+    else:
+        record["image_suffixes"] = list(getattr(args, "image_suffixes", []) or [])
     return record
 
 

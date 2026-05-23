@@ -20,7 +20,8 @@ from common.image_io import (
     validate_input_images,
     validate_semantic_labels,
 )
-from common.samples import list_samples, load_rgb_image
+from common.manifest_io import collect_manifest_unet_samples, load_dataset_manifest
+from common.samples import load_rgb_image
 from common.arg_errors import raise_cli_argument_error
 from unet.instance_masks import semantic_to_instance_label_map_watershed
 from common.metrics import compute_aji
@@ -91,9 +92,9 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         )
 
-    parser.add_argument("--image-dir", required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--gt-gpkg", required=True)
-    parser.add_argument("--num-inputs", type=int, default=7)
+    parser.add_argument("--num-inputs", type=int, default=None)
     parser.add_argument(
         "--image-suffixes",
         nargs="+",
@@ -164,14 +165,9 @@ def _parse_args() -> argparse.Namespace:
 def _validate_tune_args(
     args: argparse.Namespace, parser: argparse.ArgumentParser | None = None
 ) -> None:
-    if args.num_inputs not in {1, 2, 7}:
+    if args.num_inputs is not None and args.num_inputs not in {1, 2, 7}:
         raise_cli_argument_error(
             "num_inputs must be one of: 1, 2, 7", parser=parser
-        )
-    if len(args.image_suffixes) < args.num_inputs:
-        raise_cli_argument_error(
-            "image_suffixes must provide at least num_inputs suffixes",
-            parser=parser,
         )
     if args.patch_size <= 0 or args.stride <= 0:
         raise_cli_argument_error("patch_size and stride must be > 0", parser=parser)
@@ -204,18 +200,23 @@ def _ridge_level_grid(args: argparse.Namespace) -> list[float | None]:
     return list(args.ridge_level)
 
 
+def _resolve_watershed_samples(args: argparse.Namespace) -> list[dict]:
+    doc = load_dataset_manifest(args.manifest)
+    if args.num_inputs is not None:
+        expected = len(doc.samples[0].images or ())
+        if args.num_inputs != expected:
+            raise_cli_argument_error(
+                f"--num-inputs {args.num_inputs} != manifest ({expected})"
+            )
+    args.num_inputs = len(doc.samples[0].images or ())
+    return collect_manifest_unet_samples(doc)
+
+
 def _collect_samples(
     args: argparse.Namespace,
 ) -> tuple[list[str], list[np.ndarray], list[np.ndarray]]:
     """Materialize GT instances in scene/full-raster coords only (never patch-stem shifted)."""
-    samples = list_samples(
-        image_dir=args.image_dir,
-        mask_dir=None,
-        image_suffixes=args.image_suffixes,
-        mask_ext=None,
-        mask_stem_suffix="",
-        num_inputs=args.num_inputs,
-    )
+    samples = _resolve_watershed_samples(args)
     if not samples:
         raise SystemExit("No samples found.")
     if args.max_samples is not None:
@@ -329,6 +330,8 @@ def _iter_param_grid(args: argparse.Namespace) -> Iterable[WatershedParamSet]:
 def main() -> None:
     args = _parse_args()
     sample_ids, true_instances, pred_semantic = _collect_samples(args)
+    if args.num_inputs is None:
+        raise_cli_argument_error("Could not determine num_inputs")
 
     ridge_levels = _ridge_level_grid(args)
     grid_size = (

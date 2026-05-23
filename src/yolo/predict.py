@@ -18,8 +18,12 @@ from common.instance_predictions import (
     write_instance_map_tiff,
     yolo_mask_npz_path,
 )
-from common.manifest_io import collect_manifest_image_paths
-from yolo.config import variant_choices
+from common.manifest_io import (
+    collect_manifest_image_paths,
+    default_patch_manifest_path,
+    load_dataset_manifest,
+)
+from yolo.config import default_scratch_root, variant_choices
 from yolo.dataset_yaml import load_yaml_dataset_config, resolve_split_dir
 from yolo.pipeline import resolve_variant_paths
 from yolo.train import _parse_device
@@ -281,7 +285,70 @@ def _resolve_data_yaml(args: argparse.Namespace) -> Path | None:
     return resolved.data_yaml
 
 
-def run_patch_predict(args: argparse.Namespace, data_yaml: Path) -> None:
+def _resolve_patch_manifest(args: argparse.Namespace) -> Path | None:
+    if args.manifest is not None:
+        return args.manifest.resolve()
+    if args.variant is None:
+        return None
+    candidate = default_patch_manifest_path(
+        default_scratch_root(), "test", args.variant
+    )
+    return candidate if candidate.is_file() else None
+
+
+def _run_patch_predict_from_manifest(
+    args: argparse.Namespace, manifest_path: Path
+) -> None:
+    from ultralytics import YOLO
+
+    doc = load_dataset_manifest(manifest_path)
+    if args.variant is not None and args.variant != doc.variant:
+        raise ValueError(
+            f"--variant {args.variant!r} does not match manifest {doc.variant!r}"
+        )
+    pairs = collect_manifest_image_paths(manifest_path)
+    device = _parse_device(args.device)
+    model = YOLO(str(Path(args.weights).resolve()))
+
+    for image_path, sample_id in pairs:
+        image = load_image_for_yolo(image_path)
+        h, w = int(image.shape[0]), int(image.shape[1])
+        results = model.predict(
+            source=np.ascontiguousarray(image),
+            imgsz=args.imgsz,
+            conf=args.conf,
+            device=device,
+            verbose=False,
+            retina_masks=True,
+        )
+        result = results[0]
+        instance_map, masks, scores, classes = ultralytics_result_prediction_arrays(
+            result, height=h, width=w
+        )
+        _write_prediction_artifacts(
+            output_dir=args.output_dir,
+            sample_id=sample_id,
+            image_path=image_path,
+            height=h,
+            width=w,
+            instance_map=instance_map,
+            masks=masks,
+            scores=scores,
+            classes=classes,
+            orig_shape=tuple(result.orig_shape),
+        )
+
+
+def run_patch_predict(args: argparse.Namespace, data_yaml: Path | None) -> None:
+    manifest_path = _resolve_patch_manifest(args)
+    if manifest_path is not None:
+        print(f"YOLO patch predict: using manifest {manifest_path}", file=sys.stderr)
+        _run_patch_predict_from_manifest(args, manifest_path)
+        return
+
+    if data_yaml is None:
+        raise ValueError("patch mode requires --manifest, --variant, or --data")
+
     from ultralytics import YOLO
 
     dataset_root, config = load_yaml_dataset_config(data_yaml)
@@ -395,8 +462,12 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.unit == "patch":
         data_yaml = _resolve_data_yaml(args)
-        if data_yaml is None:
-            parser.error("patch mode requires --variant or --data")
+        if data_yaml is None and args.manifest is None:
+            if args.variant is None or _resolve_patch_manifest(args) is None:
+                parser.error(
+                    "patch mode requires --manifest, --variant (with patch "
+                    "manifest on scratch), or --data"
+                )
         run_patch_predict(args, data_yaml)
         return
 

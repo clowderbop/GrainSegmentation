@@ -12,7 +12,10 @@ import numpy as np
 from common.geometry import load_image_space_polygons
 from common.instance_predictions import MASKS_SUBDIR, yolo_mask_npz_path, yolo_mask_npz_to_coco_dt
 from common.coco_annotations import build_gt_annotations
-from common.manifest_io import load_manifest_json, resolve_manifest_path
+from common.manifest_io import (
+    load_dataset_manifest,
+    resolve_row_path,
+)
 from common.reporting import json_safe_for_dump
 from yolo.coco_instance_ap import evaluate_mask_ap
 from yolo.config import variant_choices
@@ -49,22 +52,17 @@ def _aggregate_coco_mask_ap_means(
 
 def _resolve_manifest_pairs(args: argparse.Namespace) -> list[tuple[Path, Path, str]]:
     if args.manifest is not None:
-        manifest_path = args.manifest.resolve()
-        manifest_dir = manifest_path.parent
+        doc = load_dataset_manifest(args.manifest)
         pairs: list[tuple[Path, Path, str]] = []
-        for index, entry in enumerate(load_manifest_json(manifest_path)):
-            image_raw = entry.get("image")
-            gpkg_raw = entry.get("gt_gpkg")
-            sample_id = str(entry.get("sample_id") or "")
-            if not image_raw or not gpkg_raw:
-                raise ValueError(
-                    f'manifest samples[{index}] requires "image" and "gt_gpkg"'
-                )
-            image_path = resolve_manifest_path(str(image_raw), manifest_dir)
-            gpkg_path = resolve_manifest_path(str(gpkg_raw), manifest_dir)
-            if not sample_id:
-                sample_id = image_path.stem
-            pairs.append((image_path, gpkg_path, sample_id))
+        for index, row in enumerate(doc.samples):
+            if row.image is None:
+                raise ValueError(f'manifest samples[{index}] requires "image"')
+            if row.gt_gpkg is None:
+                raise ValueError(f'manifest samples[{index}] requires "gt_gpkg"')
+            image_path = resolve_row_path(doc, row.image)
+            gpkg_path = resolve_row_path(doc, row.gt_gpkg)
+            assert image_path is not None and gpkg_path is not None
+            pairs.append((image_path, gpkg_path, row.sample_id))
         return pairs
     if args.image is None or args.gt_gpkg is None:
         raise ValueError("Provide --manifest or both --image and --gt-gpkg")

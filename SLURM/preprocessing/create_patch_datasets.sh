@@ -19,62 +19,6 @@ TEST_WORK="$WORK_DIR/test"
 mkdir -p "$TRAIN_WORK"
 mkdir -p "$TEST_WORK"
 
-write_yolo_dataset_yamls() {
-    local yolo_root=$1
-    local held_out="${2:-0}"
-    local train_p val_p test_p
-    if [[ "$held_out" == "1" ]]; then
-        train_p="images/test"
-        val_p="images/test"
-        test_p="images/test"
-    else
-        train_p="images/train"
-        val_p="images/val"
-        test_p=""
-    fi
-
-    cat > "$yolo_root/PPL/PPL.yaml" <<EOF
-path: .
-train: $train_p
-val: $val_p
-test: $test_p
-
-names:
-  0: grain
-EOF
-    cat > "$yolo_root/PPL+AllPPX/PPL+AllPPX.yaml" <<EOF
-path: .
-train: $train_p
-val: $val_p
-test: $test_p
-
-channels: 21
-
-names:
-  0: grain
-EOF
-    cat > "$yolo_root/PPL+PPXblend/PPL_PPXblend.yaml" <<EOF
-path: .
-train: $train_p
-val: $val_p
-test: $test_p
-
-channels: 6
-
-names:
-  0: grain
-EOF
-    cat > "$yolo_root/PPLPPXblend/PPLPPXblend.yaml" <<EOF
-path: .
-train: $train_p
-val: $val_p
-test: $test_p
-
-names:
-  0: grain
-EOF
-}
-
 cd src/data_prep
 
 echo "Syncing data prep environment..."
@@ -135,7 +79,11 @@ mv "$TRAIN_WORK/PPLPPXblend" "$TRAIN_DEST/patches/PPLPPXblend"
 mv "$TRAIN_WORK/PPL+PPXblend" "$TRAIN_DEST/patches/PPL+PPXblend"
 mv "$TRAIN_WORK/PPL+AllPPX" "$TRAIN_DEST/patches/PPL+AllPPX"
 
-write_yolo_dataset_yamls "$TRAIN_DEST/patches"
+echo "Writing train patch manifests and YOLO data.yaml files..."
+uv run --no-sync python -u write_patch_manifests.py \
+    --grainseg-root "$GRAINSEG_ROOT" \
+    --split train \
+    --write-yolo-yamls
 
 echo "Copying test inputs to fast local storage ($TMPDIR)..."
 cp "$TEST_DEST/test_PPL+PPXblend.tif" "$TEST_WORK/"
@@ -196,6 +144,11 @@ mv "$TEST_WORK/PPLPPXblend" "$TEST_DEST/patches/PPLPPXblend"
 mv "$TEST_WORK/PPL+PPXblend" "$TEST_DEST/patches/PPL+PPXblend"
 mv "$TEST_WORK/PPL+AllPPX" "$TEST_DEST/patches/PPL+AllPPX"
 
-write_yolo_dataset_yamls "$TEST_DEST/patches" 1
+echo "Writing test patch manifests, YOLO yamls, and U-Net patch crops..."
+uv run --no-sync python -u write_patch_manifests.py \
+    --grainseg-root "$GRAINSEG_ROOT" \
+    --split test \
+    --write-yolo-yamls \
+    --write-unet-manifests
 
 echo "Done!"

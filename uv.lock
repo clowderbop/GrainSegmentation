@@ -238,6 +238,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pillow" },
     { name = "pycocotools" },
+    { name = "pyyaml" },
     { name = "scikit-image" },
     { name = "scipy" },
     { name = "shapely" },
@@ -251,6 +252,7 @@ requires-dist = [
     { name = "numpy", specifier = "==2.4.6" },
     { name = "pillow", specifier = "==12.2.0" },
     { name = "pycocotools", specifier = "==2.0.11" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "scikit-image", specifier = "==0.26.0" },
     { name = "scipy", specifier = "==1.17.1" },
     { name = "shapely", specifier = "==2.1.2" },
@@ -269,6 +271,7 @@ source = { virtual = "." }
 dev = [
     { name = "grainsegmentation-common" },
     { name = "pytest" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "unet-pipeline" },
     { name = "yolo" },
@@ -280,6 +283,7 @@ dev = [
 dev = [
     { name = "grainsegmentation-common", editable = "src/common" },
     { name = "pytest", specifier = "==9.0.3" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", specifier = "==0.15.13" },
     { name = "unet-pipeline", editable = "src/unet" },
     { name = "yolo", editable = "src/yolo" },

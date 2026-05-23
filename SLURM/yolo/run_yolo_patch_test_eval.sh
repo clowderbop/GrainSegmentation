@@ -9,6 +9,8 @@
 set -euo pipefail
 # shellcheck source=SLURM/utils/source_job.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/assertions.sh
+source "$SLURM_ROOT/utils/assertions.sh"
 # shellcheck source=SLURM/utils/yolo_dataset.sh
 source "$SLURM_ROOT/utils/yolo_dataset.sh"
 
@@ -25,9 +27,15 @@ OUT_ROOT="${OUTPUT_ROOT:-$GRAINSEG_ROOT/eval/yolo_patches/$VARIANT/$JOB_TAG}"
 INSTANCE_METRICS_JSON="$OUT_ROOT/instance_metrics.json"
 RUN_ULTRALYTICS_VAL="${RUN_ULTRALYTICS_VAL:-0}"
 
+PATCH_MANIFEST="$GRAINSEG_ROOT/dataset/test/patches/$VARIANT/manifest.json"
+require_file "$PATCH_MANIFEST" \
+    "YOLO patch manifest not found at $PATCH_MANIFEST (run write_patch_manifests.py)"
+
 source "$SLURM_ROOT/prepare_env.sh"
 
 WEIGHTS="$GRAINSEG_ROOT/runs/yolo26-seg/$VARIANT/weights/best.pt"
+require_file "$WEIGHTS" "YOLO weights not found"
+
 stage_yolo_patch_dataset "$VARIANT" test
 
 echo "Syncing YOLO environment..."
@@ -36,31 +44,41 @@ uv sync
 
 export YOLO_DISABLE_TQDM=True
 
-mkdir -p "$OUT_ROOT"
+WORK_ROOT="$TMPDIR/yolo_patch_eval_${VARIANT}_$JOB_TAG"
+STAGED_PATCH="$WORK_ROOT/patch_manifest"
+rm -rf "$WORK_ROOT"
+mkdir -p "$OUT_ROOT" "$WORK_ROOT"
+
+echo "Staging YOLO patch manifest to TMPDIR..."
+uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
+    "$PATCH_MANIFEST" "$STAGED_PATCH"
+STAGED_MANIFEST="$STAGED_PATCH/manifest.json"
+require_file "$STAGED_MANIFEST" "Staged patch manifest missing"
 
 echo "1/2 yolo.predict (instance TIFFs and mask NPZs)..."
 uv run python -u -m yolo.predict \
     --unit patch \
     --weights "$WEIGHTS" \
     --variant "$VARIANT" \
-    --data "$DATA_YAML" \
+    --manifest "$STAGED_MANIFEST" \
     --device "$DEVICE" \
     --imgsz "$IMGSZ" \
     --conf "${CONF:-0.25}" \
     --output-dir "$OUT_ROOT"
 
-DATASET_ROOT="$(dirname "$DATA_YAML")"
-IMAGE_DIR="$DATASET_ROOT/images/test"
-LABEL_DIR="$DATASET_ROOT/labels/test"
+EVAL_MANIFEST="$OUT_ROOT/eval_manifest.json"
+echo "Building eval manifest..."
+uv run --directory "$REPO_ROOT" python -m common.stage_manifest write-eval \
+    --source "$STAGED_MANIFEST" \
+    --pred-instances-dir "$OUT_ROOT/instances" \
+    --output "$EVAL_MANIFEST"
 
 echo "2/2 common.evaluate_instances..."
 uv run python -u -m common.evaluate_instances \
     --unit patch \
     --model-type yolo \
     --variant "$VARIANT" \
-    --image-dir "$IMAGE_DIR" \
-    --pred-instances-dir "$OUT_ROOT/instances" \
-    --gt-labels-dir "$LABEL_DIR" \
+    --manifest "$EVAL_MANIFEST" \
     --output-json "$INSTANCE_METRICS_JSON"
 
 if [[ "$RUN_ULTRALYTICS_VAL" == "1" ]]; then

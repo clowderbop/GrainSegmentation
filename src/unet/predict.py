@@ -11,7 +11,8 @@ from typing import Any
 import numpy as np
 
 from common.arg_errors import raise_cli_argument_error
-from common.samples import list_samples, load_rgb_image, load_raster_mask
+from common.manifest_io import collect_manifest_unet_samples, load_dataset_manifest
+from common.samples import load_rgb_image, load_raster_mask
 from unet.prediction_cache import (
     load_or_use_cached_prediction,
     prediction_tiff_path,
@@ -24,15 +25,15 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description="Run U-Net inference and write semantic prediction TIFFs.",
     )
     parser.add_argument("--model-path", required=True, type=Path)
-    parser.add_argument("--image-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
-    parser.add_argument("--mask-dir", default=None, type=Path)
-    parser.add_argument("--num-inputs", type=int, default=7)
     parser.add_argument(
-        "--image-suffixes",
-        nargs="+",
-        default=["_PPL", "_PPX1", "_PPX2", "_PPX3", "_PPX4", "_PPX5", "_PPX6"],
+        "--manifest",
+        type=Path,
+        required=True,
+        help="Dataset manifest listing per-sample image paths.",
     )
+    parser.add_argument("--mask-dir", default=None, type=Path)
+    parser.add_argument("--num-inputs", type=int, default=None)
     parser.add_argument("--mask-ext", default=None)
     parser.add_argument("--mask-stem-suffix", default="")
     parser.add_argument("--patch-size", type=int, default=1024)
@@ -48,16 +49,36 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_predict_samples(args: argparse.Namespace) -> list[dict[str, Any]]:
+    doc = load_dataset_manifest(args.manifest)
+    if args.variant is not None and args.variant != doc.variant:
+        raise_cli_argument_error(
+            f"--variant {args.variant!r} does not match manifest variant "
+            f"{doc.variant!r}"
+        )
+    first_images = doc.samples[0].images
+    if first_images is None:
+        raise_cli_argument_error("U-Net predict requires manifest rows with images")
+    num_inputs = len(first_images)
+    if args.num_inputs is not None and args.num_inputs != num_inputs:
+        raise_cli_argument_error(
+            f"--num-inputs {args.num_inputs} does not match manifest ({num_inputs})"
+        )
+    args.num_inputs = num_inputs
+    args.image_suffixes = []  # not used for manifest-driven cache keys
+    return collect_manifest_unet_samples(
+        doc,
+        mask_dir=args.mask_dir,
+        mask_ext=args.mask_ext,
+        mask_stem_suffix=args.mask_stem_suffix,
+    )
+
+
 def _validate_args(
     args: argparse.Namespace, parser: argparse.ArgumentParser | None = None
 ) -> None:
-    if args.num_inputs not in {1, 2, 7}:
+    if args.num_inputs is not None and args.num_inputs not in {1, 2, 7}:
         raise_cli_argument_error("num_inputs must be one of: 1, 2, 7", parser=parser)
-    if len(args.image_suffixes) < args.num_inputs:
-        raise_cli_argument_error(
-            "image_suffixes must provide at least num_inputs suffixes",
-            parser=parser,
-        )
     if args.patch_size <= 0 or args.stride <= 0:
         raise_cli_argument_error("patch_size and stride must be > 0", parser=parser)
     if args.stride > args.patch_size:
@@ -71,21 +92,17 @@ def _validate_args(
 
 
 def run_predict(args: argparse.Namespace) -> None:
+    samples = _resolve_predict_samples(args)
     _validate_args(args)
+    if args.num_inputs is None:
+        raise_cli_argument_error("Could not determine num_inputs")
+
     semantic_dir = args.output_dir / "semantic"
     semantic_dir.mkdir(parents=True, exist_ok=True)
 
-    samples = list_samples(
-        image_dir=str(args.image_dir),
-        mask_dir=str(args.mask_dir) if args.mask_dir is not None else None,
-        image_suffixes=args.image_suffixes,
-        mask_ext=args.mask_ext,
-        mask_stem_suffix=args.mask_stem_suffix,
-        num_inputs=args.num_inputs,
-    )
     if not samples:
         print(
-            "ERROR: No samples matched the given image directories.",
+            "ERROR: No samples matched the given manifest or image directories.",
             file=sys.stderr,
         )
         sys.exit(1)

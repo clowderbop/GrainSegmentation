@@ -8,7 +8,6 @@ logs/
 __pycache__/
 *.egg-info/
 .worktrees/
-docs/
 *.pt
 .cursor/plans/
 docs/plans/

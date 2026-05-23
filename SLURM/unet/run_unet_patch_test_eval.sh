@@ -7,8 +7,8 @@
 #SBATCH --time=04:00:00
 
 # Patch-wise U-Net test evaluation for one input variant (VARIANT).
-# Staged pipeline: predict -> extract_instances -> evaluate_instances.
-# Semantic metrics (evaluate_semantic) are skipped when test patches have no raster masks.
+# Staged pipeline: stage manifest -> predict -> extract_instances -> evaluate_instances.
+# Requires dataset/test/unet_from_yolo/{variant}/manifest.json from preprocessing.
 # Optional env: MODEL_PATH, WATERSHED_JSON, WATERSHED_TUNE_ROOT, OUTPUT_ROOT, GT_GPKG,
 # PATCH_SIZE, STRIDE, BATCH_SIZE, TEST_ROOT, MASK_DIR (enables semantic metrics).
 
@@ -32,8 +32,6 @@ STRIDE="${STRIDE:-$PATCH_SIZE}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 
 TEST_ROOT="${TEST_ROOT:-$GRAINSEG_ROOT/dataset/test}"
-UNET_SRC_ROOT="$TEST_ROOT/unet_from_yolo/$VARIANT"
-UNET_SRC_IMAGES="$UNET_SRC_ROOT/images"
 GT_GPKG="${GT_GPKG:-$TEST_ROOT/test_labels.gpkg}"
 MASK_DIR="${MASK_DIR:-}"
 
@@ -42,10 +40,13 @@ INSTANCE_METRICS_JSON="$OUT_ROOT/instance_metrics.json"
 
 unet_patch_config_for_variant "$VARIANT"
 
+UNET_PATCH_MANIFEST="$TEST_ROOT/unet_from_yolo/$VARIANT/manifest.json"
+require_file "$UNET_PATCH_MANIFEST" \
+    "U-Net patch manifest not found at $UNET_PATCH_MANIFEST (run write_patch_manifests.py --write-unet-manifests)"
+
 MODEL_PATH="${MODEL_PATH:-$GRAINSEG_ROOT/models/unet/$DEFAULT_MODEL_BASENAME}"
 MODEL_DIR="$(dirname "$MODEL_PATH")"
 
-require_dir "$UNET_SRC_IMAGES" "Patch image directory not found (prepare test patches under $UNET_SRC_ROOT/images)"
 require_file "$MODEL_PATH" "Model not found"
 require_file "$GT_GPKG" "Ground-truth GeoPackage not found"
 
@@ -53,19 +54,23 @@ source "$SLURM_ROOT/prepare_env.sh"
 export TF_CPP_MIN_LOG_LEVEL=2
 
 WORK_ROOT="$TMPDIR/unet_patch_eval_${VARIANT}_$JOB_TAG"
-LOCAL_IMAGES="$WORK_ROOT/images"
+STAGED_PATCH="$WORK_ROOT/patch_manifest"
 LOCAL_MODEL_DIR="$WORK_ROOT/model"
 LOCAL_GT_GPKG="$WORK_ROOT/$(basename "$GT_GPKG")"
 TMP_OUT="$WORK_ROOT/out"
 
 rm -rf "$WORK_ROOT"
-mkdir -p "$LOCAL_IMAGES" "$LOCAL_MODEL_DIR" "$TMP_OUT"
+mkdir -p "$LOCAL_MODEL_DIR" "$TMP_OUT"
 
-echo "Staging UNet patch images and model to TMPDIR ($WORK_ROOT)..."
-cp -r "$UNET_SRC_IMAGES"/. "$LOCAL_IMAGES"/
-cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
+echo "Staging U-Net patch manifest to TMPDIR ($STAGED_PATCH)..."
+uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
+    "$UNET_PATCH_MANIFEST" "$STAGED_PATCH"
+STAGED_MANIFEST="$STAGED_PATCH/manifest.json"
+require_file "$STAGED_MANIFEST" "Staged patch manifest missing"
+
 LOCAL_MODEL_PATH="$LOCAL_MODEL_DIR/$(basename "$MODEL_PATH")"
 cp -f "$MODEL_PATH" "$LOCAL_MODEL_PATH"
+cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 
 cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
@@ -86,11 +91,8 @@ predict_cmd=(
     --variant "$VARIANT"
     --unit patch
     --model-path "$LOCAL_MODEL_PATH"
-    --image-dir "$LOCAL_IMAGES"
+    --manifest "$STAGED_MANIFEST"
     --output-dir "$TMP_OUT"
-    --num-inputs "$NUM_INPUTS"
-    --image-suffixes
-    "${IMAGE_SUFFIXES[@]}"
     --patch-size "$PATCH_SIZE"
     --stride "$STRIDE"
     --batch-size "$BATCH_SIZE"
@@ -102,6 +104,7 @@ extract_cmd=(
     uv run --no-sync python -u -m unet.extract_instances
     --semantic-dir "$TMP_OUT/semantic"
     --output-dir "$TMP_OUT"
+    --manifest "$STAGED_MANIFEST"
     "${extract_args[@]}"
 )
 "${extract_cmd[@]}"
@@ -121,17 +124,21 @@ else
     echo "Skipping unet.evaluate_semantic (no MASK_DIR; patch test set often lacks raster masks)."
 fi
 
+EVAL_MANIFEST="$TMP_OUT/eval_manifest.json"
+echo "Building eval manifest..."
+uv run --directory "$REPO_ROOT" python -m common.stage_manifest write-eval \
+    --source "$STAGED_MANIFEST" \
+    --pred-instances-dir "$TMP_OUT/instances" \
+    --output "$EVAL_MANIFEST" \
+    --gt-gpkg "$LOCAL_GT_GPKG"
+
 echo "3/3 common.evaluate_instances..."
 instance_cmd=(
     uv run --no-sync python -u -m common.evaluate_instances
     --variant "$VARIANT"
     --unit patch
     --model-type unet
-    --image-dir "$LOCAL_IMAGES"
-    --pred-instances-dir "$TMP_OUT/instances"
-    --gt-gpkg "$LOCAL_GT_GPKG"
-    --gt-origin patch_stem
-    --image-stem-suffix "${IMAGE_SUFFIXES[0]}"
+    --manifest "$EVAL_MANIFEST"
     --output-json "$TMP_OUT/instance_metrics.json"
 )
 "${instance_cmd[@]}"

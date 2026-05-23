@@ -11,19 +11,23 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
 # shellcheck source=SLURM/utils/variants.sh
 source "$SLURM_ROOT/utils/variants.sh"
+# shellcheck source=SLURM/utils/manifest_shell.sh
+source "$SLURM_ROOT/utils/manifest_shell.sh"
 # shellcheck source=SLURM/utils/watershed.sh
 source "$SLURM_ROOT/utils/watershed.sh"
 # shellcheck source=SLURM/utils/tensorflow.sh
 source "$SLURM_ROOT/utils/tensorflow.sh"
 
+GRAINSEG_ROOT="$(grainseg_root)"
+MANIFEST_SPLIT=""
+
 MODEL_DIR=""
-IMAGE_DIR=""
-MASK_DIR=""
 GT_GPKG=""
 OUTPUT_DIR=""
 CONFIG_FILE=""
-PPL_IMAGE=""
+OVERLAY_VARIANT="${OVERLAY_VARIANT:-PPL}"
 GT_PATH=""
+DEFAULT_CONFIG_FILE="$SLURM_ROOT/unet/whole_eval_models.tsv"
 PATCH_SIZE=1024
 STRIDE=512
 BATCH_SIZE=1
@@ -35,39 +39,22 @@ INSTANCE_METHOD="${INSTANCE_METHOD:-watershed}"
 
 function usage {
     cat <<'EOF' >&2
-Usage: run_unet_whole_test_eval.sh --model-dir DIR --image-dir DIR --mask-dir DIR --output-dir DIR [options]
+Usage: run_unet_whole_test_eval.sh --model-dir DIR --manifest-split train|test --output-dir DIR [options]
 
 Required:
-  --model-dir, --image-dir, --mask-dir, --output-dir
+  --model-dir, --manifest-split, --output-dir
 
 Options:
-  --gt-gpkg PATH
-  --config-file PATH
-  --instance-method cc|watershed   (default: watershed)
-  --watershed-tune-root DIR        (watershed only: load watershed_best_*.json)
-  --ppl-image, --gt-path, --patch-size, --stride, --batch-size
+  --gt-gpkg PATH                 (default: dataset/{split}/{split}_labels.gpkg)
+  --config-file PATH             (default: SLURM/unet/whole_eval_models.tsv)
+  --instance-method cc|watershed (default: watershed)
+  --watershed-tune-root DIR      (watershed only)
+  --overlay-variant VARIANT      (default: PPL)
+  --gt-path PATH                 (overlay raster mask; default from staged overlay manifest)
+  --patch-size, --stride, --batch-size
   --mask-ext, --mask-stem-suffix
 EOF
     exit 1
-}
-
-function stage_optional_path {
-    local original="$1"
-    local original_root="$2"
-    local local_root="$3"
-
-    if [ -z "$original" ]; then
-        printf '\n'
-        return
-    fi
-
-    if [[ "$original" == "$original_root"/* ]]; then
-        local relative="${original#"$original_root"/}"
-        printf '%s\n' "$local_root/$relative"
-        return
-    fi
-
-    printf '%s\n' "$original"
 }
 
 function resolve_config_model_path {
@@ -110,71 +97,14 @@ function build_extract_instance_args {
     build_watershed_extract_args "$resolved_ws_json" "$WATERSHED_JSON_HELPER"
 }
 
-function find_default_ppl_image {
-    shopt -s nullglob
-    local matches=("$LOCAL_IMAGE_DIR"/*_PPL.*)
-    shopt -u nullglob
-
-    if [ "${#matches[@]}" -eq 0 ]; then
-        echo "Unable to infer --ppl-image; no *_PPL.* file found in $IMAGE_DIR"
-        exit 1
-    fi
-
-    printf '%s\n' "${matches[0]}"
-}
-
-function infer_overlay_sample_id {
-    local ppl_path="$1"
-    local base_name
-    local stem
-
-    base_name="$(basename "$ppl_path")"
-    stem="${base_name%.*}"
-
-    if [[ "$stem" != *_PPL ]]; then
-        echo "Unable to infer overlay sample id from PPL image: $ppl_path"
-        exit 1
-    fi
-
-    printf '%s\n' "${stem%_PPL}"
-}
-
-function find_mask_for_sample {
-    local sample_id="$1"
-    local candidate=""
-
-    if [ -n "$MASK_EXT" ]; then
-        candidate="$LOCAL_MASK_DIR/${sample_id}${MASK_STEM_SUFFIX}${MASK_EXT}"
-        require_file "$candidate" "Mask not found for overlay sample"
-        printf '%s\n' "$candidate"
-        return
-    fi
-
-    local ext=""
-    for ext in .tif .tiff; do
-        candidate="$LOCAL_MASK_DIR/${sample_id}${MASK_STEM_SUFFIX}${ext}"
-        if [ -f "$candidate" ]; then
-            printf '%s\n' "$candidate"
-            return
-        fi
-    done
-
-    echo "Unable to infer ground-truth mask for overlay sample: $sample_id"
-    exit 1
-}
-
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --model-dir)
             MODEL_DIR="$2"
             shift 2
             ;;
-        --image-dir)
-            IMAGE_DIR="$2"
-            shift 2
-            ;;
-        --mask-dir)
-            MASK_DIR="$2"
+        --manifest-split)
+            MANIFEST_SPLIT="$2"
             shift 2
             ;;
         --gt-gpkg)
@@ -189,8 +119,8 @@ while [[ $# -gt 0 ]]; do
             CONFIG_FILE="$2"
             shift 2
             ;;
-        --ppl-image)
-            PPL_IMAGE="$2"
+        --overlay-variant)
+            OVERLAY_VARIANT="$2"
             shift 2
             ;;
         --gt-path)
@@ -235,8 +165,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$MODEL_DIR" ] || [ -z "$IMAGE_DIR" ] || [ -z "$MASK_DIR" ] || [ -z "$OUTPUT_DIR" ]; then
+if [ -z "$MODEL_DIR" ] || [ -z "$MANIFEST_SPLIT" ] || [ -z "$OUTPUT_DIR" ]; then
     usage
+fi
+
+case "$MANIFEST_SPLIT" in
+    train | test) ;;
+    *)
+        echo "Invalid --manifest-split: $MANIFEST_SPLIT (expected train or test)" >&2
+        exit 1
+        ;;
+esac
+
+if [ -z "$CONFIG_FILE" ]; then
+    CONFIG_FILE="$DEFAULT_CONFIG_FILE"
 fi
 
 case "$INSTANCE_METHOD" in
@@ -252,10 +194,8 @@ if [[ "$INSTANCE_METHOD" == "cc" && -n "$WATERSHED_TUNE_ROOT" ]]; then
 fi
 
 require_dir "$MODEL_DIR" "Model directory not found"
-require_dir "$IMAGE_DIR" "Image directory not found"
-require_dir "$MASK_DIR" "Mask directory not found"
 if [ -z "$GT_GPKG" ]; then
-    GT_GPKG="$MASK_DIR/test_labels.gpkg"
+    GT_GPKG="$(default_whole_labels_gpkg "$MANIFEST_SPLIT" "$GRAINSEG_ROOT")"
 fi
 require_file "$GT_GPKG" "Ground-truth GeoPackage not found"
 if [ -n "$CONFIG_FILE" ]; then
@@ -269,15 +209,11 @@ export TF_CPP_MIN_LOG_LEVEL=2
 
 WORK_DIR="$TMPDIR/eval_models_${SLURM_JOB_ID:-$$}"
 LOCAL_MODEL_DIR="$WORK_DIR/models"
-LOCAL_IMAGE_DIR="$WORK_DIR/images"
-LOCAL_MASK_DIR="$WORK_DIR/masks"
 LOCAL_GT_GPKG="$WORK_DIR/$(basename "$GT_GPKG")"
-mkdir -p "$LOCAL_MODEL_DIR" "$LOCAL_IMAGE_DIR" "$LOCAL_MASK_DIR"
+mkdir -p "$LOCAL_MODEL_DIR"
 
-echo "Copying models and dataset to TMPDIR..."
+echo "Copying models and ground-truth GeoPackage to TMPDIR..."
 cp -r "$MODEL_DIR"/. "$LOCAL_MODEL_DIR"/
-cp -r "$IMAGE_DIR"/. "$LOCAL_IMAGE_DIR"/
-cp -r "$MASK_DIR"/. "$LOCAL_MASK_DIR"/
 cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 
 cd "$REPO_ROOT/src/unet"
@@ -288,56 +224,30 @@ install_unet_tensorflow_wheel
 
 MODEL_LABELS=()
 MODEL_PATHS=()
-MODEL_NUM_INPUTS=()
-MODEL_SUFFIXES=()
+MODEL_VARIANTS=()
 MODEL_WATERSHED_JSONS=()
 JSON_FILES=()
 PRED_PATHS=()
 
-if [ -n "$CONFIG_FILE" ]; then
-    while IFS=$'\t' read -r label model_ref num_inputs suffix_csv watershed_json_opt || [ -n "$label" ]; do
-        if [ -z "${label// }" ] || [[ "$label" == \#* ]]; then
-            continue
-        fi
+require_file "$CONFIG_FILE" "Eval config file not found"
+while IFS=$'\t' read -r label model_ref variant watershed_json_opt || [ -n "$label" ]; do
+    if [ -z "${label// }" ] || [[ "$label" == \#* ]]; then
+        continue
+    fi
 
-        if [ -z "${model_ref:-}" ] || [ -z "${num_inputs:-}" ] || [ -z "${suffix_csv:-}" ]; then
-            echo "Invalid config row in $CONFIG_FILE: $label"
-            exit 1
-        fi
-
-        local_model_path="$(resolve_config_model_path "$model_ref")"
-        require_file "$local_model_path" "Configured model not found"
-
-        MODEL_LABELS+=("$label")
-        MODEL_PATHS+=("$local_model_path")
-        MODEL_NUM_INPUTS+=("$num_inputs")
-        MODEL_SUFFIXES+=("$suffix_csv")
-        MODEL_WATERSHED_JSONS+=("${watershed_json_opt:-}")
-    done < "$CONFIG_FILE"
-else
-    shopt -s nullglob globstar
-    local_models=("$LOCAL_MODEL_DIR"/**/*.keras)
-    shopt -u nullglob globstar
-
-    if [ "${#local_models[@]}" -eq 0 ]; then
-        echo "No .keras models found in $MODEL_DIR"
+    if [ -z "${model_ref:-}" ] || [ -z "${variant:-}" ]; then
+        echo "Invalid config row in $CONFIG_FILE (need label, model, variant): $label"
         exit 1
     fi
 
-    for model_path in "${local_models[@]}"; do
-        if ! inferred="$(infer_model_config "$model_path")"; then
-            echo "Unable to infer config for model; use --config-file instead: $model_path"
-            exit 1
-        fi
+    local_model_path="$(resolve_config_model_path "$model_ref")"
+    require_file "$local_model_path" "Configured model not found"
 
-        IFS=$'\t' read -r label num_inputs suffix_csv <<< "$inferred"
-        MODEL_LABELS+=("$label")
-        MODEL_PATHS+=("$model_path")
-        MODEL_NUM_INPUTS+=("$num_inputs")
-        MODEL_SUFFIXES+=("$suffix_csv")
-        MODEL_WATERSHED_JSONS+=("")
-    done
-fi
+    MODEL_LABELS+=("$label")
+    MODEL_PATHS+=("$local_model_path")
+    MODEL_VARIANTS+=("$variant")
+    MODEL_WATERSHED_JSONS+=("${watershed_json_opt:-}")
+done < "$CONFIG_FILE"
 
 if [ "${#MODEL_PATHS[@]}" -eq 0 ]; then
     echo "No models configured for evaluation."
@@ -353,20 +263,27 @@ for i in "${!MODEL_PATHS[@]}"; do
     model_stem="${model_file%.keras}"
     pred_root="$OUTPUT_DIR/run_${model_stem}"
     instance_json="$pred_root/instance_metrics.json"
-    suffix_csv="${MODEL_SUFFIXES[$i]}"
-    IFS=',' read -r -a suffix_array <<< "$suffix_csv"
-
     mkdir -p "$pred_root"
+
+    variant="${MODEL_VARIANTS[$i]}"
+
+    canonical_manifest="$GRAINSEG_ROOT/dataset/$MANIFEST_SPLIT/manifests/${variant}.whole.json"
+    require_file "$canonical_manifest" \
+        "Whole-section manifest missing for $variant ($MANIFEST_SPLIT); run write_whole_manifests.py"
+
+    model_image_dir="$WORK_DIR/images/$variant"
+    rm -rf "$model_image_dir"
+    mkdir -p "$model_image_dir"
+    echo "Staging manifest inputs for variant=$variant ($MANIFEST_SPLIT)..."
+    uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
+        "$canonical_manifest" "$model_image_dir"
 
     predict_cmd=(
         uv run --no-sync python -u -m unet.predict
         --model-path "$model_path"
-        --image-dir "$LOCAL_IMAGE_DIR"
-        --mask-dir "$LOCAL_MASK_DIR"
+        --manifest "$model_image_dir/manifest.json"
         --output-dir "$pred_root"
-        --num-inputs "${MODEL_NUM_INPUTS[$i]}"
-        --image-suffixes
-        "${suffix_array[@]}"
+        --variant "$variant"
         --patch-size "$PATCH_SIZE"
         --stride "$STRIDE"
         --batch-size "$BATCH_SIZE"
@@ -377,6 +294,7 @@ for i in "${!MODEL_PATHS[@]}"; do
         predict_cmd+=(--mask-ext "$MASK_EXT")
     fi
 
+    export VARIANT="$variant"
     explicit_ws="${MODEL_WATERSHED_JSONS[$i]:-}"
     if ! build_extract_instance_args "$model_path" "$explicit_ws"; then
         exit 1
@@ -390,6 +308,7 @@ for i in "${!MODEL_PATHS[@]}"; do
         uv run --no-sync python -u -m unet.extract_instances
         --semantic-dir "$pred_root/semantic"
         --output-dir "$pred_root"
+        --manifest "$model_image_dir/manifest.json"
         "${extract_args[@]}"
     )
     "${extract_cmd[@]}"
@@ -398,7 +317,7 @@ for i in "${!MODEL_PATHS[@]}"; do
     semantic_cmd=(
         uv run --no-sync python -u -m unet.evaluate_semantic
         --semantic-dir "$pred_root/semantic"
-        --mask-dir "$LOCAL_MASK_DIR"
+        --mask-dir "$model_image_dir"
         --mask-stem-suffix "$MASK_STEM_SUFFIX"
         --output-json "$pred_root/semantic_metrics.json"
         --unit whole
@@ -408,16 +327,21 @@ for i in "${!MODEL_PATHS[@]}"; do
     fi
     "${semantic_cmd[@]}"
 
+    eval_manifest="$pred_root/eval_manifest.json"
+    echo "Model ${MODEL_LABELS[$i]}: write eval manifest"
+    uv run --directory "$REPO_ROOT" python -m common.stage_manifest write-eval \
+        --source "$model_image_dir/manifest.json" \
+        --pred-instances-dir "$pred_root/instances" \
+        --output "$eval_manifest" \
+        --gt-gpkg "$LOCAL_GT_GPKG"
+
     echo "Model ${MODEL_LABELS[$i]}: evaluate_instances"
     instance_cmd=(
         uv run --no-sync python -u -m common.evaluate_instances
         --model-type unet
         --unit whole
-        --image-dir "$LOCAL_IMAGE_DIR"
-        --pred-instances-dir "$pred_root/instances"
-        --gt-gpkg "$LOCAL_GT_GPKG"
-        --gt-origin whole_image
-        --image-stem-suffix "${suffix_array[0]}"
+        --variant "$variant"
+        --manifest "$eval_manifest"
         --output-json "$instance_json"
     )
     "${instance_cmd[@]}"
@@ -426,16 +350,26 @@ for i in "${!MODEL_PATHS[@]}"; do
     PRED_PATHS+=("$pred_root/semantic")
 done
 
-LOCAL_PPL_IMAGE="$(stage_optional_path "$PPL_IMAGE" "$IMAGE_DIR" "$LOCAL_IMAGE_DIR")"
-if [ -z "$LOCAL_PPL_IMAGE" ]; then
-    LOCAL_PPL_IMAGE="$(find_default_ppl_image)"
-fi
+OVERLAY_CANONICAL="$GRAINSEG_ROOT/dataset/$MANIFEST_SPLIT/manifests/${OVERLAY_VARIANT}.whole.json"
+require_file "$OVERLAY_CANONICAL" \
+    "Overlay whole manifest missing for $OVERLAY_VARIANT; run write_whole_manifests.py"
+OVERLAY_STAGE="$WORK_DIR/overlay"
+rm -rf "$OVERLAY_STAGE"
+echo "Staging overlay inputs from $OVERLAY_CANONICAL ..."
+uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
+    "$OVERLAY_CANONICAL" "$OVERLAY_STAGE"
+export_overlay_env_from_whole_manifest "$OVERLAY_STAGE/manifest.json"
+LOCAL_PPL_IMAGE="$OVERLAY_STAGE/$OVERLAY_IMAGE_REL"
 require_file "$LOCAL_PPL_IMAGE" "Overlay PPL image not found"
 
-OVERLAY_SAMPLE_ID="$(infer_overlay_sample_id "$LOCAL_PPL_IMAGE")"
-LOCAL_GT_PATH="$(stage_optional_path "$GT_PATH" "$MASK_DIR" "$LOCAL_MASK_DIR")"
-if [ -z "$LOCAL_GT_PATH" ]; then
-    LOCAL_GT_PATH="$(find_mask_for_sample "$OVERLAY_SAMPLE_ID")"
+if [ -n "$GT_PATH" ]; then
+    LOCAL_GT_PATH="$GT_PATH"
+else
+    if [ -z "${OVERLAY_MASK_REL:-}" ]; then
+        echo "Overlay manifest missing mask path" >&2
+        exit 1
+    fi
+    LOCAL_GT_PATH="$OVERLAY_STAGE/$OVERLAY_MASK_REL"
 fi
 require_file "$LOCAL_GT_PATH" "Overlay ground-truth mask not found"
 

@@ -16,7 +16,25 @@ Run from the repo root (`GrainSegmentation/`). Persistent data lives under `$(gr
 7. **`rasterize_labels.sh`** (submits **`rasterize_polygons.sh`**)
   `train_labels.gpkg` + `train_PPL.tif` → `train_labels.tif`; `test_labels.gpkg` + `test_PPL.tif` → `test_labels.tif`. Required before U-Net training.
 8. **`create_patch_datasets.sh`**
-  Full mosaics + `*_labels.gpkg` → `dataset/train/patches/{PPL,PPLPPXblend,PPL+PPXblend,PPL+AllPPX}/` and `dataset/test/patches/...` (YOLO train/val/test layouts).
+  Full mosaics + `*_labels.gpkg` → `dataset/train/patches/{PPL,PPLPPXblend,PPL+PPXblend,PPL+AllPPX}/` and `dataset/test/patches/...` (YOLO train/val/test layouts). Also writes test `unet_from_yolo/{variant}/` crops and manifests when run end-to-end.
+
+9. **Write dataset manifests** (once per scratch tree, or after manual file changes)
+
+  From the repo root:
+
+  ```bash
+  GRAINSEG_ROOT="$(grainseg_root)"   # or export SCRATCH first
+
+  uv run --directory src/data_prep python write_whole_manifests.py \
+    --grainseg-root "$GRAINSEG_ROOT"
+
+  uv run --directory src/data_prep python write_patch_manifests.py \
+    --grainseg-root "$GRAINSEG_ROOT" \
+    --write-yolo-yamls \
+    --write-unet-manifests
+  ```
+
+  Produces `dataset/{train,test}/manifests/{variant}.whole.json`, `dataset/{train,test}/patches/{variant}/manifest.json`, and `dataset/test/unet_from_yolo/{variant}/manifest.json`. See `docs/manifests.md` and README “Dataset contracts”.
 
 ## Downstream use
 
@@ -25,7 +43,8 @@ Run from the repo root (`GrainSegmentation/`). Persistent data lives under `$(gr
 | ----------------------------------------- | ---------------------------------------- |
 | `train_*.tif`, `train_labels.tif`         | U-Net tune/train (`SLURM/unet/`)         |
 | `test_*.tif`, `test_labels.gpkg` / `.tif` | U-Net and YOLO test eval                 |
-| `*/patches/*`                             | YOLO tune/train and patch-wise test eval |
+| `*/patches/*`, `*/manifests/*.whole.json` | YOLO tune/train, patch/whole eval (manifest-driven) |
+| `test/unet_from_yolo/*`                   | U-Net patch test eval                    |
 
 
 **`export_prediction_rasters_to_polygons.sh`** is not part of this chain; it converts prediction rasters to GeoPackage after inference.

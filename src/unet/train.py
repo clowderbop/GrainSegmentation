@@ -6,7 +6,6 @@ import tensorflow as tf
 import keras_tuner as kt
 from keras.optimizers import Adam
 import warnings
-from common.samples import list_samples
 from unet.data import build_dataset, create_spatial_holdout_split
 from unet.model import build_unet, initialize_from_checkpoint, weighted_crossentropy
 
@@ -368,7 +367,6 @@ def create_tuner(
 
 
 def train_model(
-    image_dir: str,
     mask_dir: str,
     checkpoint_path: str | None,
     resume_path: str | None,
@@ -390,6 +388,7 @@ def train_model(
     use_mixed_precision: bool,
     max_trials: int,
     skip_tuning: bool = False,
+    samples: list[dict] | None = None,
 ) -> tf.keras.Model:
     if use_mixed_precision:
         tf.keras.mixed_precision.set_global_policy("mixed_bfloat16")
@@ -408,14 +407,11 @@ def train_model(
     )
     num_replicas_in_sync = num_gpus if num_gpus > 0 else 1
 
-    samples = list_samples(
-        image_dir=image_dir,
-        mask_dir=mask_dir,
-        image_suffixes=image_suffixes,
-        mask_ext=mask_ext,
-        mask_stem_suffix=mask_stem_suffix,
-        num_inputs=num_inputs,
-    )
+    if samples is None:
+        raise ValueError(
+            "train_model() requires pre-resolved samples from a dataset manifest; "
+            "use train_unet_multi_input.py --manifest"
+        )
 
     train_samples, val_samples = create_spatial_holdout_split(
         samples,

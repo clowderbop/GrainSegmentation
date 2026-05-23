@@ -1,0 +1,136 @@
+# Canonical microscopy variant registry — single source of truth for all pipelines.
+# Loaded by src/common/variants.py; SLURM uses SLURM/utils/variants.sh → common.variants CLI.
+# YOLO channel counts, path templates, and naming slugs are defined here only.
+#
+# Slug mismatches today (do not rename on-disk paths in Phase 0):
+#   - Variant display name PPL+AllPPX vs watershed tune dir PPL_AllPPX (underscore, no plus).
+#   - Variant PPL+PPXblend vs watershed dir PPL_PlusPPXblend vs YOLO yaml PPL_PPXblend.yaml.
+#   - SLURM job_slug() maps '+' -> '__' (e.g. PPL__AllPPX), distinct from watershed slugs.job.
+#   - run_unet_tune_and_train_variant.sh default RUN_NAME 7in_PPL_AllPPX differs from submit script --run-name PPL+AllPPX.
+#   - src/yolo/config.py field "channels" (1,1,6,32) is NOT yolo.input_channels; see yolo.input_channels here.
+
+schema_version: 1
+
+slug_notes:
+  variant_key: Exact string used in MICROSCOPY_VARIANTS, manifests, and model stems (includes '+' where shown).
+  slugs.job: Watershed hyperparameter tune output subdir under eval/ (variants.sh watershed_tune_subdir_for_variant).
+  slugs.slurm_job: job_slug(variant) — replaces '+' and '#' with '__' for SLURM job names.
+  slugs.model_file: Default U-Net checkpoint basename (variants.sh unet_patch_config_for_variant).
+  yolo.yaml_name: On-disk YOLO data yaml filename; may differ from dataset_subdir (PPL+PPXblend only).
+
+variants:
+  PPL:
+    unet:
+      num_inputs: 1
+      input_suffixes: [_PPL]
+      channels_per_input: 3
+    yolo:
+      input_channels: 3
+      dataset_subdir: PPL
+      yaml_name: PPL.yaml
+    paths:
+      grainseg_root_env: SCRATCH
+      train_dir: dataset/train
+      test_dir: dataset/test
+      train_labels_raster: dataset/train/train_labels.tif
+      train_labels_gpkg: dataset/train/train_labels.gpkg
+      test_labels_raster: dataset/test/test_labels.tif
+      test_labels_gpkg: dataset/test/test_labels.gpkg
+      train_mosaic_stacked: dataset/train/train_PPL.tif
+      test_mosaic_stacked: dataset/test/test_PPL.tif
+      train_channel_template: "dataset/train/train{suffix}.tif"
+      test_channel_template: "dataset/test/test{suffix}.tif"
+      train_patches_dir: dataset/train/patches/PPL
+      test_patches_dir: dataset/test/patches/PPL
+      yolo_dataset_root: dataset/train/yolo/PPL
+    slugs:
+      job: PPL
+      slurm_job: PPL
+      model_file: unet_finetuned_PPL.keras
+
+  PPLPPXblend:
+    unet:
+      num_inputs: 1
+      input_suffixes: [_PPLPPXblend]
+      channels_per_input: 3
+    yolo:
+      input_channels: 3
+      dataset_subdir: PPLPPXblend
+      yaml_name: PPLPPXblend.yaml
+    paths:
+      grainseg_root_env: SCRATCH
+      train_dir: dataset/train
+      test_dir: dataset/test
+      train_labels_raster: dataset/train/train_labels.tif
+      train_labels_gpkg: dataset/train/train_labels.gpkg
+      test_labels_raster: dataset/test/test_labels.tif
+      test_labels_gpkg: dataset/test/test_labels.gpkg
+      train_mosaic_stacked: dataset/train/train_PPLPPXblend.tif
+      test_mosaic_stacked: dataset/test/test_PPLPPXblend.tif
+      train_channel_template: "dataset/train/train{suffix}.tif"
+      test_channel_template: "dataset/test/test{suffix}.tif"
+      train_patches_dir: dataset/train/patches/PPLPPXblend
+      test_patches_dir: dataset/test/patches/PPLPPXblend
+      yolo_dataset_root: dataset/train/yolo/PPLPPXblend
+    slugs:
+      job: PPLPPXblend
+      slurm_job: PPLPPXblend
+      model_file: unet_finetuned_PPLPPXblend.keras
+
+  PPL+PPXblend:
+    unet:
+      num_inputs: 2
+      input_suffixes: [_PPL, _PPXblend]
+      channels_per_input: 3
+    yolo:
+      input_channels: 6
+      dataset_subdir: PPL+PPXblend
+      yaml_name: PPL_PPXblend.yaml
+    paths:
+      grainseg_root_env: SCRATCH
+      train_dir: dataset/train
+      test_dir: dataset/test
+      train_labels_raster: dataset/train/train_labels.tif
+      train_labels_gpkg: dataset/train/train_labels.gpkg
+      test_labels_raster: dataset/test/test_labels.tif
+      test_labels_gpkg: dataset/test/test_labels.gpkg
+      train_mosaic_stacked: dataset/train/train_PPL+PPXblend.tif
+      test_mosaic_stacked: dataset/test/test_PPL+PPXblend.tif
+      train_channel_template: "dataset/train/train{suffix}.tif"
+      test_channel_template: "dataset/test/test{suffix}.tif"
+      train_patches_dir: dataset/train/patches/PPL+PPXblend
+      test_patches_dir: dataset/test/patches/PPL+PPXblend
+      yolo_dataset_root: dataset/train/yolo/PPL+PPXblend
+    slugs:
+      job: PPL_PlusPPXblend
+      slurm_job: PPL__PPXblend
+      model_file: unet_finetuned_PPL+PPXblend.keras
+
+  PPL+AllPPX:
+    unet:
+      num_inputs: 7
+      input_suffixes: [_PPL, _PPX1, _PPX2, _PPX3, _PPX4, _PPX5, _PPX6]
+      channels_per_input: 3
+    yolo:
+      input_channels: 21
+      dataset_subdir: PPL+AllPPX
+      yaml_name: PPL+AllPPX.yaml
+    paths:
+      grainseg_root_env: SCRATCH
+      train_dir: dataset/train
+      test_dir: dataset/test
+      train_labels_raster: dataset/train/train_labels.tif
+      train_labels_gpkg: dataset/train/train_labels.gpkg
+      test_labels_raster: dataset/test/test_labels.tif
+      test_labels_gpkg: dataset/test/test_labels.gpkg
+      train_mosaic_stacked: dataset/train/train_PPL+AllPPX.tif
+      test_mosaic_stacked: dataset/test/test_PPL+AllPPX.tif
+      train_channel_template: "dataset/train/train{suffix}.tif"
+      test_channel_template: "dataset/test/test{suffix}.tif"
+      train_patches_dir: dataset/train/patches/PPL+AllPPX
+      test_patches_dir: dataset/test/patches/PPL+AllPPX
+      yolo_dataset_root: dataset/train/yolo/PPL+AllPPX
+    slugs:
+      job: PPL_AllPPX
+      slurm_job: PPL__AllPPX
+      model_file: unet_finetuned_PPL+AllPPX.keras

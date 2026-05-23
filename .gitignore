@@ -9,5 +9,5 @@ __pycache__/
 *.egg-info/
 .worktrees/
 *.pt
-.cursor/plans/
-docs/plans/
+.cursor/
+.understand-anything/

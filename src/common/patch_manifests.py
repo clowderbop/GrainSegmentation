@@ -9,7 +9,7 @@ from common.manifest_io import (
     ManifestSampleRow,
     ManifestSplit,
     default_patch_manifest_path,
-    patch_manifest_relpath,
+    patch_dir_relpath,
     validate_dataset_manifest,
     write_dataset_manifest,
 )
@@ -130,7 +130,7 @@ def build_yolo_patch_manifest(
     """Scan ``dataset/{split}/patches/{variant}/`` and build a YOLO patch manifest."""
     grainseg = Path(grainseg_root).resolve()
     if patch_root is None:
-        patch_rel = patch_manifest_relpath(split, variant)
+        patch_rel = patch_dir_relpath(split, variant)
         patch_dir = grainseg / patch_rel
     else:
         patch_dir = Path(patch_root).resolve()

@@ -42,7 +42,6 @@ def test_build_yolo_patch_manifest_train(tmp_path: Path) -> None:
         variant="PPL",
         split="train",
         grainseg_root=grainseg,
-        patch_root=patch_root,
     )
     assert manifest.unit == "patches"
     assert manifest.path_base == "grainseg_root"

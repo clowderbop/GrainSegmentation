@@ -78,8 +78,12 @@ def default_whole_manifest_path(grainseg_root: str | Path, split: ManifestSplit,
     return Path(grainseg_root).resolve() / whole_manifest_relpath(split, variant)
 
 
+def patch_dir_relpath(split: ManifestSplit, variant: str) -> Path:
+    return Path("dataset") / split / "patches" / variant
+
+
 def patch_manifest_relpath(split: ManifestSplit, variant: str) -> Path:
-    return Path("dataset") / split / "patches" / variant / "manifest.json"
+    return patch_dir_relpath(split, variant) / "manifest.json"
 
 
 def default_patch_manifest_path(

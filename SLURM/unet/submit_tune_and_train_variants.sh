@@ -7,7 +7,7 @@ cd "$REPO_ROOT"
 
 GRAINSEG_ROOT="$(grainseg_root)"
 TRAIN_LABELS_RASTER="$GRAINSEG_ROOT/dataset/train/train_labels.tif"
-RUN_SCRIPT="$REPO_ROOT/SLURM/unet/run_unet_tune_and_train_variant.sh"
+RUN_SCRIPT="$REPO_ROOT/SLURM/unet/run_tune_and_train_variant.sh"
 
 function usage {
     local status="${1:-1}"

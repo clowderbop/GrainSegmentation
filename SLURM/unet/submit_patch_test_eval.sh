@@ -16,9 +16,9 @@ fi
 
 for variant in "${MICROSCOPY_VARIANTS[@]}"; do
     slug="$(job_slug "$variant")"
-    echo "Submitting run_unet_patch_test_eval variant=$variant"
+    echo "Submitting run_patch_test_eval variant=$variant"
     sbatch --export=ALL,VARIANT="$variant" --job-name="test_unet_p_${slug}" \
-        "$REPO_ROOT/SLURM/unet/run_unet_patch_test_eval.sh"
+        "$REPO_ROOT/SLURM/unet/run_patch_test_eval.sh"
 done
 
 echo "Submitted ${#MICROSCOPY_VARIANTS[@]} job(s)."

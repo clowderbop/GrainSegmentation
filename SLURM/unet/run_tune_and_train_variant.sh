@@ -26,7 +26,7 @@ cancel_duplicate_slurm_jobs
 function usage {
     local status="${1:-1}"
     cat <<EOF >&2
-Usage: run_unet_tune_and_train_variant.sh [options]
+Usage: run_tune_and_train_variant.sh [options]
 
 Train one U-Net input variant on the preprocessed train section. Requires
 dataset/train/manifests/{variant}.whole.json (write_whole_manifests.py).

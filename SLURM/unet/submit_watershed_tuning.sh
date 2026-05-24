@@ -15,7 +15,7 @@ DRY_RUN=false
 
 function usage {
     cat <<'EOF' >&2
-Usage: submit_unet_watershed_tuning.sh [--dry-run]
+Usage: submit_watershed_tuning.sh [--dry-run]
 
 Submit watershed hyperparameter tuning for all registry U-Net variants.
 Requires train whole manifests and finetuned models under models/unet/.
@@ -48,7 +48,7 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
         sbatch
         "--job-name=TuneWatershed_${slug}"
         "--export=ALL,VARIANT=${variant}"
-        "$REPO_ROOT/SLURM/unet/run_unet_watershed_tuning.sh"
+        "$REPO_ROOT/SLURM/unet/run_watershed_tuning.sh"
         --variant "$variant"
         --model-path "$model_path"
         --dataset-dir "$TRAIN_DIR"

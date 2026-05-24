@@ -6,7 +6,7 @@
 #   - Variant display name PPL+AllPPX vs watershed tune dir PPL_AllPPX (underscore, no plus).
 #   - Variant PPL+PPXblend vs watershed dir PPL_PlusPPXblend vs YOLO yaml PPL_PPXblend.yaml.
 #   - SLURM job_slug() maps '+' -> '__' (e.g. PPL__AllPPX), distinct from watershed slugs.job.
-#   - run_unet_tune_and_train_variant.sh default RUN_NAME 7in_PPL_AllPPX differs from submit script --run-name PPL+AllPPX.
+#   - run_tune_and_train_variant.sh default RUN_NAME 7in_PPL_AllPPX differs from submit script --run-name PPL+AllPPX.
 #   - src/yolo/config.py field "channels" (1,1,6,32) is NOT yolo.input_channels; see yolo.input_channels here.
 
 schema_version: 1

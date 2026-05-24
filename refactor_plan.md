@@ -12,7 +12,7 @@ This is a **breaking refactor** (aligned with `AGENTS.md`): remove discovery pat
 |--------|---------|
 | Duplicate variant metadata | `variants.sh`, `yolo/config.py`, hardcoded suffixes in tune/eval scripts |
 | Directory scan treats every TIFF as a sample | `cc_val` fails on `train_PPL+AllPPX.tif` while predict uses `train` from `train_PPL.tif` |
-| `unit=whole` still uses patch discovery | `run_unet_whole_test_eval.sh` → `collect_patch_samples` |
+| `unit=whole` still uses patch discovery | `run_whole_test_eval.sh` → `collect_patch_samples` |
 | TMPDIR staging re-implements path logic | Copy dirs + hope glob still works |
 | Stem inference for artifacts | `infer_model_config`, watershed subdir slugs |
 
@@ -132,7 +132,7 @@ v1 can ship **whole + test patches** first; patch train can keep YOLO yaml disco
 #### 0.4 Acceptance criteria (global)
 
 - [x] No production path uses `infer_microscopy_variant_from_model_stem` or `collect_patch_samples` for whole-section eval.
-- [x] `cc_val`-style job succeeds for all four variants without scanning stacked TIFFs (manifest + `whole_eval_models.tsv`; verify on cluster via `submit_unet_cc_vs_watershed_train_eval.sh`).
+- [x] `cc_val`-style job succeeds for all four variants without scanning stacked TIFFs (manifest + `whole_eval_models.tsv`; verify on cluster via `submit_cc_vs_watershed_train_eval.sh`).
 - [x] Single edit to `variants.yaml` updates YOLO + U-Net + SLURM path hints.
 - [x] Tests cover registry load, manifest validation, staging rewrite (`test_stage_manifest_integration_file_count` copies 7 channel TIFFs for `PPL+AllPPX`).
 
@@ -197,7 +197,7 @@ Wire into preprocessing after step 6 (`create_multichannel_input_tiffs.sh`) — 
 
 #### 2.4 Hotfix path (can land before full phase 3)
 
-Update `run_unet_whole_test_eval.sh` to write/use eval manifest after predict (same pattern as `run_yolo_sahi_test_eval.sh`). Use the final manifest schema shape, not a throwaway compatibility format. Unblocks `cc_val` immediately.
+Update `run_whole_test_eval.sh` to write/use eval manifest after predict (same pattern as `run_sahi_test_eval.sh`). Use the final manifest schema shape, not a throwaway compatibility format. Unblocks `cc_val` immediately.
 
 ---
 
@@ -257,11 +257,11 @@ Update in order (each job: stage manifest → pass `--manifest` + `--variant`):
 
 | Script | Changes |
 |--------|---------|
-| `run_unet_whole_test_eval.sh` | Stage `{variant}.whole.json`; eval via manifest; overlay uses manifest sample_id |
-| `run_unet_patch_test_eval.sh` | Stage patch manifest; drop `image-stem-suffix` |
-| `run_unet_tune_and_train_variant.sh` | `variants env`; stage train manifest row for variant |
-| `run_unet_watershed_tuning.sh` | Registry paths + manifest |
-| `run_yolo_*` | `variants env`; patch/whole manifests |
+| `run_whole_test_eval.sh` | Stage `{variant}.whole.json`; eval via manifest; overlay uses manifest sample_id |
+| `run_patch_test_eval.sh` | Stage patch manifest; drop `image-stem-suffix` |
+| `run_tune_and_train_variant.sh` | `variants env`; stage train manifest row for variant |
+| `run_watershed_tuning.sh` | Registry paths + manifest |
+| `yolo/run_*` | `variants env`; patch/whole manifests |
 | `submit_*` | Unchanged loops over `all_variant_names()` from CLI |
 | `watershed.sh` | Resolve tune subdir via registry `slugs.job`, not stem inference |
 
@@ -279,7 +279,7 @@ Remove:
 - README: “Dataset contracts” section pointing to registry + manifests.
 - `SLURM/preprocessing/pipeline.md`: new step “write manifests”.
 - One integration test: load train whole manifest for `PPL+AllPPX`, stage to tmp, verify 7 images copied.
-- Re-run `submit_unet_cc_vs_watershed_train_eval.sh` on cluster as smoke test.
+- Re-run `submit_cc_vs_watershed_train_eval.sh` on cluster as smoke test.
 
 Delete dead code:
 

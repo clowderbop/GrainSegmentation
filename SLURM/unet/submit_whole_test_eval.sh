@@ -6,7 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/repo_root.sh"
 GRAINSEG_ROOT="$(grainseg_root)"
 TEST_DIR="$GRAINSEG_ROOT/dataset/test"
 
-sbatch "$REPO_ROOT/SLURM/unet/run_unet_whole_test_eval.sh" \
+sbatch "$REPO_ROOT/SLURM/unet/run_whole_test_eval.sh" \
   --manifest-split test \
   --config-file "$REPO_ROOT/SLURM/unet/whole_eval_models.tsv" \
   --model-dir "$GRAINSEG_ROOT/models/unet" \

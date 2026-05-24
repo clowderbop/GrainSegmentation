@@ -1,5 +1,5 @@
 # label	model_basename	variant	[watershed_json]
-# Used by run_unet_whole_test_eval.sh when --config-file is omitted.
+# Used by run_whole_test_eval.sh when --config-file is omitted.
 PPL	unet_finetuned_PPL.keras	PPL
 PPLPPXblend	unet_finetuned_PPLPPXblend.keras	PPLPPXblend
 PPL+PPXblend	unet_finetuned_PPL+PPXblend.keras	PPL+PPXblend

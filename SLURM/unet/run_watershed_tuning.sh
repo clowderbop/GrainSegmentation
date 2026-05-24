@@ -36,7 +36,7 @@ EXCLUDE_BORDER=(0 1)
 function usage {
     local status="${1:-1}"
     cat <<EOF >&2
-Usage: run_unet_watershed_tuning.sh [options]
+Usage: run_watershed_tuning.sh [options]
 
 Tune watershed postprocessing on U-Net semantic predictions for the train
 section. Requires dataset/train/manifests/{variant}.whole.json.

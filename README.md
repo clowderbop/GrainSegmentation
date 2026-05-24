@@ -156,7 +156,7 @@ U-Net whole-section eval uses `SLURM/unet/whole_eval_models.tsv` (model basename
 After manifests exist and models are trained, compare CC vs watershed on the train section:
 
 ```bash
-sbatch SLURM/unet/submit_unet_cc_vs_watershed_train_eval.sh
+sbatch SLURM/unet/submit_cc_vs_watershed_train_eval.sh
 ```
 
 Expect both jobs to evaluate all four variants via staged whole manifests (no stacked-TIFF directory scan).

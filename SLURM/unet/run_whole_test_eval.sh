@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=test_unet
 #SBATCH --output=logs/%x-%j.log
-#SBATCH --mem=256G
+#SBATCH --mem=300G
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus-per-node=rtx_pro_6000:1
 #SBATCH --time=04:00:00
@@ -39,7 +39,7 @@ INSTANCE_METHOD="${INSTANCE_METHOD:-watershed}"
 
 function usage {
     cat <<'EOF' >&2
-Usage: run_unet_whole_test_eval.sh --model-dir DIR --manifest-split train|test --output-dir DIR [options]
+Usage: run_whole_test_eval.sh --model-dir DIR --manifest-split train|test --output-dir DIR [options]
 
 Required:
   --model-dir, --manifest-split, --output-dir

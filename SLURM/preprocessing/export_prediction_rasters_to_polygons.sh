@@ -7,8 +7,8 @@
 
 set -euo pipefail
 
-# shellcheck source=SLURM/utils/source_job.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/enter_job.sh
+source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/SLURM/utils/enter_job.sh"
 source "$SLURM_ROOT/prepare_env.sh"
 
 EVAL_DIR="${EVAL_DIR:-}"

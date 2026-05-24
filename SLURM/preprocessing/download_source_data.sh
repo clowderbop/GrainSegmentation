@@ -4,8 +4,8 @@
 #SBATCH --mem=8GB
 #SBATCH --time=08:00:00
 
-# shellcheck source=SLURM/utils/source_job.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/enter_job.sh
+source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/SLURM/utils/enter_job.sh"
 source "$SLURM_ROOT/prepare_env.sh"
 
 GRAINSEG_ROOT="$(grainseg_root)"

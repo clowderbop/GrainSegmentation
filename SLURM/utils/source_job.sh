@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Source from SLURM job scripts (unet/, yolo/, preprocessing/) after set -euo pipefail.
+# Loaded by enter_job.sh from SLURM job scripts (unet/, yolo/, preprocessing/).
 # Sets REPO_ROOT, SLURM_ROOT, SLURM_UTILS and cd's to the repo root.
 
 _slurm_utils_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Resolves REPO_ROOT, SLURM_ROOT, and SLURM_UTILS. Source via source_job.sh or repo_root.sh.
+# Resolves REPO_ROOT, SLURM_ROOT, and SLURM_UTILS. Source via enter_job.sh, source_job.sh, or repo_root.sh.
 
 if [ -z "${REPO_ROOT:-}" ] || [ -z "${SLURM_ROOT:-}" ]; then
     if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then

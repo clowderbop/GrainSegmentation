@@ -11,8 +11,8 @@ module load cuDNN/9.10.1.4-CUDA-12.8.0
 module load SciPy-bundle/2025.06-gfbf-2025a
 module list
 
-# shellcheck source=SLURM/utils/source_job.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/source_job.sh"
+# shellcheck source=SLURM/utils/enter_job.sh
+source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/SLURM/utils/enter_job.sh"
 source "$SLURM_ROOT/prepare_env.sh"
 
 GRAINSEG_ROOT="$(grainseg_root)"

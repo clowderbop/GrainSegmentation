@@ -35,7 +35,7 @@ cp "$REFERENCE_TIFF" "$WORK_DIR/"
 
 echo "Syncing data prep environment..."
 cd "$REPO_ROOT/src/data_prep"
-uv sync
+uv sync --extra opencv
 
 CMD=(uv run --no-sync python -u gpkg_to_raster.py
     --input "$WORK_DIR/$INPUT_GPKG_NAME"

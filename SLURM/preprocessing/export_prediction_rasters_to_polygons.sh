@@ -39,7 +39,7 @@ mkdir -p "$WORK_DIR"
 
 echo "Syncing data prep environment..."
 cd "$REPO_ROOT/src/data_prep"
-uv sync
+uv sync --extra opencv --extra raster
 
 if [[ -n "$EVAL_DIR" ]]; then
     if [[ ! -d "$EVAL_DIR" ]]; then

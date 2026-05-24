@@ -2,6 +2,8 @@
 
 Run from the repo root (`GrainSegmentation/`). Persistent data lives under `$(grainseg_root)/dataset/` (see `SLURM/utils/paths.sh`; uses `$SCRATCH/GrainSeg` when `SCRATCH` is set).
 
+`src/data_prep/pyproject.toml` uses optional extras so SLURM jobs avoid pulling PyTorch unless needed: default `uv sync` (patchify, blends, manifests, split/crop); `--extra download` (Google Drive); `--extra opencv` (rasterize labels); `--extra raster` (prediction GeoPackages); `--extra sam2` (starting masks; combine with `opencv` for RLE conversion).
+
 ## Order
 
 1. **`download_source_data.sh`** — Download `uncropped.tar.lz4` from Google Drive → extract to `dataset/uncropped/` (`PPL.tif`, `PPX*.tif`, `train_raw.gpkg`, `test_raw.gpkg`). Archive is cached as `dataset/uncropped.tar.lz4`.

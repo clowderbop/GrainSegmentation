@@ -12,5 +12,7 @@ GRAINSEG_ROOT="$(grainseg_root)"
 
 module load lz4/1.9.4-GCCcore-12.3.0
 
-cd "$REPO_ROOT/src/data_prep" && uv run python -u download_data.py \
+cd "$REPO_ROOT/src/data_prep"
+uv sync --extra download
+uv run --no-sync python -u download_data.py \
   -o "$GRAINSEG_ROOT/dataset/uncropped"

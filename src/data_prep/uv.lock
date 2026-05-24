@@ -207,39 +207,50 @@ name = "data-prep-pipeline"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "gdown" },
     { name = "geopandas" },
     { name = "grainsegmentation-common" },
+    { name = "pygeoops" },
+    { name = "shapelysmooth" },
+    { name = "tqdm" },
+]
+
+[package.optional-dependencies]
+download = [
+    { name = "gdown" },
+]
+opencv = [
+    { name = "opencv-python" },
+]
+raster = [
+    { name = "rasterio" },
+]
+sam2 = [
     { name = "large-image" },
     { name = "large-image-source-tiff" },
     { name = "large-image-source-tifffile" },
-    { name = "opencv-python" },
-    { name = "pygeoops" },
-    { name = "rasterio" },
     { name = "sam-2" },
-    { name = "shapelysmooth" },
     { name = "torch" },
     { name = "torchvision" },
-    { name = "tqdm" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "gdown", specifier = "==5.2.1" },
+    { name = "gdown", marker = "extra == 'download'", specifier = "==5.2.1" },
     { name = "geopandas", specifier = "==1.1.3" },
     { name = "grainsegmentation-common", editable = "../common" },
-    { name = "large-image", specifier = "==1.34.0" },
-    { name = "large-image-source-tiff", specifier = "==1.34.0" },
-    { name = "large-image-source-tifffile", specifier = "==1.34.0" },
-    { name = "opencv-python", specifier = "==4.13.0.92" },
+    { name = "large-image", marker = "extra == 'sam2'", specifier = "==1.34.0" },
+    { name = "large-image-source-tiff", marker = "extra == 'sam2'", specifier = "==1.34.0" },
+    { name = "large-image-source-tifffile", marker = "extra == 'sam2'", specifier = "==1.34.0" },
+    { name = "opencv-python", marker = "extra == 'opencv'", specifier = "==4.13.0.92" },
     { name = "pygeoops", specifier = "==0.6.0" },
-    { name = "rasterio", specifier = "==1.5.0" },
-    { name = "sam-2", git = "https://github.com/facebookresearch/sam2.git?rev=2b90b9f5ceec907a1c18123530e92e794ad901a4" },
+    { name = "rasterio", marker = "extra == 'raster'", specifier = "==1.5.0" },
+    { name = "sam-2", marker = "extra == 'sam2'", git = "https://github.com/facebookresearch/sam2.git?rev=2b90b9f5ceec907a1c18123530e92e794ad901a4" },
     { name = "shapelysmooth", specifier = "==0.2.1" },
-    { name = "torch", specifier = "==2.10.0" },
-    { name = "torchvision", specifier = "==0.25.0" },
+    { name = "torch", marker = "extra == 'sam2'", specifier = "==2.10.0" },
+    { name = "torchvision", marker = "extra == 'sam2'", specifier = "==0.25.0" },
     { name = "tqdm", specifier = "==4.67.3" },
 ]
+provides-extras = ["download", "opencv", "raster", "sam2"]
 
 [[package]]
 name = "defusedxml"

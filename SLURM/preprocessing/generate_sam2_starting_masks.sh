@@ -29,7 +29,7 @@ cp "$INPUT_PATH" "$WORK_DIR/"
 
 echo "Syncing data prep environment..."
 cd "$REPO_ROOT/src/data_prep"
-uv sync
+uv sync --extra sam2 --extra opencv
 
 echo "Running starting masks script on local storage..."
 uv run --no-sync python -u starting_masks.py \

@@ -28,6 +28,7 @@ cp $GRAINSEG_ROOT/dataset/uncropped/PPL.tif "$WORK_DIR/"
 cp $GRAINSEG_ROOT/dataset/uncropped/PPX*.tif "$WORK_DIR/"
 
 cd "$REPO_ROOT/src/data_prep"
+uv sync
 echo "Running split overlaps script on train..."
 uv run python -u split_overlaps.py \
     --input "$TRAIN_DIR/train_raw.gpkg" \

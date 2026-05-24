@@ -23,6 +23,19 @@ from common.patching import (
 )
 
 MIN_VALIDATION_COVERAGE = 0.10
+_PATCH_LOG_INTERVAL = 100
+
+
+def _progress(message: str) -> None:
+    print(message, flush=True)
+
+
+def _patches_per_region(
+    region_height: int, region_width: int, patch_size: int, stride: int
+) -> int:
+    y_starts = compute_starts(region_height, patch_size, stride)
+    x_starts = compute_starts(region_width, patch_size, stride)
+    return len(y_starts) * len(x_starts)
 
 
 def save_patch(path: Path, patch: np.ndarray) -> None:
@@ -319,15 +332,27 @@ def export_dataset(
     *,
     test: bool = False,
 ) -> None:
+    _progress(f"split_tiff_gpkg_to_yolo: loading image {image_path}")
     image = load_tiff_channel_first(image_path)
+    _progress(f"split_tiff_gpkg_to_yolo: loading polygons {polygons_path}")
     polygons = _normalize_polygons_to_image_space(_load_polygons(polygons_path))
-    _, height, width = image.shape
+    channels, height, width = image.shape
+    _progress(
+        f"split_tiff_gpkg_to_yolo: image shape ({channels}, {height}, {width}), "
+        f"{len(polygons)} polygon(s)"
+    )
 
     region_bounds = _region_bounds(height, width, tile_size)
+    _progress(
+        f"split_tiff_gpkg_to_yolo: {len(region_bounds)} region(s), "
+        f"patch_size={patch_size}, stride={stride}, output_dir={output_dir}"
+    )
     if test:
         region_splits = (("test", np.arange(len(region_bounds), dtype=np.int64)),)
         split_dirs = _prepare_output_dirs(output_dir, ("test",))
+        _progress("split_tiff_gpkg_to_yolo: test mode — exporting all regions to test/")
     else:
+        _progress("split_tiff_gpkg_to_yolo: computing region label coverages...")
         coverages = _compute_region_coverages(region_bounds, polygons)
         train_indices, val_indices = split_region_indices(
             coverages,
@@ -337,14 +362,29 @@ def export_dataset(
         )
         region_splits = (("train", train_indices), ("val", val_indices))
         split_dirs = _prepare_output_dirs(output_dir, ("train", "val"))
+        _progress(
+            f"split_tiff_gpkg_to_yolo: train {train_indices.size} region(s), "
+            f"val {val_indices.size} region(s)"
+        )
     normalized_image_ext = _normalize_image_ext(image_ext)
 
+    total_patches_written = 0
     for split_name, region_indices in region_splits:
         image_dir, label_dir = split_dirs[split_name]
-        for region_idx in region_indices:
-            y0, y1, x0, x1 = region_bounds[int(region_idx)]
+        n_regions = int(region_indices.size)
+        split_patches_written = 0
+        for region_num, region_idx in enumerate(region_indices, start=1):
+            region_idx_int = int(region_idx)
+            y0, y1, x0, x1 = region_bounds[region_idx_int]
             region_height = y1 - y0
             region_width = x1 - x0
+            n_region_patches = _patches_per_region(
+                region_height, region_width, patch_size, stride
+            )
+            _progress(
+                f"split_tiff_gpkg_to_yolo: [{split_name}] region {region_num}/{n_regions} "
+                f"(idx={region_idx_int:04d}) — {n_region_patches} patch(es)"
+            )
             for y_offset in compute_starts(region_height, patch_size, stride):
                 patch_y0 = y0 + y_offset
                 patch_y1 = min(patch_y0 + patch_size, y1)
@@ -354,7 +394,7 @@ def export_dataset(
                     patch_bounds = (patch_y0, patch_y1, patch_x0, patch_x1)
                     patch = _extract_padded_patch(image, patch_bounds, patch_size)
                     stem = (
-                        f"region_{int(region_idx):04d}_y{patch_y0:05d}_x{patch_x0:05d}"
+                        f"region_{region_idx_int:04d}_y{patch_y0:05d}_x{patch_x0:05d}"
                     )
                     save_patch(image_dir / f"{stem}{normalized_image_ext}", patch)
                     rows = build_yolo_rows(
@@ -363,6 +403,22 @@ def export_dataset(
                         patch_size=patch_size,
                     )
                     _write_label_file(label_dir / f"{stem}.txt", rows)
+                    split_patches_written += 1
+                    total_patches_written += 1
+                    if total_patches_written % _PATCH_LOG_INTERVAL == 0:
+                        _progress(
+                            f"split_tiff_gpkg_to_yolo: [{split_name}] "
+                            f"{total_patches_written} patch(es) written "
+                            f"(region {region_num}/{n_regions})"
+                        )
+        _progress(
+            f"split_tiff_gpkg_to_yolo: [{split_name}] finished — "
+            f"{split_patches_written} patch(es) written"
+        )
+    _progress(
+        f"split_tiff_gpkg_to_yolo: done — {total_patches_written} patch(es) "
+        f"under {output_dir}"
+    )
 
 
 def main(argv: list[str] | None = None) -> None:

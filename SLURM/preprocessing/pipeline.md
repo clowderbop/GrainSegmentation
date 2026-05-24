@@ -16,14 +16,14 @@ Run from the repo root (`GrainSegmentation/`). Persistent data lives under `$(gr
 7. **`rasterize_labels.sh`** (submits **`rasterize_polygons.sh`**)
   `train_labels.gpkg` + `train_PPL.tif` → `train_labels.tif`; `test_labels.gpkg` + `test_PPL.tif` → `test_labels.tif`. Required before U-Net training.
 8. **`create_patch_datasets.sh`**
-  Full mosaics + `*_labels.gpkg` → `dataset/train/patches/{PPL,PPLPPXblend,PPL+PPXblend,PPL+AllPPX}/` and `dataset/test/patches/...` (YOLO train/val/test layouts). Also writes test `unet_from_yolo/{variant}/` crops and manifests when run end-to-end.
+  Full mosaics + `*_labels.gpkg` → `dataset/train/patches/{PPL,PPLPPXblend,PPL+PPXblend,PPL+AllPPX}/` and `dataset/test/patches/...` (YOLO train/val/test layouts). Also writes patch manifests, YOLO `data.yaml` files, test `unet_from_yolo/{variant}/` crops, and `dataset/{train,test}/manifests/{variant}.whole.json` when run end-to-end.
 
-9. **Write dataset manifests** (once per scratch tree, or after manual file changes)
+9. **Regenerate manifests only** (optional, after manual file changes without re-patchifying)
 
   From the repo root:
 
   ```bash
-  GRAINSEG_ROOT="$(grainseg_root)"   # or export SCRATCH first
+  export GRAINSEG_ROOT="${SCRATCH:-/scratch/$USER}/GrainSeg" # or export SCRATCH first
 
   uv run --directory src/data_prep python write_whole_manifests.py \
     --grainseg-root "$GRAINSEG_ROOT"
@@ -34,7 +34,7 @@ Run from the repo root (`GrainSegmentation/`). Persistent data lives under `$(gr
     --write-unet-manifests
   ```
 
-  Produces `dataset/{train,test}/manifests/{variant}.whole.json`, `dataset/{train,test}/patches/{variant}/manifest.json`, and `dataset/test/unet_from_yolo/{variant}/manifest.json`. See `docs/manifests.md` and README “Dataset contracts”.
+  See `docs/manifests.md` and README “Dataset contracts”.
 
 ## Downstream use
 

@@ -151,4 +151,8 @@ uv run --no-sync python -u write_patch_manifests.py \
     --write-yolo-yamls \
     --write-unet-manifests
 
+echo "Writing whole-section manifests (all variants, train and test)..."
+uv run --no-sync python -u write_whole_manifests.py \
+    --grainseg-root "$GRAINSEG_ROOT"
+
 echo "Done!"

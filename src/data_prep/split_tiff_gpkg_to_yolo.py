@@ -30,6 +30,7 @@ def save_patch(path: Path, patch: np.ndarray) -> None:
         path,
         np.clip(patch, 0, 255).astype(np.uint8, copy=False),
         metadata={"axes": "CYX"},
+        compression="deflate",
     )
 
 

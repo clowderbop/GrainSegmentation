@@ -283,7 +283,7 @@ dev = [
 dev = [
     { name = "grainsegmentation-common", editable = "src/common" },
     { name = "pytest", specifier = "==9.0.3" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "ruff", specifier = "==0.15.13" },
     { name = "unet-pipeline", editable = "src/unet" },
     { name = "yolo", editable = "src/yolo" },

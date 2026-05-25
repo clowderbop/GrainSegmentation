@@ -128,11 +128,36 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _print_val_metric_summary(metrics: Any) -> None:
+    for section in ("box", "seg", "mask"):
+        block = _optional_metric_attr(metrics, section)
+        if block is None:
+            continue
+        map_all = _optional_metric_attr(block, "map")
+        map50 = _optional_metric_attr(block, "map50")
+        map75 = _optional_metric_attr(block, "map75")
+        if map_all is None and map50 is None and map75 is None:
+            continue
+        parts: list[str] = []
+        if map_all is not None:
+            parts.append(f"mAP50-95={float(map_all):.4f}")
+        if map50 is not None:
+            parts.append(f"mAP50={float(map50):.4f}")
+        if map75 is not None:
+            parts.append(f"mAP75={float(map75):.4f}")
+        print(f"{section}: " + " ".join(parts))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
     data_yaml = _resolve_data_yaml(args)
+    print(
+        f"YOLO validation: weights={Path(args.weights).resolve()}, "
+        f"data={data_yaml}, split=test"
+    )
     metrics = run_val(args, data_yaml)
+    _print_val_metric_summary(metrics)
     write_val_metrics_json(metrics, project=args.project, name=args.name)
 
 

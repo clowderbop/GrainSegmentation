@@ -188,7 +188,9 @@ def evaluate_instance_samples(
     extras: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     sample_rows: list[dict[str, Any]] = []
-    for sample in samples:
+    n_samples = len(samples)
+    for idx, sample in enumerate(samples):
+        print(f"Evaluating {sample.sample_id} ({idx + 1}/{n_samples})...")
         height, width = image_dimensions(sample.image_path)
         gt_map = load_gt_instance_map(sample, image_width=width, image_height=height)
         pred_map = load_pred_instance_map(sample)
@@ -206,6 +208,11 @@ def evaluate_instance_samples(
         }
         gt_n = count_instances(gt_map)
         pred_n = count_instances(pred_map)
+        print(
+            f"{sample.sample_id}: aji={metrics['aji']:.4f} "
+            f"f1_iou50={metrics['f1_iou50']:.4f} "
+            f"gt={gt_n} pred={pred_n}"
+        )
         sample_rows.append(
             build_sample_row(
                 sample.sample_id,
@@ -296,6 +303,10 @@ def _resolve_eval_samples(args: argparse.Namespace) -> list[InstanceEvalSample]:
 def main() -> None:
     args = _parse_args()
     samples = _resolve_eval_samples(args)
+    print(
+        f"Instance evaluation: {len(samples)} sample(s), "
+        f"unit={args.unit}, model_type={args.model_type}"
+    )
 
     report = evaluate_instance_samples(
         samples,
@@ -304,8 +315,14 @@ def main() -> None:
         unit=args.unit,
         extras={"sample_count": len(samples)},
     )
+    mean = report.get("mean")
+    if mean is not None:
+        print(
+            f"mean: aji={mean['aji']:.4f} f1_iou50={mean['f1_iou50']:.4f}"
+        )
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
+    print(f"Wrote instance metrics to {args.output_json}")
 
 
 if __name__ == "__main__":

@@ -307,10 +307,16 @@ def _run_patch_predict_from_manifest(
             f"--variant {args.variant!r} does not match manifest {doc.variant!r}"
         )
     pairs = collect_manifest_image_paths(manifest_path)
+    n_samples = len(pairs)
     device = _parse_device(args.device)
     model = YOLO(str(Path(args.weights).resolve()))
+    print(
+        f"YOLO patch predict: {n_samples} sample(s) from manifest {manifest_path}",
+        flush=True,
+    )
 
-    for image_path, sample_id in pairs:
+    for idx, (image_path, sample_id) in enumerate(pairs):
+        print(f"Predicting {sample_id} ({idx + 1}/{n_samples})...", flush=True)
         image = load_image_for_yolo(image_path)
         h, w = int(image.shape[0]), int(image.shape[1])
         results = model.predict(
@@ -353,11 +359,14 @@ def run_patch_predict(args: argparse.Namespace, data_yaml: Path | None) -> None:
 
     dataset_root, config = load_yaml_dataset_config(data_yaml)
     image_paths = collect_yolo_patch_image_paths(dataset_root, config)
+    n_samples = len(image_paths)
 
     device = _parse_device(args.device)
     model = YOLO(str(Path(args.weights).resolve()))
+    print(f"YOLO patch predict: {n_samples} image(s) from {data_yaml}", flush=True)
 
-    for image_path in image_paths:
+    for idx, image_path in enumerate(image_paths):
+        print(f"Predicting {image_path.stem} ({idx + 1}/{n_samples})...", flush=True)
         image = load_image_for_yolo(image_path)
         h, w = int(image.shape[0]), int(image.shape[1])
         results = model.predict(
@@ -390,19 +399,29 @@ def run_whole_predict(args: argparse.Namespace) -> None:
     from sahi import AutoDetectionModel
 
     image_paths = _load_whole_image_paths(args)
+    n_samples = len(image_paths)
 
     device = device_for_sahi(_parse_device(args.device))
+    weights_path = Path(args.weights).resolve()
+    print(
+        f"YOLO whole predict (SAHI): {n_samples} image(s), "
+        f"slice={args.slice_height}x{args.slice_width}, "
+        f"overlap=({args.overlap_height_ratio}, {args.overlap_width_ratio})",
+        flush=True,
+    )
+    print(f"Loading detection model from {weights_path}...", flush=True)
     detection_model = AutoDetectionModel.from_pretrained(
         model_type="ultralytics",
-        model_path=str(Path(args.weights).resolve()),
+        model_path=str(weights_path),
         confidence_threshold=args.conf,
         device=device,
         image_size=args.imgsz,
     )
 
-    for tiff_path in image_paths:
+    for idx, tiff_path in enumerate(image_paths):
         if not tiff_path.is_file():
             raise FileNotFoundError(f"Image not found: {tiff_path}")
+        print(f"Predicting {tiff_path.stem} ({idx + 1}/{n_samples})...", flush=True)
         image = load_image_for_yolo(tiff_path)
         height, width = image.shape[:2]
         result = _get_sliced_prediction_preserve_channels(

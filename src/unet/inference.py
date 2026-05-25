@@ -65,12 +65,17 @@ def predict_full_image(
             coords.append((y, x))
 
     num_inputs = len(inputs)
+    num_patches = len(patches)
+    num_batches = (num_patches + batch_size - 1) // batch_size
+    print(
+        f"Sliding-window inference: {num_patches} patches in {num_batches} batches "
+        f"(image {h}x{w}, patch_size={patch_size}, stride={stride}, batch_size={batch_size})"
+    )
+    next_report_pct = 0.0
 
-
-    for i in range(0, len(patches), batch_size):
+    for batch_idx, i in enumerate(range(0, num_patches, batch_size)):
         batch_patches = patches[i : i + batch_size]
         batch_coords = coords[i : i + batch_size]
-
 
         model_inputs = []
         for inp_idx in range(num_inputs):
@@ -87,6 +92,15 @@ def predict_full_image(
                 preds[b_idx] * window
             )
             weight_map[y : y + patch_size, x : x + patch_size] += window
+
+        progress = (batch_idx + 1) / num_batches
+        if progress >= next_report_pct or batch_idx == num_batches - 1:
+            print(
+                f"  inference batches {batch_idx + 1}/{num_batches} "
+                f"({100.0 * progress:.0f}%)"
+            )
+            while next_report_pct <= progress:
+                next_report_pct += 0.1
 
 
     prediction_map /= weight_map

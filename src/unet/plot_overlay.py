@@ -113,11 +113,25 @@ def generate_qualitative_overlay(
     labels: list[str],
     output_path: str,
 ) -> None:
+    print(
+        f"Qualitative overlay: image={image_path}, gt={gt_path}, "
+        f"{len(pred_paths)} prediction(s)"
+    )
+    print("Loading image and masks...")
     rgb_img = load_tiff_rgb_hwc_float(image_path)
     gt_mask = load_tiff_single_channel_mask(gt_path)
 
     preds = [load_tiff_single_channel_mask(pp) for pp in pred_paths]
 
+    height, width = rgb_img.shape[:2]
+    longest = max(height, width)
+    if longest > OVERLAY_MAX_DIM:
+        scale = OVERLAY_MAX_DIM / float(longest)
+        print(
+            f"Resizing overlay from {height}x{width} to "
+            f"{max(1, int(round(height * scale)))}x"
+            f"{max(1, int(round(width * scale)))} (max_dim={OVERLAY_MAX_DIM})"
+        )
     rgb_img, gt_mask, preds = _resize_overlay_arrays(rgb_img, gt_mask, preds)
     gt_output_path, pred_output_paths = _build_overlay_output_paths(output_path, labels)
 

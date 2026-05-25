@@ -73,9 +73,15 @@ def _resolve_manifest_pairs(args: argparse.Namespace) -> list[tuple[Path, Path, 
 def run_evaluate_mask_ap(args: argparse.Namespace) -> dict[str, Any]:
     pred_dir = args.pred_dir.resolve()
     pairs = _resolve_manifest_pairs(args)
+    n_samples = len(pairs)
+    print(
+        f"COCO mask AP evaluation: {n_samples} sample(s), "
+        f"variant={args.variant}, pred_dir={pred_dir}"
+    )
     sample_rows: list[dict[str, Any]] = []
 
     for image_id, (image_path, gpkg_path, sample_id) in enumerate(pairs, start=1):
+        print(f"Evaluating {sample_id} ({image_id}/{n_samples})...")
         if not image_path.is_file():
             raise FileNotFoundError(f"Image not found: {image_path}")
         if not gpkg_path.is_file():
@@ -158,6 +164,12 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("Provide --manifest or both --image and --gt-gpkg")
 
     report = run_evaluate_mask_ap(args)
+    mean_ap = report.get("mean_coco_mask_ap") or {}
+    mean_ap_val = mean_ap.get("mean_AP")
+    if mean_ap_val is not None:
+        mean_ap50 = mean_ap.get("mean_AP50")
+        ap50_str = f"{float(mean_ap50):.4f}" if mean_ap50 is not None else "n/a"
+        print(f"mean: AP={float(mean_ap_val):.4f} AP50={ap50_str}")
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(
         json.dumps(json_safe_for_dump(report), indent=2, allow_nan=False),

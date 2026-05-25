@@ -98,7 +98,15 @@ def run_export_sahi_visualization(args: argparse.Namespace) -> None:
     out_root = args.output_dir.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    for image_path, sample_id in _resolve_manifest_image_samples(args):
+    samples = _resolve_manifest_image_samples(args)
+    n_samples = len(samples)
+    print(
+        f"SAHI visualization export: {n_samples} sample(s) -> {out_root} "
+        f"(pred_dir={pred_dir})"
+    )
+
+    for idx, (image_path, sample_id) in enumerate(samples):
+        print(f"Rendering visualization {sample_id} ({idx + 1}/{n_samples})...")
         pred_path = pred_dir / "instances" / instance_map_filename(sample_id)
         if not pred_path.is_file():
             pred_path = pred_dir / "instances" / instance_map_filename(image_path.stem)
@@ -107,6 +115,7 @@ def run_export_sahi_visualization(args: argparse.Namespace) -> None:
             pred_instances_path=pred_path,
             sample_out_dir=out_root / image_path.stem,
         )
+    print(f"Wrote {n_samples} visualization(s) under {out_root}")
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:

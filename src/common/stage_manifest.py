@@ -49,9 +49,18 @@ def stage_manifest(
         raise ValueError(f"Unsupported path_base for staging: {doc.path_base!r}")
 
     staged_rows: list[ManifestSampleRow] = []
-    for row in doc.samples:
-        if sample_ids is not None and row.sample_id not in sample_ids:
-            continue
+    rows_to_stage = [
+        row
+        for row in doc.samples
+        if sample_ids is None or row.sample_id in sample_ids
+    ]
+    n_rows = len(rows_to_stage)
+    print(
+        f"Staging {n_rows} manifest sample(s) to {work_root} "
+        f"(variant={doc.variant}, unit={doc.unit})..."
+    )
+    for idx, row in enumerate(rows_to_stage):
+        print(f"Staging sample {row.sample_id} ({idx + 1}/{n_rows})...")
 
         new_image: str | None = None
         new_images: tuple[str, ...] | None = None
@@ -59,6 +68,7 @@ def stage_manifest(
         if row.image is not None:
             src = resolve_manifest_path(row.image, source_base)
             dest = work_root / Path(row.image).name
+            print(f"  copy image: {src.name} -> {dest}")
             _copy_asset(src, dest)
             new_image = dest.name if flatten_images else str(dest.relative_to(work_root))
 
@@ -67,6 +77,7 @@ def stage_manifest(
             for rel in row.images:
                 src = resolve_manifest_path(rel, source_base)
                 dest = work_root / Path(rel).name
+                print(f"  copy channel: {src.name} -> {dest}")
                 _copy_asset(src, dest)
                 copied.append(dest.name if flatten_images else str(dest.relative_to(work_root)))
             new_images = tuple(copied)
@@ -75,6 +86,7 @@ def stage_manifest(
         if copy_masks and row.mask is not None:
             src = resolve_manifest_path(row.mask, source_base)
             dest = work_root / Path(row.mask).name
+            print(f"  copy mask: {src.name} -> {dest}")
             _copy_asset(src, dest)
             new_mask = dest.name
 
@@ -148,16 +160,23 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "run":
             sample_ids = set(args.sample_id) if args.sample_id else None
+            manifest_path = args.manifest.resolve()
+            work_root = args.work_root.resolve()
+            print(f"Staging manifest {manifest_path} -> {work_root}")
             out = stage_manifest_to_file(
-                args.manifest.resolve(),
-                args.work_root.resolve(),
+                manifest_path,
+                work_root,
                 sample_ids=sample_ids,
             )
-            print(out)
+            print(f"Wrote staged manifest to {out}")
             return 0
         if args.command == "write-eval":
             source = load_dataset_manifest(args.source)
             work_root = args.work_root or args.output.parent
+            print(
+                f"Building eval manifest: {len(source.samples)} sample(s), "
+                f"pred_instances_dir={args.pred_instances_dir.resolve()}"
+            )
             eval_doc = build_eval_manifest(
                 source,
                 pred_instances_dir=args.pred_instances_dir,
@@ -165,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
                 gt_gpkg=args.gt_gpkg,
             )
             write_dataset_manifest(args.output, eval_doc)
-            print(args.output)
+            print(f"Wrote eval manifest to {args.output}")
             return 0
     except (ValueError, FileNotFoundError, OSError) as exc:
         print(exc, file=sys.stderr)

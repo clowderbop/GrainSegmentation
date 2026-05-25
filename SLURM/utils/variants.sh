@@ -11,8 +11,15 @@ if [ -z "${REPO_ROOT:-}" ]; then
     REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fi
 
+# After prepare_env + install_unet_tensorflow_wheel, workspace-root `uv run` pulls YOLO/torch
+# and upgrades NumPy/protobuf past TensorFlow's pin. Use the U-Net project venv with --no-sync
+# when UV_PROJECT_ENVIRONMENT is set (see SLURM/utils/manifest_shell.sh).
 _variants_cli() {
-    uv run --directory "$REPO_ROOT" python -m common.variants "$@"
+    if [ -n "${UV_PROJECT_ENVIRONMENT:-}" ]; then
+        uv run --directory "$REPO_ROOT/src/unet" --no-sync python -m common.variants "$@"
+    else
+        uv run --directory "$REPO_ROOT" python -m common.variants "$@"
+    fi
 }
 
 # shellcheck disable=SC2034

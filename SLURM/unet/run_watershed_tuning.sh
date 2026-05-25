@@ -108,9 +108,6 @@ fi
 source "$SLURM_ROOT/prepare_env.sh"
 export TF_CPP_MIN_LOG_LEVEL=2
 
-WATERSHED_SUBDIR="$(watershed_tune_subdir_for_variant "$VARIANT")"
-VARIANT_OUTPUT_DIR="$OUTPUT_DIR/$WATERSHED_SUBDIR"
-
 WORK_DIR="${TMPDIR:-/tmp}/tune_watershed_${SLURM_JOB_ID:-$$}"
 mkdir -p "$WORK_DIR"
 cp "$GT_GPKG" "$WORK_DIR/gt.gpkg"
@@ -123,14 +120,16 @@ uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
 STAGED_MANIFEST="$LOCAL_IMAGE_DIR/manifest.json"
 require_file "$STAGED_MANIFEST" "Staged train manifest missing"
 
+cd "$REPO_ROOT/src/unet"
+echo "Syncing U-Net environment..."
+uv sync
+
+WATERSHED_SUBDIR="$(watershed_tune_subdir_for_variant "$VARIANT")"
+VARIANT_OUTPUT_DIR="$OUTPUT_DIR/$WATERSHED_SUBDIR"
 mkdir -p "$VARIANT_OUTPUT_DIR"
 JOB_TAG="${SLURM_JOB_ID:-manual}"
 OUT_CSV="$VARIANT_OUTPUT_DIR/watershed_grid_${JOB_TAG}.csv"
 OUT_JSON="$VARIANT_OUTPUT_DIR/watershed_best_${JOB_TAG}.json"
-
-cd "$REPO_ROOT/src/unet"
-echo "Syncing U-Net environment..."
-uv sync
 
 install_unet_tensorflow_wheel
 

@@ -13,11 +13,13 @@ from common.evaluate_instances import collect_manifest_samples
 from common.manifest_io import (
     DatasetManifest,
     ManifestSampleRow,
+    build_eval_manifest,
     build_unet_whole_manifest,
     build_yolo_whole_manifest,
     whole_manifest_overlay_anchor,
     collect_manifest_unet_samples,
     load_dataset_manifest,
+    resolve_row_path,
     validate_dataset_manifest,
     write_dataset_manifest,
 )
@@ -150,6 +152,36 @@ def test_stage_manifest_integration_file_count(tmp_path: Path) -> None:
     channel_files = [work / name for name in loaded.samples[0].images or ()]
     assert len(channel_files) == 7
     assert all(path.is_file() for path in channel_files)
+
+
+def test_build_eval_manifest_gt_gpkg_overrides_source(tmp_path: Path) -> None:
+    grainseg = _synthetic_grainseg(tmp_path)
+    source = build_unet_whole_manifest(
+        split="train", variant="PPL+AllPPX", grainseg_root=grainseg
+    )
+    assert source.samples[0].gt_gpkg is not None
+
+    pred_root = tmp_path / "run_model"
+    pred_root.mkdir()
+    instances_dir = pred_root / "instances"
+    instances_dir.mkdir()
+    tifffile.imwrite(
+        instances_dir / "train_instances.tif",
+        np.zeros((8, 8), dtype=np.int32),
+    )
+
+    local_gt = tmp_path / "staged" / "train_labels.gpkg"
+    local_gt.parent.mkdir(parents=True)
+    local_gt.write_text("", encoding="utf-8")
+
+    eval_doc = build_eval_manifest(
+        source,
+        pred_instances_dir=instances_dir,
+        manifest_parent=pred_root,
+        gt_gpkg=local_gt,
+    )
+    resolved = resolve_row_path(eval_doc, eval_doc.samples[0].gt_gpkg)
+    assert resolved == local_gt.resolve()
 
 
 def test_collect_manifest_samples_multi_input_anchor(tmp_path: Path) -> None:

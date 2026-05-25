@@ -307,12 +307,13 @@ def build_eval_manifest(
             rel_pred = os.path.relpath(pred_path, manifest_parent)
         except ValueError:
             rel_pred = str(pred_path)
-        gt = row.gt_gpkg
-        if gt is None and gt_gpkg is not None:
+        if gt_gpkg is not None:
             try:
                 gt = os.path.relpath(Path(gt_gpkg).resolve(), manifest_parent)
             except ValueError:
                 gt = str(Path(gt_gpkg).resolve())
+        else:
+            gt = row.gt_gpkg
         rows.append(
             ManifestSampleRow(
                 sample_id=row.sample_id,

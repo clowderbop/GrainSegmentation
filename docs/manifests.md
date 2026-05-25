@@ -118,6 +118,8 @@ uv run python -m common.stage_manifest write-eval \
   --gt-gpkg "$GRAINSEG_ROOT/dataset/train/train_labels.gpkg"
 ```
 
+When `--gt-gpkg` is set, it overrides each sample's `gt_gpkg` from the source manifest (paths are stored relative to the eval manifest's parent directory when possible).
+
 ## Validation
 
 `validate_dataset_manifest` (in `common.manifest_io`) checks schema version, variant registry consistency, `image` vs `images`, and stacked-mosaic exclusions. `src/data_prep/validate_dataset_manifests.py` walks all expected manifest paths on a scratch tree.

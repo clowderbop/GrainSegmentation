@@ -275,8 +275,7 @@ for i in "${!MODEL_PATHS[@]}"; do
     rm -rf "$model_image_dir"
     mkdir -p "$model_image_dir"
     echo "Staging manifest inputs for variant=$variant ($MANIFEST_SPLIT)..."
-    uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
-        "$canonical_manifest" "$model_image_dir"
+    stage_manifest_run_in_unet_env "$canonical_manifest" "$model_image_dir"
 
     predict_cmd=(
         uv run --no-sync python -u -m unet.predict
@@ -329,7 +328,7 @@ for i in "${!MODEL_PATHS[@]}"; do
 
     eval_manifest="$pred_root/eval_manifest.json"
     echo "Model ${MODEL_LABELS[$i]}: write eval manifest"
-    uv run --directory "$REPO_ROOT" python -m common.stage_manifest write-eval \
+    stage_manifest_write_eval_in_unet_env \
         --source "$model_image_dir/manifest.json" \
         --pred-instances-dir "$pred_root/instances" \
         --output "$eval_manifest" \
@@ -356,8 +355,7 @@ require_file "$OVERLAY_CANONICAL" \
 OVERLAY_STAGE="$WORK_DIR/overlay"
 rm -rf "$OVERLAY_STAGE"
 echo "Staging overlay inputs from $OVERLAY_CANONICAL ..."
-uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
-    "$OVERLAY_CANONICAL" "$OVERLAY_STAGE"
+stage_manifest_run_in_unet_env "$OVERLAY_CANONICAL" "$OVERLAY_STAGE"
 export_overlay_env_from_whole_manifest "$OVERLAY_STAGE/manifest.json"
 LOCAL_PPL_IMAGE="$OVERLAY_STAGE/$OVERLAY_IMAGE_REL"
 require_file "$LOCAL_PPL_IMAGE" "Overlay PPL image not found"

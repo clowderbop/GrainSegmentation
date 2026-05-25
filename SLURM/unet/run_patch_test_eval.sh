@@ -19,6 +19,8 @@ source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 source "$SLURM_ROOT/utils/variants.sh"
 # shellcheck source=SLURM/utils/watershed.sh
 source "$SLURM_ROOT/utils/watershed.sh"
+# shellcheck source=SLURM/utils/manifest_shell.sh
+source "$SLURM_ROOT/utils/manifest_shell.sh"
 # shellcheck source=SLURM/utils/tensorflow.sh
 source "$SLURM_ROOT/utils/tensorflow.sh"
 
@@ -126,7 +128,7 @@ fi
 
 EVAL_MANIFEST="$TMP_OUT/eval_manifest.json"
 echo "Building eval manifest..."
-uv run --directory "$REPO_ROOT" python -m common.stage_manifest write-eval \
+stage_manifest_write_eval_in_unet_env \
     --source "$STAGED_MANIFEST" \
     --pred-instances-dir "$TMP_OUT/instances" \
     --output "$EVAL_MANIFEST" \

@@ -18,6 +18,20 @@ default_whole_labels_gpkg() {
     fi
 }
 
+# Run Python in the U-Net project venv without uv sync. Use after install_unet_tensorflow_wheel
+# so workspace sync does not pull YOLO/torch and upgrade NumPy past TensorFlow's pin.
+run_common_in_unet_env() {
+    uv run --directory "$REPO_ROOT/src/unet" --no-sync python "$@"
+}
+
+stage_manifest_run_in_unet_env() {
+    run_common_in_unet_env -m common.stage_manifest run "$@"
+}
+
+stage_manifest_write_eval_in_unet_env() {
+    run_common_in_unet_env -m common.stage_manifest write-eval "$@"
+}
+
 export_overlay_env_from_whole_manifest() {
     local manifest_path="$1"
     if [ ! -f "$manifest_path" ]; then
@@ -26,7 +40,7 @@ export_overlay_env_from_whole_manifest() {
     fi
     # shellcheck disable=SC2034
     eval "$(
-        uv run --directory "$REPO_ROOT" python -c "
+        run_common_in_unet_env -c "
 import shlex
 import sys
 from pathlib import Path

@@ -86,9 +86,9 @@ $SCRATCH/GrainSeg/
 │       └── watershed_best_*.json
 ├── tuning_logs/                                         # U-Net hyperparameter search (per run_name)
 └── eval/                                                # SLURM eval job outputs (layout varies by script)
-    ├── cc_val/, watershed_val/                          # train-section U-Net instance comparison
-    ├── unet_test/                                       # whole-section test eval
-    ├── unet_patches/{variant}/…/
+    ├── instance_val_cc/, instance_val_watershed/        # train-section CC vs tuned watershed (submit_cc_vs_watershed_train_eval.sh)
+    ├── unet_test/                                       # held-out whole-section test eval (submit_whole_test_eval.sh)
+    ├── unet_patches/{variant}/…/                        # patch test eval (submit_patch_test_eval.sh)
     └── yolo_patches/{variant}/…/
 ```
 
@@ -159,7 +159,7 @@ After manifests exist and models are trained, compare CC vs watershed on the tra
 sbatch SLURM/unet/submit_cc_vs_watershed_train_eval.sh
 ```
 
-Expect both jobs to evaluate all four variants via staged whole manifests (no stacked-TIFF directory scan).
+Expect both jobs to evaluate all four variants via staged whole manifests (no stacked-TIFF directory scan). Outputs go to `eval/instance_val_cc/` and `eval/instance_val_watershed/`.
 
 ## Dataset
 

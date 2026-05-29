@@ -480,9 +480,11 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.unit == "patch":
-        data_yaml = _resolve_data_yaml(args)
-        if data_yaml is None and args.manifest is None:
-            if args.variant is None or _resolve_patch_manifest(args) is None:
+        if _resolve_patch_manifest(args) is not None:
+            data_yaml = None
+        else:
+            data_yaml = _resolve_data_yaml(args)
+            if data_yaml is None:
                 parser.error(
                     "patch mode requires --manifest, --variant (with patch "
                     "manifest on scratch), or --data"

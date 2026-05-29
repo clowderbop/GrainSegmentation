@@ -22,13 +22,26 @@ Jobs stage patch manifests (and listed images/labels) into `$TMPDIR` for train a
    - Requires `runs/yolo26-seg/{variant}/weights/best.pt` and `dataset/test/test_labels.gpkg`.
    - Outputs: `eval/yolo_patches/{variant}/{job_id}/`, `eval/yolo_{variant}/` (override with `OUTPUT_ROOT` / `SAHI_OUT` env on the run scripts).
 
-## Variant memory (submit script)
+## Variant memory
 
-| Variant | Approx. `sbatch --mem` |
-|---------|-------------------------|
+Training (`submit_tune_or_train_variants.sh`):
+
+| Variant | `sbatch --mem` |
+|---------|----------------|
 | `PPL`, `PPLPPXblend` | 200G |
 | `PPL+PPXblend` | 350G |
 | `PPL+AllPPX` | 1000G |
+
+Whole-section SAHI test (`submit_test_evaluations.sh` — higher than train because
+`yolo.predict` materializes full-resolution mask stacks):
+
+| Variant | `sbatch --mem` |
+|---------|----------------|
+| `PPL`, `PPLPPXblend` | 400G |
+| `PPL+PPXblend` | 500G |
+| `PPL+AllPPX` | 1000G |
+
+`sbatch --mem=…` on the command line overrides `#SBATCH --mem` in the run script.
 
 ## Example commands
 
@@ -48,7 +61,7 @@ Direct run (one variant, after weights exist):
 ```bash
 export VARIANT='PPL+AllPPX'
 sbatch --export=ALL,VARIANT SLURM/yolo/run_patch_test_eval.sh
-sbatch --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
+sbatch --mem=1000G --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
 ```
 
 ## Upstream / downstream

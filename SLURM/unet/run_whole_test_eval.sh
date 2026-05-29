@@ -36,6 +36,38 @@ MASK_STEM_SUFFIX="_labels"
 
 WATERSHED_TUNE_ROOT=""
 INSTANCE_METHOD="${INSTANCE_METHOD:-watershed}"
+RESOLVED_WATERSHED_JSON=""
+
+function log_watershed_extract_config {
+    local model_label="$1"
+    local resolved_ws_json="${2:-}"
+
+    if [[ -z "$resolved_ws_json" ]]; then
+        echo "Model $model_label: watershed (no tune JSON; extract_instances CLI defaults)"
+        return 0
+    fi
+
+    echo "Model $model_label: watershed tune JSON: $resolved_ws_json"
+    python3 - "$resolved_ws_json" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    payload = json.load(handle)
+best_params = payload.get("best_params")
+if not isinstance(best_params, dict):
+    raise SystemExit(f"JSON missing best_params object: {sys.argv[1]}")
+keys = (
+    "min_distance",
+    "boundary_dilate_iter",
+    "watershed_connectivity",
+    "min_area_px",
+    "exclude_border",
+    "ridge_level",
+)
+print("  " + ", ".join(f"{key}={best_params[key]!r}" for key in keys))
+PY
+}
 
 function usage {
     cat <<'EOF' >&2
@@ -76,6 +108,8 @@ function build_extract_instance_args {
     local model_path="$1"
     local explicit_ws="${2:-}"
 
+    RESOLVED_WATERSHED_JSON=""
+
     if [[ "$INSTANCE_METHOD" == "cc" ]]; then
         extract_args=(--instance-method cc)
         if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
@@ -94,6 +128,7 @@ function build_extract_instance_args {
         return 1
     fi
 
+    RESOLVED_WATERSHED_JSON="$resolved_ws_json"
     build_watershed_extract_args "$resolved_ws_json" "$WATERSHED_JSON_HELPER"
 }
 
@@ -256,6 +291,14 @@ fi
 
 WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
 
+if [[ "$INSTANCE_METHOD" == "watershed" ]]; then
+    if [[ -n "$WATERSHED_TUNE_ROOT" ]]; then
+        echo "Watershed tune root: $WATERSHED_TUNE_ROOT (per-variant latest watershed_best_*.json when config has no explicit path)"
+    else
+        echo "Watershed tune root: (not set); per-model explicit JSON column or extract_instances CLI defaults"
+    fi
+fi
+
 echo "Running staged evaluations (instance_method=$INSTANCE_METHOD: predict -> extract -> semantic -> instances)..."
 for i in "${!MODEL_PATHS[@]}"; do
     model_path="${MODEL_PATHS[$i]}"
@@ -297,6 +340,9 @@ for i in "${!MODEL_PATHS[@]}"; do
     explicit_ws="${MODEL_WATERSHED_JSONS[$i]:-}"
     if ! build_extract_instance_args "$model_path" "$explicit_ws"; then
         exit 1
+    fi
+    if [[ "$INSTANCE_METHOD" == "watershed" ]]; then
+        log_watershed_extract_config "${MODEL_LABELS[$i]}" "$RESOLVED_WATERSHED_JSON"
     fi
 
     echo "Model ${MODEL_LABELS[$i]}: predict"

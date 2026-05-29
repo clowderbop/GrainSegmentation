@@ -8,11 +8,23 @@ _slurm_utils="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$_slurm_utils/variants.sh"
 unset _slurm_utils
 
+# prepare_env sets UV_PROJECT_ENVIRONMENT; variants.sh then uses the U-Net venv with
+# --no-sync. YOLO-only jobs never run install_unet_tensorflow_wheel, so sync common first.
+ensure_yolo_job_common_env() {
+    if [ -n "${UV_PROJECT_ENVIRONMENT:-}" ] && [ -z "${YOLO_JOB_COMMON_ENV_READY:-}" ]; then
+        echo "Syncing U-Net project env for common CLI..."
+        uv sync --directory "$REPO_ROOT/src/unet"
+        YOLO_JOB_COMMON_ENV_READY=1
+    fi
+}
+
 stage_yolo_patch_dataset() {
     local variant="$1"
     local split="$2"
     local grainseg
     grainseg="$(grainseg_root)"
+
+    ensure_yolo_job_common_env
 
     if ! yolo_dataset_names_for_variant "$variant"; then
         return 1

@@ -4,3 +4,17 @@ Always read the README before starting.
 Always use `uv` as the Python package manager and execution tool.
 Agents for this project run on a SLURM cluster node. Do not run long, intensive, or training jobs directly on the node. Keep direct terminal commands lightweight. For substantial work, use `srun` for interactive runs or `sbatch` for scheduled jobs.
 Use brief conventional commits for commit messages.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as markdown under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical triage roles with default label strings. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.

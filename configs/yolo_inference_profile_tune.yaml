@@ -1,0 +1,25 @@
+# Staged YOLO inference profile search on train whole section (ADR 0005).
+# Stage 1: SAHI slice-merge knobs; conf and mask_threshold come from
+# configs/test_inference.yaml (committed test inference recipe baseline).
+# Stage 2: conf and mask_threshold with stage-1 winners fixed.
+
+stage1:
+  postprocess_type:
+    - GREEDYNMM
+    - NMM
+  match_metric:
+    - IOS
+  match_threshold:
+    - 0.4
+    - 0.5
+    - 0.6
+
+stage2:
+  conf:
+    - 0.15
+    - 0.25
+    - 0.35
+  mask_threshold:
+    - 0.4
+    - 0.5
+    - 0.6

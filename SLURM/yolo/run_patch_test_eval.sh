@@ -65,6 +65,7 @@ uv run python -u -m yolo.predict \
     --device "$DEVICE" \
     --imgsz "$IMGSZ" \
     --conf "${CONF:-$YOLO_CONF}" \
+    --mask-threshold "${MASK_THRESHOLD:-$YOLO_MASK_THRESHOLD}" \
     --output-dir "$OUT_ROOT"
 
 EVAL_MANIFEST="$OUT_ROOT/eval_manifest.json"

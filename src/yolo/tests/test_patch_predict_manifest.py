@@ -73,6 +73,7 @@ def test_patch_predict_manifest_skips_dataset_yaml(
         variant="PPL",
         imgsz=1024,
         conf=0.25,
+        mask_threshold=0.5,
         device="cpu",
     )
 
@@ -119,6 +120,7 @@ def test_patch_predict_writes_score_merged_canonical_set(
         variant="PPL",
         imgsz=1024,
         conf=0.25,
+        mask_threshold=0.5,
         device="cpu",
     )
     predict_module._run_patch_predict_from_manifest(args, manifest_path)
@@ -145,6 +147,7 @@ def test_patch_run_provenance_records_score_merge_at_predict(tmp_path: Path) -> 
         variant="PPL",
         imgsz=1024,
         conf=0.25,
+        mask_threshold=0.5,
         device="cpu",
         manifest=manifest_path,
         data=None,

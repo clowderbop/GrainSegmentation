@@ -9,7 +9,12 @@ patch:
   imgsz: 1024
 
 yolo:
+  # YOLO inference profile (ADR 0005): baseline until profile selection promotes winners.
   conf: 0.25
+  mask_threshold: 0.5
+  postprocess_type: GREEDYNMM
+  match_metric: IOS
+  match_threshold: 0.5
   patch:
     batch: 16
   val:

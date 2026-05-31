@@ -20,6 +20,7 @@ from common.prediction_set import (
     save_prediction_set,
 )
 from common.run_provenance import write_run_provenance
+from common.test_inference import load_test_inference_recipe, sahi_overlap_ratio
 from common.manifest_io import (
     collect_manifest_image_paths,
     default_patch_manifest_path,
@@ -137,6 +138,24 @@ def _perform_ultralytics_inference_preserve_channels(
     detection_model._original_shape = image.shape
 
 
+def _yolo_inference_profile_provenance(
+    args: argparse.Namespace, *, include_sahi_merge: bool = False
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "conf": float(args.conf),
+        "mask_threshold": float(args.mask_threshold),
+    }
+    if include_sahi_merge:
+        payload.update(
+            {
+                "postprocess_type": str(args.postprocess_type),
+                "match_metric": str(args.match_metric),
+                "match_threshold": float(args.match_threshold),
+            }
+        )
+    return payload
+
+
 def _get_sliced_prediction_preserve_channels(
     image: np.ndarray,
     detection_model: Any,
@@ -145,6 +164,9 @@ def _get_sliced_prediction_preserve_channels(
     slice_width: int,
     overlap_height_ratio: float,
     overlap_width_ratio: float,
+    postprocess_type: str,
+    match_metric: str,
+    match_threshold: float,
 ) -> _NumpyPredictionResult:
     from sahi.predict import POSTPROCESS_NAME_TO_CLASS, filter_predictions
     from sahi.slicing import get_slice_bboxes
@@ -159,9 +181,15 @@ def _get_sliced_prediction_preserve_channels(
         overlap_height_ratio=overlap_height_ratio,
         overlap_width_ratio=overlap_width_ratio,
     )
-    postprocess = POSTPROCESS_NAME_TO_CLASS["GREEDYNMM"](
-        match_threshold=0.5,
-        match_metric="IOS",
+    postprocess_key = postprocess_type.upper()
+    if postprocess_key not in POSTPROCESS_NAME_TO_CLASS:
+        raise ValueError(
+            f"Unsupported postprocess_type {postprocess_type!r}; "
+            f"expected one of {sorted(POSTPROCESS_NAME_TO_CLASS)}"
+        )
+    postprocess = POSTPROCESS_NAME_TO_CLASS[postprocess_key](
+        match_threshold=match_threshold,
+        match_metric=match_metric,
         class_agnostic=False,
     )
 
@@ -210,10 +238,11 @@ def _write_patch_prediction_set(
     result: Any,
     height: int,
     width: int,
+    mask_threshold: float,
 ) -> None:
     path = prediction_set_path(output_dir, sample_id)
     proposals = build_yolo_prediction_set_from_ultralytics(
-        result, height=height, width=width
+        result, height=height, width=width, mask_threshold=mask_threshold
     )
     _save_merged_yolo_prediction_set(path, proposals, sample_id=sample_id)
 
@@ -225,10 +254,11 @@ def _write_whole_prediction_set(
     predictions: list[Any],
     height: int,
     width: int,
+    mask_threshold: float,
 ) -> None:
     path = prediction_set_path(output_dir, sample_id)
     proposals = build_yolo_prediction_set_from_sahi_predictions(
-        predictions, height=height, width=width
+        predictions, height=height, width=width, mask_threshold=mask_threshold
     )
     _save_merged_yolo_prediction_set(path, proposals, sample_id=sample_id)
 
@@ -319,6 +349,7 @@ def _run_patch_predict_from_manifest(
             result=result,
             height=h,
             width=w,
+            mask_threshold=float(args.mask_threshold),
         )
 
 
@@ -327,10 +358,10 @@ def _write_patch_run_provenance(args: argparse.Namespace, *, manifest: Path | No
         "producer": "yolo",
         "unit": "patch",
         "weights": str(Path(args.weights).resolve()),
-        "conf": float(args.conf),
         "imgsz": int(args.imgsz),
         "variant": args.variant,
         "score_merge_at_predict": True,
+        **_yolo_inference_profile_provenance(args),
     }
     if manifest is not None:
         payload["manifest"] = str(manifest.resolve())
@@ -380,6 +411,7 @@ def run_patch_predict(args: argparse.Namespace, data_yaml: Path | None) -> None:
             result=result,
             height=h,
             width=w,
+            mask_threshold=float(args.mask_threshold),
         )
 
 
@@ -402,6 +434,7 @@ def run_whole_predict(args: argparse.Namespace) -> None:
         model_type="ultralytics",
         model_path=str(weights_path),
         confidence_threshold=args.conf,
+        mask_threshold=args.mask_threshold,
         device=device,
         image_size=args.imgsz,
     )
@@ -412,7 +445,6 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             "producer": "yolo",
             "unit": "whole",
             "weights": str(weights_path),
-            "conf": float(args.conf),
             "imgsz": int(args.imgsz),
             "slice_height": int(args.slice_height),
             "slice_width": int(args.slice_width),
@@ -420,6 +452,7 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             "overlap_width_ratio": float(args.overlap_width_ratio),
             "variant": args.variant,
             "score_merge_at_predict": True,
+            **_yolo_inference_profile_provenance(args, include_sahi_merge=True),
         },
     )
 
@@ -436,6 +469,9 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             slice_width=args.slice_width,
             overlap_height_ratio=args.overlap_height_ratio,
             overlap_width_ratio=args.overlap_width_ratio,
+            postprocess_type=args.postprocess_type,
+            match_metric=args.match_metric,
+            match_threshold=args.match_threshold,
         )
         _write_whole_prediction_set(
             output_dir=args.output_dir,
@@ -443,6 +479,7 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             predictions=result.object_prediction_list,
             height=height,
             width=width,
+            mask_threshold=float(args.mask_threshold),
         )
 
 
@@ -459,19 +496,53 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data", default=None, type=Path)
     parser.add_argument("--manifest", default=None, type=Path)
     parser.add_argument("--image", default=None, type=Path)
-    parser.add_argument("--imgsz", type=int, default=1024)
-    parser.add_argument("--conf", type=float, default=0.25)
+    parser.add_argument("--imgsz", type=int, default=None)
+    parser.add_argument("--conf", type=float, default=None)
+    parser.add_argument("--mask-threshold", type=float, default=None)
+    parser.add_argument("--postprocess-type", default=None)
+    parser.add_argument("--match-metric", default=None)
+    parser.add_argument("--match-threshold", type=float, default=None)
     parser.add_argument("--device", default="0")
-    parser.add_argument("--slice-height", type=int, default=1024)
-    parser.add_argument("--slice-width", type=int, default=1024)
-    parser.add_argument("--overlap-height-ratio", type=float, default=0.5)
-    parser.add_argument("--overlap-width-ratio", type=float, default=0.5)
+    parser.add_argument("--slice-height", type=int, default=None)
+    parser.add_argument("--slice-width", type=int, default=None)
+    parser.add_argument("--overlap-height-ratio", type=float, default=None)
+    parser.add_argument("--overlap-width-ratio", type=float, default=None)
     return parser
+
+
+def resolve_predict_inference_defaults(
+    args: argparse.Namespace, *, recipe_path: Path | None = None
+) -> argparse.Namespace:
+    """Fill omitted profile flags from the test inference recipe at run time."""
+    recipe = load_test_inference_recipe(recipe_path)
+    profile = recipe.yolo.profile
+    overlap = sahi_overlap_ratio(window=recipe.whole.window, stride=recipe.whole.stride)
+    if args.imgsz is None:
+        args.imgsz = recipe.patch.imgsz
+    if args.conf is None:
+        args.conf = recipe.yolo.conf
+    if args.mask_threshold is None:
+        args.mask_threshold = profile.mask_threshold
+    if args.postprocess_type is None:
+        args.postprocess_type = profile.postprocess_type
+    if args.match_metric is None:
+        args.match_metric = profile.match_metric
+    if args.match_threshold is None:
+        args.match_threshold = profile.match_threshold
+    if args.slice_height is None:
+        args.slice_height = recipe.whole.window
+    if args.slice_width is None:
+        args.slice_width = recipe.whole.window
+    if args.overlap_height_ratio is None:
+        args.overlap_height_ratio = overlap
+    if args.overlap_width_ratio is None:
+        args.overlap_width_ratio = overlap
+    return args
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = _build_arg_parser()
-    args = parser.parse_args(argv)
+    args = resolve_predict_inference_defaults(parser.parse_args(argv))
 
     if args.unit == "patch":
         if _resolve_patch_manifest(args) is not None:

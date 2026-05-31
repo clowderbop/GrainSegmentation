@@ -179,6 +179,7 @@ def build_yolo_prediction_set_from_ultralytics(
     *,
     height: int,
     width: int,
+    mask_threshold: float = 0.5,
 ) -> PredictionSet:
     """Encode Ultralytics proposals one mask at a time (no dense ``(N, H, W)`` stack)."""
     if result.masks is None or len(result.masks) == 0:
@@ -195,7 +196,9 @@ def build_yolo_prediction_set_from_ultralytics(
     for index in range(len(result.masks)):
         mask_plane = mask_tensors[index].detach().cpu().numpy()
         score = float(box_scores[index].detach().cpu().item())
-        binary = masks_hw_to_binary(np.asarray(mask_plane)[None, ...])[0]
+        binary = masks_hw_to_binary(
+            np.asarray(mask_plane)[None, ...], threshold=mask_threshold
+        )[0]
         _append_yolo_detection(detections, binary, score, height=height, width=width)
     return PredictionSet(
         schema_version=1,
@@ -211,6 +214,7 @@ def build_yolo_prediction_set_from_sahi_predictions(
     *,
     height: int,
     width: int,
+    mask_threshold: float = 0.5,
 ) -> PredictionSet:
     """Encode SAHI object predictions one mask at a time (no dense ``(N, H, W)`` stack)."""
     detections: list[dict[str, Any]] = []
@@ -218,10 +222,22 @@ def build_yolo_prediction_set_from_sahi_predictions(
         mask_obj = getattr(pred, "mask", None)
         if mask_obj is None:
             continue
-        mask = getattr(mask_obj, "bool_mask", None)
-        if mask is None:
-            continue
-        binary = np.asarray(mask, dtype=bool)
+        float_mask = getattr(mask_obj, "float_mask", None)
+        if float_mask is not None:
+            binary = masks_hw_to_binary(
+                np.asarray(float_mask, dtype=np.float32)[None, ...],
+                threshold=mask_threshold,
+            )[0]
+        else:
+            mask = getattr(mask_obj, "bool_mask", None)
+            if mask is None:
+                continue
+            # bool_mask is already binarized upstream; score is pred.score (conf), not mask_threshold.
+            binary = np.asarray(mask, dtype=bool)
+            if binary.shape != (height, width):
+                binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(
+                    bool
+                )
         score = _sahi_object_score(pred)
         _append_yolo_detection(detections, binary, score, height=height, width=width)
     return PredictionSet(

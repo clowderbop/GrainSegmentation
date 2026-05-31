@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from common import yaml_validate as yv
 from common.variants import repo_root
 
 _RECIPE_RELATIVE = Path("configs") / "test_inference.yaml"
@@ -37,8 +38,45 @@ class YoloPatchBatchSpec:
 
 
 @dataclass(frozen=True)
+class YoloInferenceProfile:
+    """SAHI slice-merge and mask threshold settings (ADR 0005)."""
+
+    postprocess_type: str
+    match_metric: str
+    match_threshold: float
+    mask_threshold: float
+
+
+@dataclass(frozen=True)
+class YoloInferenceProfileCandidate:
+    """Full YOLO inference profile knobs for tune selection and promote."""
+
+    postprocess_type: str
+    match_metric: str
+    match_threshold: float
+    conf: float
+    mask_threshold: float
+
+    def candidate_id(self) -> str:
+        return (
+            f"{self.postprocess_type}_{self.match_metric}_"
+            f"m{self.match_threshold:g}_c{self.conf:g}_t{self.mask_threshold:g}"
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "postprocess_type": self.postprocess_type,
+            "match_metric": self.match_metric,
+            "match_threshold": self.match_threshold,
+            "conf": self.conf,
+            "mask_threshold": self.mask_threshold,
+        }
+
+
+@dataclass(frozen=True)
 class YoloInferenceSpec:
     conf: float
+    profile: YoloInferenceProfile
     patch: YoloPatchBatchSpec
     val: YoloValSpec
 
@@ -74,71 +112,172 @@ def inference_recipe_path() -> Path:
     return repo_root() / _RECIPE_RELATIVE
 
 
-def _require_mapping(raw: Any, *, context: str) -> dict[str, Any]:
-    if not isinstance(raw, dict):
-        raise ValueError(f"{context} must be a YAML mapping")
-    return raw
+def parse_yolo_inference_profile(yolo_raw: dict[str, Any]) -> YoloInferenceProfile:
+    return YoloInferenceProfile(
+        postprocess_type=yv.require_str(
+            yolo_raw.get("postprocess_type"), context="yolo.postprocess_type"
+        ),
+        match_metric=yv.require_str(
+            yolo_raw.get("match_metric"), context="yolo.match_metric"
+        ),
+        match_threshold=yv.require_float(
+            yolo_raw.get("match_threshold"), context="yolo.match_threshold"
+        ),
+        mask_threshold=yv.require_float(
+            yolo_raw.get("mask_threshold"), context="yolo.mask_threshold"
+        ),
+    )
 
 
-def _require_int(raw: Any, *, context: str) -> int:
-    if isinstance(raw, bool) or not isinstance(raw, int):
-        raise ValueError(f"{context} must be an integer, got {raw!r}")
-    return raw
+def yolo_profile_candidate_from_recipe(
+    recipe: TestInferenceRecipe,
+) -> YoloInferenceProfileCandidate:
+    profile = recipe.yolo.profile
+    return YoloInferenceProfileCandidate(
+        postprocess_type=profile.postprocess_type,
+        match_metric=profile.match_metric,
+        match_threshold=profile.match_threshold,
+        conf=recipe.yolo.conf,
+        mask_threshold=profile.mask_threshold,
+    )
 
 
-def _require_float(raw: Any, *, context: str) -> float:
-    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
-        raise ValueError(f"{context} must be a number, got {raw!r}")
-    return float(raw)
+def parse_yolo_profile_candidate_mapping(
+    profile_raw: dict[str, Any], *, context: str
+) -> YoloInferenceProfileCandidate:
+    prefix = f"{context}." if context else ""
+    profile = parse_yolo_inference_profile(profile_raw)
+    return YoloInferenceProfileCandidate(
+        postprocess_type=profile.postprocess_type,
+        match_metric=profile.match_metric,
+        match_threshold=profile.match_threshold,
+        conf=yv.require_float(profile_raw.get("conf"), context=f"{prefix}conf"),
+        mask_threshold=profile.mask_threshold,
+    )
+
+
+_YOLO_PROFILE_SCALAR_KEYS = frozenset(
+    {
+        "conf",
+        "mask_threshold",
+        "postprocess_type",
+        "match_metric",
+        "match_threshold",
+    }
+)
+
+
+def _yaml_scalar(value: float | str) -> str:
+    if isinstance(value, str):
+        if value.isidentifier() or value.replace("+", "").replace("#", "").isalnum():
+            return value
+        return yaml.safe_dump(value, default_flow_style=True).strip()
+    if isinstance(value, float) and value == int(value):
+        return str(int(value))
+    return repr(value)
+
+
+def rewrite_yolo_profile_in_recipe_text(
+    text: str, candidate: YoloInferenceProfileCandidate
+) -> str:
+    """Update YOLO profile scalars in recipe YAML without rewriting unrelated keys or comments."""
+    replacements = {
+        "conf": candidate.conf,
+        "mask_threshold": candidate.mask_threshold,
+        "postprocess_type": candidate.postprocess_type,
+        "match_metric": candidate.match_metric,
+        "match_threshold": candidate.match_threshold,
+    }
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    in_yolo = False
+    yolo_child_indent: int | None = None
+    for line in lines:
+        stripped = line.lstrip()
+        if not stripped:
+            out.append(line)
+            continue
+        indent = len(line) - len(stripped)
+        if stripped.startswith("yolo:") and indent == 0:
+            in_yolo = True
+            yolo_child_indent = None
+            out.append(line)
+            continue
+        if not in_yolo:
+            out.append(line)
+            continue
+        if stripped.startswith("#"):
+            out.append(line)
+            continue
+        if yolo_child_indent is None:
+            yolo_child_indent = indent
+        elif indent <= yolo_child_indent and indent == 0:
+            in_yolo = False
+            yolo_child_indent = None
+            out.append(line)
+            continue
+        key = stripped.split(":", 1)[0]
+        if key in replacements:
+            newline = "\n" if line.endswith("\n") else ""
+            out.append(
+                f"{' ' * indent}{key}: {_yaml_scalar(replacements.pop(key))}{newline}"
+            )
+            continue
+        out.append(line)
+    if replacements:
+        missing = ", ".join(sorted(replacements))
+        raise ValueError(f"recipe text missing yolo profile keys: {missing}")
+    return "".join(out)
 
 
 def _parse_recipe(raw: dict[str, Any]) -> TestInferenceRecipe:
-    whole_raw = _require_mapping(raw.get("whole"), context="whole")
-    patch_raw = _require_mapping(raw.get("patch"), context="patch")
-    yolo_raw = _require_mapping(raw.get("yolo"), context="yolo")
-    unet_raw = _require_mapping(raw.get("unet"), context="unet")
-    yolo_patch_raw = _require_mapping(yolo_raw.get("patch"), context="yolo.patch")
-    yolo_val_raw = _require_mapping(yolo_raw.get("val"), context="yolo.val")
-    unet_whole_raw = _require_mapping(unet_raw.get("whole"), context="unet.whole")
-    unet_patch_raw = _require_mapping(unet_raw.get("patch"), context="unet.patch")
+    whole_raw = yv.require_mapping(raw.get("whole"), context="whole")
+    patch_raw = yv.require_mapping(raw.get("patch"), context="patch")
+    yolo_raw = yv.require_mapping(raw.get("yolo"), context="yolo")
+    unet_raw = yv.require_mapping(raw.get("unet"), context="unet")
+    yolo_patch_raw = yv.require_mapping(yolo_raw.get("patch"), context="yolo.patch")
+    yolo_val_raw = yv.require_mapping(yolo_raw.get("val"), context="yolo.val")
+    unet_whole_raw = yv.require_mapping(unet_raw.get("whole"), context="unet.whole")
+    unet_patch_raw = yv.require_mapping(unet_raw.get("patch"), context="unet.patch")
 
     return TestInferenceRecipe(
         whole=WholeInferenceSpec(
-            window=_require_int(whole_raw.get("window"), context="whole.window"),
-            stride=_require_int(whole_raw.get("stride"), context="whole.stride"),
+            window=yv.require_int(whole_raw.get("window"), context="whole.window"),
+            stride=yv.require_int(whole_raw.get("stride"), context="whole.stride"),
         ),
         patch=PatchInferenceSpec(
-            imgsz=_require_int(patch_raw.get("imgsz"), context="patch.imgsz"),
+            imgsz=yv.require_int(patch_raw.get("imgsz"), context="patch.imgsz"),
         ),
         yolo=YoloInferenceSpec(
-            conf=_require_float(yolo_raw.get("conf"), context="yolo.conf"),
+            conf=yv.require_float(yolo_raw.get("conf"), context="yolo.conf"),
+            profile=parse_yolo_inference_profile(yolo_raw),
             patch=YoloPatchBatchSpec(
-                batch=_require_int(
+                batch=yv.require_int(
                     yolo_patch_raw.get("batch"), context="yolo.patch.batch"
                 ),
             ),
             val=YoloValSpec(
-                imgsz=_require_int(yolo_val_raw.get("imgsz"), context="yolo.val.imgsz"),
-                batch=_require_int(yolo_val_raw.get("batch"), context="yolo.val.batch"),
+                imgsz=yv.require_int(yolo_val_raw.get("imgsz"), context="yolo.val.imgsz"),
+                batch=yv.require_int(yolo_val_raw.get("batch"), context="yolo.val.batch"),
             ),
         ),
         unet=UnetInferenceSpec(
             whole=UnetWholeInferenceSpec(
-                patch_size=_require_int(
+                patch_size=yv.require_int(
                     unet_whole_raw.get("patch_size"), context="unet.whole.patch_size"
                 ),
-                stride=_require_int(
+                stride=yv.require_int(
                     unet_whole_raw.get("stride"), context="unet.whole.stride"
                 ),
             ),
             patch=UnetPatchInferenceSpec(
-                patch_size=_require_int(
+                patch_size=yv.require_int(
                     unet_patch_raw.get("patch_size"), context="unet.patch.patch_size"
                 ),
-                stride=_require_int(
+                stride=yv.require_int(
                     unet_patch_raw.get("stride"), context="unet.patch.stride"
                 ),
-                batch_size=_require_int(
+                batch_size=yv.require_int(
                     unet_patch_raw.get("batch_size"), context="unet.patch.batch_size"
                 ),
             ),
@@ -153,7 +292,7 @@ def load_test_inference_recipe(
     resolved = path or inference_recipe_path()
     with resolved.open(encoding="utf-8") as handle:
         raw = yaml.safe_load(handle)
-    doc = _require_mapping(raw, context=str(resolved))
+    doc = yv.require_mapping(raw, context=str(resolved))
     return _parse_recipe(doc)
 
 
@@ -174,6 +313,10 @@ def emit_shell_exports(recipe: TestInferenceRecipe | None = None) -> None:
         f"export TEST_SAHI_OVERLAP={overlap}",
         f"export TEST_PATCH_IMGSZ={r.patch.imgsz}",
         f"export YOLO_CONF={r.yolo.conf}",
+        f"export YOLO_MASK_THRESHOLD={r.yolo.profile.mask_threshold}",
+        f"export YOLO_POSTPROCESS_TYPE={r.yolo.profile.postprocess_type}",
+        f"export YOLO_MATCH_METRIC={r.yolo.profile.match_metric}",
+        f"export YOLO_MATCH_THRESHOLD={r.yolo.profile.match_threshold}",
         f"export YOLO_PATCH_BATCH={r.yolo.patch.batch}",
         f"export YOLO_VAL_IMGSZ={r.yolo.val.imgsz}",
         f"export YOLO_VAL_BATCH={r.yolo.val.batch}",

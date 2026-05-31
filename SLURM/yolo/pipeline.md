@@ -15,7 +15,10 @@ Jobs stage patch manifests (and listed images/labels) into `$TMPDIR` for train a
    - Pretrained weights: `pretrained/yolo26l-seg.pt` on scratch.
    - Writes `runs/yolo26-seg/{variant}/weights/best.pt` (and run artifacts under that project dir).
 
-2. **`submit_test_evaluations.sh`** → **`run_patch_test_eval.sh`** + **`run_sahi_test_eval.sh`**
+2. **`submit_inference_profile_tune.sh`** → **`run_inference_profile_tune.sh`** (rare)
+   Staged **profile selection** on the **train** whole section after **all registry** variant weights exist and after **score merge** at predict is in use. Maximizes mean train whole-section **AJI** on canonical **instance prediction sets**, averaged across registry variants; promotes one shared **YOLO inference profile** into `configs/test_inference.yaml` via `yolo.promote_inference_profile`. Re-run when train labels or YOLO weights change materially—not after every single-variant training job. Audit tables: `runs/yolo_inference_profile_tune/<job_id>/stage{1,2}/results.csv` and `winner.json`. Stage 1 holds `conf` and `mask_threshold` from the committed test inference recipe (`configs/test_inference.yaml`); `configs/yolo_inference_profile_tune.yaml` lists only the SAHI merge search axes (stage 2 lists `conf` and `mask_threshold`).
+
+3. **`submit_test_evaluations.sh`** → **`run_patch_test_eval.sh`** + **`run_sahi_test_eval.sh`**
    For each registry variant (`PPL`, `PPLPPXblend`, `PPL+PPXblend`, `PPL+AllPPX`), submits two jobs:
    - **Patch eval** — non-overlapping 1024×1024 test patches via `dataset/test/patches/{variant}/manifest.json`.
    - **Whole eval (SAHI)** — sliding-window inference on the held-out test mosaic; manifest written at job start from registry + test layout.
@@ -52,6 +55,12 @@ bash SLURM/yolo/submit_tune_or_train_variants.sh --all --tune
 # Train all variants with baked-in best hyperparameters (after tuning)
 bash SLURM/yolo/submit_tune_or_train_variants.sh --all
 
+# Profile selection on train (after all variant weights exist)
+bash SLURM/yolo/submit_inference_profile_tune.sh
+# Promote stage2 winner into the committed recipe (then commit configs/test_inference.yaml)
+uv run --directory src/yolo python -m yolo.promote_inference_profile \
+  --winner-json "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<job_id>/stage2/winner.json"
+
 # Test patch + whole (SAHI) for all variants
 bash SLURM/yolo/submit_test_evaluations.sh
 ```
@@ -73,9 +82,11 @@ sbatch --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
 
 | Outputs | Used for |
 |---------|----------|
-| `runs/yolo26-seg/{variant}/weights/best.pt` | Patch and SAHI test eval |
+| `runs/yolo26-seg/{variant}/weights/best.pt` | Profile tune (train) and patch/SAHI test eval |
+| `runs/yolo_inference_profile_tune/<job_id>/` | Staged profile-selection audit (results CSV, winners) |
+| `configs/test_inference.yaml` | Shared test recipe (YOLO profile promoted from tune) |
 | `eval/yolo_patches/`, `eval/yolo_{variant}/` | Metrics comparison with U-Net (`instance_metrics.json`, `mask_ap_metrics.json` on whole eval) |
 
-Whole SAHI and patch predict write **`prediction_sets/{sample_id}.json`** as the canonical **instance prediction set** (non-overlapping grains after **score merge** at predict, each with **score**). **`run_provenance.json`** records `score_merge_at_predict: true` plus conf, slice size / overlap (whole) or imgsz (patch). Pre-change eval trees on scratch are invalid — delete `eval/yolo_{variant}/` and `eval/yolo_patches/{variant}/*/` and re-run `bash SLURM/yolo/submit_test_evaluations.sh` before refreshing reporting. Neither path writes `instances/*_instances.tif` or `masks/*.npz`. Eval uses `stage_manifest write-eval` → `eval_manifest.json`; instance metrics, overlays, and mask AP read the same merged JSON (no second merge at eval).
+Whole SAHI and patch predict write **`prediction_sets/{sample_id}.json`** as the canonical **instance prediction set** (non-overlapping grains after **score merge** at predict, each with **score**). **`run_provenance.json`** records `score_merge_at_predict: true` plus the resolved **YOLO inference profile** for that run: **`conf`** and **`mask_threshold`** on both paths; whole also records **`postprocess_type`**, **`match_metric`**, **`match_threshold`**, plus **`slice_height`**, **`slice_width`**, **`overlap_height_ratio`**, **`overlap_width_ratio`** and **`imgsz`**; patch records **`imgsz`** only (no SAHI merge fields). Pre-change eval trees on scratch are invalid — delete `eval/yolo_{variant}/` and `eval/yolo_patches/{variant}/*/` and re-run `bash SLURM/yolo/submit_test_evaluations.sh` before refreshing reporting. Neither path writes `instances/*_instances.tif` or `masks/*.npz`. Eval uses `stage_manifest write-eval` → `eval_manifest.json`; instance metrics, overlays, and mask AP read the same merged JSON (no second merge at eval).
 
 **Note:** U-Net patch test crops (`dataset/test/unet_from_yolo/`) are derived from YOLO patch geometry but are consumed by `SLURM/unet/`, not this pipeline.

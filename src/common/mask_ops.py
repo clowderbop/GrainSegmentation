@@ -32,9 +32,9 @@ def resize_masks_hw(masks_hw: np.ndarray, height: int, width: int) -> np.ndarray
     )
 
 
-def masks_hw_to_binary(masks_hw: np.ndarray) -> np.ndarray:
+def masks_hw_to_binary(masks_hw: np.ndarray, *, threshold: float = 0.5) -> np.ndarray:
     if masks_hw.dtype in (np.float32, np.float64):
-        return masks_hw > 0.5
+        return masks_hw > threshold
     return masks_hw.astype(bool)
 
 

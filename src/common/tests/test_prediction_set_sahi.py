@@ -21,6 +21,13 @@ class _FakeMask:
 
 
 @dataclass
+class _FakeFloatMask:
+    """Soft mask plane (0–1); mirrors SAHI thresholding at canonical encode time."""
+
+    float_mask: np.ndarray
+
+
+@dataclass
 class _FakeScore:
     value: float
 
@@ -85,3 +92,40 @@ def test_build_yolo_prediction_set_from_sahi_matches_mask_planes() -> None:
         merge_yolo_proposals_by_score(from_masks)
     )
     np.testing.assert_array_equal(merged > 0, expected > 0)
+
+
+def test_build_yolo_prediction_set_from_sahi_bool_mask_ignores_encode_threshold() -> None:
+    """SAHI bool masks are already binarized; encode-time threshold applies to float_mask only."""
+    height, width = 8, 8
+    mask = np.zeros((height, width), dtype=bool)
+    mask[2:6, 2:6] = True
+    pred = _FakeSahiPrediction(
+        mask=_FakeMask(bool_mask=mask),
+        score=_FakeScore(value=0.9),
+        category=_FakeCategory(id=0),
+    )
+    low = build_yolo_prediction_set_from_sahi_predictions(
+        [pred], height=height, width=width, mask_threshold=0.3
+    )
+    high = build_yolo_prediction_set_from_sahi_predictions(
+        [pred], height=height, width=width, mask_threshold=0.99
+    )
+    assert len(low.detections) == len(high.detections) == 1
+
+
+def test_build_yolo_prediction_set_from_sahi_applies_mask_threshold_to_float_masks() -> None:
+    height, width = 8, 8
+    soft = np.full((height, width), 0.4, dtype=np.float32)
+    pred = _FakeSahiPrediction(
+        mask=_FakeFloatMask(float_mask=soft),
+        score=_FakeScore(value=0.9),
+        category=_FakeCategory(id=0),
+    )
+    low_threshold = build_yolo_prediction_set_from_sahi_predictions(
+        [pred], height=height, width=width, mask_threshold=0.3
+    )
+    high_threshold = build_yolo_prediction_set_from_sahi_predictions(
+        [pred], height=height, width=width, mask_threshold=0.5
+    )
+    assert len(low_threshold.detections) == 1
+    assert len(high_threshold.detections) == 0

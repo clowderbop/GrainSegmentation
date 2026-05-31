@@ -72,6 +72,10 @@ uv run python -u -m yolo.predict \
     --device "$DEVICE" \
     --imgsz "$SLICE_H" \
     --conf "${CONF:-$YOLO_CONF}" \
+    --mask-threshold "${MASK_THRESHOLD:-$YOLO_MASK_THRESHOLD}" \
+    --postprocess-type "${POSTPROCESS_TYPE:-$YOLO_POSTPROCESS_TYPE}" \
+    --match-metric "${MATCH_METRIC:-$YOLO_MATCH_METRIC}" \
+    --match-threshold "${MATCH_THRESHOLD:-$YOLO_MATCH_THRESHOLD}" \
     --slice-height "$SLICE_H" \
     --slice-width "$SLICE_W" \
     --overlap-height-ratio "$OV_H" \

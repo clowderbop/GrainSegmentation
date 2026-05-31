@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, cast
@@ -12,13 +11,16 @@ from typing import Any, Literal, cast
 import numpy as np
 
 from common.geometry import load_image_space_polygons
-from common.instance_predictions import (
-    instance_map_filename,
-    read_instance_map_tiff,
+from common.prediction_set import (
+    load_prediction_set,
+    prediction_set_path,
+    prediction_set_to_merged_instance_view,
 )
 from common.manifest_io import (
     DatasetManifest,
     load_dataset_manifest,
+    manifest_path_base_dir,
+    require_eval_local_path,
     resolve_row_path,
 )
 from common.ground_truth import GtOriginMode, scene_polygons_to_patch_instance_map
@@ -34,7 +36,7 @@ ModelType = Literal["unet", "yolo"]
 class InstanceEvalSample:
     sample_id: str
     image_path: Path
-    pred_instances: Path
+    instance_prediction_set: Path
     gt_txt: Path | None = None
     gt_gpkg: Path | None = None
     gt_origin: GtOriginMode | None = None
@@ -55,20 +57,20 @@ def image_dimensions(image_path: Path | str) -> tuple[int, int]:
     return int(shape[-2]), int(shape[-1])
 
 
-def _pred_instances_path(pred_dir: Path, sample_id: str) -> Path:
-    return pred_dir / instance_map_filename(sample_id)
+def _instance_prediction_set_path(prediction_set_dir: Path, sample_id: str) -> Path:
+    return prediction_set_path(prediction_set_dir, sample_id)
 
 
 def collect_whole_samples_from_manifest(
     manifest: Path | DatasetManifest,
     *,
-    pred_instances_dir: Path | None = None,
+    prediction_set_dir: Path | None = None,
     default_gt_gpkg: Path | None = None,
 ) -> list[InstanceEvalSample]:
     """Load eval samples from a manifest (whole or patch units)."""
     return collect_manifest_samples(
         manifest,
-        pred_instances_dir=pred_instances_dir,
+        prediction_set_dir=prediction_set_dir,
         default_gt_gpkg=default_gt_gpkg,
     )
 
@@ -76,7 +78,7 @@ def collect_whole_samples_from_manifest(
 def collect_manifest_samples(
     manifest: Path | DatasetManifest,
     *,
-    pred_instances_dir: Path | None = None,
+    prediction_set_dir: Path | None = None,
     default_gt_gpkg: Path | None = None,
 ) -> list[InstanceEvalSample]:
     doc = (
@@ -93,21 +95,31 @@ def collect_manifest_samples(
             image_path = resolve_row_path(doc, row.anchor_image_path())
         assert image_path is not None
 
-        if row.pred_instances:
-            pred_instances = resolve_row_path(doc, row.pred_instances)
-        elif pred_instances_dir is not None:
-            pred_instances = _pred_instances_path(pred_instances_dir, row.sample_id)
+        if row.instance_prediction_set:
+            instance_prediction_set = resolve_row_path(doc, row.instance_prediction_set)
+        elif prediction_set_dir is not None:
+            instance_prediction_set = _instance_prediction_set_path(
+                prediction_set_dir, row.sample_id
+            )
         else:
             raise ValueError(
-                f'Manifest samples[{idx}] requires "pred_instances" or '
-                "--pred-instances-dir"
+                f'Manifest samples[{idx}] requires "instance_prediction_set" or '
+                "--prediction-set-dir"
             )
-        assert pred_instances is not None
+        assert instance_prediction_set is not None
 
         gt_txt = resolve_row_path(doc, row.gt_txt)
         gt_gpkg = resolve_row_path(doc, row.gt_gpkg)
         if gt_gpkg is None and default_gt_gpkg is not None:
             gt_gpkg = default_gt_gpkg.resolve()
+
+        if doc.path_base == "work_root":
+            work_base = manifest_path_base_dir(doc)
+            image_path = require_eval_local_path(image_path, work_base)
+            if gt_txt is not None:
+                gt_txt = require_eval_local_path(gt_txt, work_base)
+            if gt_gpkg is not None:
+                gt_gpkg = require_eval_local_path(gt_gpkg, work_base)
 
         if gt_txt is None and gt_gpkg is None:
             raise ValueError(
@@ -123,7 +135,7 @@ def collect_manifest_samples(
             InstanceEvalSample(
                 sample_id=row.sample_id,
                 image_path=image_path,
-                pred_instances=pred_instances,
+                instance_prediction_set=instance_prediction_set,
                 gt_txt=gt_txt,
                 gt_gpkg=gt_gpkg,
                 gt_origin=gt_origin if gt_gpkg is not None else None,
@@ -137,7 +149,7 @@ def collect_manifest_samples(
 def collect_single_image_sample(
     *,
     image: Path,
-    pred_instances: Path,
+    instance_prediction_set: Path,
     gt_txt: Path | None = None,
     gt_gpkg: Path | None = None,
     gt_origin: GtOriginMode = "whole_image",
@@ -149,7 +161,7 @@ def collect_single_image_sample(
         InstanceEvalSample(
             sample_id=sample_id or image.stem,
             image_path=image,
-            pred_instances=pred_instances,
+            instance_prediction_set=instance_prediction_set,
             gt_txt=gt_txt,
             gt_gpkg=gt_gpkg,
             gt_origin=gt_origin if gt_gpkg is not None else None,
@@ -176,7 +188,8 @@ def load_gt_instance_map(
 
 
 def load_pred_instance_map(sample: InstanceEvalSample) -> np.ndarray:
-    return read_instance_map_tiff(sample.pred_instances)
+    prediction_set = load_prediction_set(sample.instance_prediction_set)
+    return prediction_set_to_merged_instance_view(prediction_set)
 
 
 def evaluate_instance_samples(
@@ -218,11 +231,13 @@ def evaluate_instance_samples(
                 sample.sample_id,
                 metrics=metrics,
                 gt_instances=gt_n,
-                pred_instances=pred_n,
+                predicted_grain_count=pred_n,
                 empty_gt=gt_n == 0,
                 extra={
                     "image_path": str(sample.image_path.resolve()),
-                    "pred_instances_path": str(sample.pred_instances.resolve()),
+                    "instance_prediction_set_path": str(
+                        sample.instance_prediction_set.resolve()
+                    ),
                     **(
                         {"gt_txt": str(sample.gt_txt.resolve())}
                         if sample.gt_txt is not None
@@ -256,15 +271,18 @@ def _parse_args() -> argparse.Namespace:
         help="Dataset manifest listing samples (required unless --image is set).",
     )
     parser.add_argument(
-        "--pred-instances-dir",
+        "--prediction-set-dir",
         type=Path,
-        help="Directory of instance maps when manifest rows omit pred_instances.",
+        help=(
+            "Run output directory containing prediction_sets/ when manifest rows "
+            "omit instance_prediction_set."
+        ),
     )
     parser.add_argument("--gt-gpkg", type=Path)
     parser.add_argument("--gt-txt", type=Path)
     parser.add_argument("--gt-origin", choices=("patch_stem", "whole_image"))
     parser.add_argument("--image", type=Path)
-    parser.add_argument("--pred-instances", type=Path)
+    parser.add_argument("--instance-prediction-set", type=Path)
     parser.add_argument("--sample-id")
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument(
@@ -283,20 +301,20 @@ def _resolve_eval_samples(args: argparse.Namespace) -> list[InstanceEvalSample]:
     if args.manifest is not None:
         return collect_whole_samples_from_manifest(
             args.manifest,
-            pred_instances_dir=args.pred_instances_dir,
+            prediction_set_dir=args.prediction_set_dir,
             default_gt_gpkg=args.gt_gpkg,
         )
-    if args.image is not None and args.pred_instances is not None:
+    if args.image is not None and args.instance_prediction_set is not None:
         return collect_single_image_sample(
             image=args.image,
-            pred_instances=args.pred_instances,
+            instance_prediction_set=args.instance_prediction_set,
             gt_txt=args.gt_txt,
             gt_gpkg=args.gt_gpkg,
             gt_origin=default_gt_origin,
             sample_id=args.sample_id,
         )
     raise ValueError(
-        "Provide --manifest or --image with --pred-instances"
+        "Provide --manifest or --image with --instance-prediction-set"
     )
 
 

@@ -13,7 +13,8 @@ from common.evaluate_instances import (
     collect_manifest_samples,
     evaluate_instance_samples,
 )
-from common.instance_predictions import instance_map_path, write_instance_map_tiff
+from common.prediction_set import prediction_set_path, save_prediction_set
+from common.tests.prediction_set_fixtures import yolo_prediction_set_from_masks
 
 
 def _write_blank_image(path: Path, width: int, height: int) -> None:
@@ -24,8 +25,14 @@ def _write_blank_image(path: Path, width: int, height: int) -> None:
 def test_collect_manifest_samples_patch(tmp_path: Path) -> None:
     image_path = tmp_path / "patch001_PPL.tif"
     _write_blank_image(image_path, 64, 64)
-    pred_path = instance_map_path(tmp_path, "patch001")
-    write_instance_map_tiff(pred_path, np.ones((64, 64), dtype=np.int32))
+    ps = yolo_prediction_set_from_masks(
+        masks_hw=np.ones((1, 64, 64), dtype=np.float32),
+        scores=np.array([0.9], dtype=np.float32),
+        height=64,
+        width=64,
+    )
+    pred_path = prediction_set_path(tmp_path, "patch001")
+    save_prediction_set(pred_path, ps)
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
         json.dumps(
@@ -39,7 +46,7 @@ def test_collect_manifest_samples_patch(tmp_path: Path) -> None:
                     {
                         "sample_id": "patch001",
                         "image": str(image_path),
-                        "pred_instances": str(pred_path),
+                        "instance_prediction_set": str(pred_path),
                         "gt_txt": str(tmp_path / "patch001.txt"),
                         "gt_origin": "patch_stem",
                     }
@@ -82,13 +89,19 @@ def test_evaluate_two_synthetic_instance_maps(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    pred_path = instance_map_path(tmp_path, "sample")
-    write_instance_map_tiff(pred_path, gt_map)
+    ps = yolo_prediction_set_from_masks(
+        masks_hw=gt_map.astype(np.float32)[None, ...],
+        scores=np.array([0.99], dtype=np.float32),
+        height=height,
+        width=width,
+    )
+    pred_path = prediction_set_path(tmp_path, "sample")
+    save_prediction_set(pred_path, ps)
 
     sample = InstanceEvalSample(
         sample_id="sample",
         image_path=image_path,
-        pred_instances=pred_path,
+        instance_prediction_set=pred_path,
         gt_txt=gt_txt,
     )
     report = evaluate_instance_samples(

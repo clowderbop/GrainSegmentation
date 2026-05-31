@@ -51,14 +51,14 @@ def build_sample_row(
     *,
     metrics: dict[str, float],
     gt_instances: int,
-    pred_instances: int,
+    predicted_grain_count: int,
     empty_gt: bool,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "sample_id": sample_id,
         "gt_instances": int(gt_instances),
-        "pred_instances": int(pred_instances),
+        "predicted_grain_count": int(predicted_grain_count),
         "empty_gt": bool(empty_gt),
     }
     for key in INSTANCE_METRIC_KEYS:
@@ -69,6 +69,42 @@ def build_sample_row(
                 raise ValueError(f"extra key {k!r} clashes with built-in row field")
             row[k] = v
     return row
+
+
+def compute_patch_metric_aggregates(
+    rows: list[dict[str, Any]],
+) -> dict[str, float | int]:
+    """Unweighted (grain-bearing patches) and grain-weighted AJI / F1@50 means."""
+    n_patches = len(rows)
+    grainy = [row for row in rows if not row.get("empty_gt")]
+    n_empty_gt = n_patches - len(grainy)
+
+    def _mean_for_key(
+        subset: list[dict[str, Any]], key: str, *, weight_by_gt: bool
+    ) -> float:
+        if not subset:
+            return float("nan")
+        if weight_by_gt:
+            weights = [float(row.get("gt_instances", 0)) for row in subset]
+            total_weight = sum(weights)
+            if total_weight <= 0:
+                return float("nan")
+            return float(
+                sum(float(row[key]) * w for row, w in zip(subset, weights, strict=True))
+                / total_weight
+            )
+        return float(np.mean([float(row[key]) for row in subset]))
+
+    return {
+        "n_patches": n_patches,
+        "n_empty_gt": n_empty_gt,
+        "mean_aji_grainy": _mean_for_key(grainy, "aji", weight_by_gt=False),
+        "mean_f1_iou50_grainy": _mean_for_key(grainy, "f1_iou50", weight_by_gt=False),
+        "mean_aji_weighted": _mean_for_key(grainy, "aji", weight_by_gt=True),
+        "mean_f1_iou50_weighted": _mean_for_key(
+            grainy, "f1_iou50", weight_by_gt=True
+        ),
+    }
 
 
 def aggregate_mean_metrics(
@@ -110,6 +146,11 @@ def build_instance_eval_report(
     }
     if len(samples) > 1:
         report["mean"] = aggregate_mean_metrics(samples)
+    if unit == "patch" and samples:
+        patch_agg = compute_patch_metric_aggregates(samples)
+        report.setdefault("extras", {})
+        report["extras"].update(patch_agg)
     if extras:
-        report["extras"] = extras
+        report.setdefault("extras", {})
+        report["extras"].update(extras)
     return report

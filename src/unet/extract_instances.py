@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -12,8 +11,13 @@ import numpy as np
 import tifffile
 
 from common.arg_errors import raise_cli_argument_error
-from common.instance_predictions import instance_map_path, write_instance_map_tiff
 from common.manifest_io import load_dataset_manifest
+from common.prediction_set import (
+    build_unet_prediction_set_from_instance_map,
+    prediction_set_path,
+    save_prediction_set,
+)
+from common.run_provenance import write_run_provenance
 from common.semantic_instance import semantic_to_instance_label_map
 from unet.instance_masks import semantic_to_instance_label_map_watershed
 from unet.prediction_cache import prediction_tiff_path
@@ -49,7 +53,7 @@ def _resolve_sample_ids(args: argparse.Namespace) -> list[str]:
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract instance label-map TIFFs from semantic prediction TIFFs.",
+        description="Extract instance prediction sets from semantic prediction TIFFs.",
     )
     parser.add_argument("--semantic-dir", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
@@ -128,24 +132,16 @@ def _load_semantic_tiff(path: Path) -> np.ndarray:
     return arr.astype(np.int32)
 
 
-def run_extract_instances(args: argparse.Namespace) -> None:
-    _validate_args(args)
-    instances_dir = args.output_dir / "instances"
-    instances_dir.mkdir(parents=True, exist_ok=True)
-
-    sample_ids = _resolve_sample_ids(args)
-    if not sample_ids:
-        print(f"ERROR: No *_pred.tif files in {args.semantic_dir}", file=sys.stderr)
-        sys.exit(1)
-
+def _run_provenance_payload(args: argparse.Namespace) -> dict[str, Any]:
     export_min_area_px = _export_min_area_px(args)
-    extract_meta: dict[str, Any] = {
+    payload: dict[str, Any] = {
+        "producer": "unet",
         "instance_method": args.instance_method,
         "min_area_px": export_min_area_px,
+        "manifest": str(args.manifest.resolve()),
     }
-    extract_meta["manifest"] = str(args.manifest.resolve())
     if args.instance_method == "watershed":
-        extract_meta.update(
+        payload.update(
             {
                 "watershed_min_distance": args.watershed_min_distance,
                 "watershed_boundary_dilate_iter": args.watershed_boundary_dilate_iter,
@@ -155,6 +151,22 @@ def run_extract_instances(args: argparse.Namespace) -> None:
                 "watershed_ridge_level": args.watershed_ridge_level,
             }
         )
+    return payload
+
+
+def run_extract_instances(args: argparse.Namespace) -> None:
+    _validate_args(args)
+
+    sample_ids = _resolve_sample_ids(args)
+    if not sample_ids:
+        print(f"ERROR: No *_pred.tif files in {args.semantic_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    export_min_area_px = _export_min_area_px(args)
+    provenance_path = write_run_provenance(
+        args.output_dir, _run_provenance_payload(args)
+    )
+    print(f"Wrote run provenance to {provenance_path}")
 
     n_samples = len(sample_ids)
     print(
@@ -166,14 +178,11 @@ def run_extract_instances(args: argparse.Namespace) -> None:
         pred_path = prediction_tiff_path(args.semantic_dir, sample_id)
         semantic = _load_semantic_tiff(pred_path)
         instance_map = _instances_from_semantic(semantic, args)
-        out_path = instance_map_path(args.output_dir, sample_id)
-        write_instance_map_tiff(out_path, instance_map)
-        n_inst = int(np.sum(np.unique(instance_map) != 0))
-        print(f"Wrote {out_path} ({n_inst} instances)")
-
-    meta_path = instances_dir / ".extract_meta.json"
-    meta_path.write_text(json.dumps(extract_meta, indent=2) + "\n", encoding="utf-8")
-    print(f"Wrote extract metadata to {meta_path}")
+        prediction_set = build_unet_prediction_set_from_instance_map(instance_map)
+        out_path = prediction_set_path(args.output_dir, sample_id)
+        save_prediction_set(out_path, prediction_set)
+        n_inst = len(prediction_set.detections)
+        print(f"Wrote {out_path} ({n_inst} extracted grains)")
 
 
 def main(argv: list[str] | None = None) -> None:

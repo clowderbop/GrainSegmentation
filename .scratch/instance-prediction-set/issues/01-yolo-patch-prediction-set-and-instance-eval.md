@@ -40,15 +40,15 @@ Update patch test SLURM and **docs/manifests** for the new field and layout. Rem
 
 ## Acceptance criteria
 
-- [ ] Shared module loads/saves schema v1; rejects `unet` detections with `score` and `yolo` detections without `score`
-- [ ] Merged instance view for two overlapping YOLO proposals matches prior confidence-painting behavior (unit test)
-- [ ] Patch YOLO predict writes only `prediction_sets/{sample_id}.json` (no `instances/*_instances.tif`, no `masks/*.npz`)
-- [ ] Patch predict succeeds with `--manifest` and `--variant` when train YOLO YAML is absent on scratch
-- [ ] `stage_manifest write-eval` sets `instance_prediction_set` per sample
-- [ ] `evaluate_instances` on a staged patch eval manifest produces metrics JSON without reading label-map TIFF
-- [ ] `run_patch_test_eval.sh` (or equivalent) runs predict → write-eval → evaluate_instances using prediction sets
-- [ ] Manifest documentation describes `instance_prediction_set`; `pred_instances` removed from docs as current contract
-- [ ] Tests cover prediction set I/O, merge parity, and write-eval path shape (no GPU required)
+- [x] Shared module loads/saves schema v1; rejects `unet` detections with `score` and `yolo` detections without `score`
+- [x] Merged instance view for two overlapping YOLO proposals matches prior confidence-painting behavior (unit test)
+- [x] Patch YOLO predict writes only `prediction_sets/{sample_id}.json` (no `instances/*_instances.tif`, no `masks/*.npz`)
+- [x] Patch predict succeeds with `--manifest` and `--variant` when train YOLO YAML is absent on scratch
+- [x] `stage_manifest write-eval` sets `instance_prediction_set` per sample
+- [x] `evaluate_instances` on a staged patch eval manifest produces metrics JSON without reading label-map TIFF
+- [x] `run_patch_test_eval.sh` (or equivalent) runs predict → write-eval → evaluate_instances using prediction sets
+- [x] Manifest documentation describes `instance_prediction_set`; `pred_instances` removed from docs as current contract
+- [x] Tests cover prediction set I/O, merge parity, and write-eval path shape (no GPU required)
 
 ## Blocked by
 

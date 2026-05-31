@@ -11,7 +11,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     cat <<'EOF'
 Submit YOLO patch + whole-section (SAHI) test eval for every registry variant.
 
-SAHI and patch jobs use 48G / 25m and 48G / 15m (see SLURM/yolo/pipeline.md).
+SAHI and patch jobs use 32G / 20m and 32G / 8m (see SLURM/yolo/pipeline.md).
 sbatch --mem or --time on the command line override #SBATCH in the run scripts.
 
 Manual one-off:
@@ -20,8 +20,8 @@ EOF
     exit 0
 fi
 
-SAHI_MEM=48G
-SAHI_TIME=00:25:00
+SAHI_MEM=32G
+SAHI_TIME=00:20:00
 
 for variant in "${MICROSCOPY_VARIANTS[@]}"; do
     slug="$(job_slug "$variant")"

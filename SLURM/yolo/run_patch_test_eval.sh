@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --job-name=test_yolo_patches
 #SBATCH --output=logs/test_yolo_patches-%j.log
-#SBATCH --mem=48G
+#SBATCH --mem=32G
 #SBATCH --cpus-per-task=16
 #SBATCH --gpus-per-node=rtx_pro_6000:1
-#SBATCH --time=00:15:00
+#SBATCH --time=00:08:00
 
 set -euo pipefail
 # shellcheck source=SLURM/utils/enter_job.sh

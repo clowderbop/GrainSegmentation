@@ -38,8 +38,8 @@ a time (`yolo_detections_to_instance_map_by_score`).
 
 | Job | `sbatch --mem` | `sbatch --time` |
 |-----|----------------|-----------------|
-| SAHI whole (all variants) | 48G | 00:25:00 |
-| Patch test (`run_patch_test_eval.sh`) | 48G | 00:15:00 |
+| SAHI whole (all variants) | 32G | 00:20:00 |
+| Patch test (`run_patch_test_eval.sh`) | 32G | 00:08:00 |
 
 `sbatch --mem` / `--time` on the command line override `#SBATCH` in the run script.
 

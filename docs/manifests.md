@@ -30,7 +30,7 @@ Each row describes one logical sample (one train mosaic, one test mosaic, or one
 | `gt_gpkg` | no | Vector labels for instance metrics |
 | `gt_origin` | no | `whole_image` or `patch_stem` |
 | `gt_txt` | no | YOLO segment labels for patch eval |
-| `pred_instances` | no | Filled in eval manifests after inference |
+| `instance_prediction_set` | no | Path to `prediction_sets/{sample_id}.json` in eval manifests after inference |
 | `semantic` | no | Optional path to semantic prediction TIFF |
 
 **Rules**
@@ -100,25 +100,39 @@ uv run --directory src/data_prep python validate_dataset_manifests.py \
 
 ## Staging
 
+Staging is **self-contained**: every file referenced in sample rows is copied into the work directory and the manifest is rewritten with `path_base: "work_root"` (see ADR-0002). Ground-truth paths (`gt_txt`, `gt_gpkg`) keep their manifest-relative directory tree under the work root. Images are often flattened to `{stem}.tif` at the work root; **sample id** is unchanged.
+
 ```bash
 uv run python -m common.stage_manifest run \
   "$GRAINSEG_ROOT/dataset/train/manifests/PPL+AllPPX.whole.json" \
   "$TMPDIR/unet_inputs"
 ```
 
-Writes `$TMPDIR/unet_inputs/manifest.json` and copies referenced TIFFs (and masks when present). Python CLIs take `--manifest` pointing at the staged file.
+Writes `$TMPDIR/unet_inputs/manifest.json` and copies referenced assets. Python CLIs take `--manifest` pointing at the staged file.
 
 Eval manifests after instance extraction are built with:
 
 ```bash
 uv run python -m common.stage_manifest write-eval \
   --source "$TMPDIR/unet_inputs/manifest.json" \
-  --pred-instances-dir "$RUN_DIR/instances" \
-  --output "$RUN_DIR/eval_manifest.json" \
-  --gt-gpkg "$GRAINSEG_ROOT/dataset/train/train_labels.gpkg"
+  --prediction-set-dir "$RUN_DIR" \
+  --output "$RUN_DIR/eval_manifest.json"
 ```
 
-When `--gt-gpkg` is set, it overrides each sample's `gt_gpkg` from the source manifest (paths are stored relative to the eval manifest's parent directory when possible).
+`write-eval` materializes ground truth and anchor images into `$RUN_DIR` when they still live under ephemeral staging (see ADR-0002). Layout mirrors staging: anchor image flattened to `$RUN_DIR/{stem}.tif`; GT keeps manifest-relative paths under `$RUN_DIR`. The eval manifest sets `grainseg_root` to `$RUN_DIR` and `path_base: "work_root"`.
+
+YOLO patch eval writes one JSON per sample under `$RUN_DIR/prediction_sets/` (see ADR-0001). `write-eval` records relative paths in `instance_prediction_set`.
+
+```bash
+# YOLO patch test eval (prediction sets only; no instances/*.tif)
+uv run python -m yolo.predict --unit patch --weights ... --manifest ... --output-dir "$RUN_DIR"
+uv run python -m common.stage_manifest write-eval \
+  --source "$STAGED_MANIFEST" \
+  --prediction-set-dir "$RUN_DIR" \
+  --output "$RUN_DIR/eval_manifest.json"
+```
+
+Optional `--gt-gpkg` overrides each sample's `gt_gpkg` from the source manifest; the path is materialized into `$RUN_DIR` when not already there. Scratch `grainseg_root` paths that bypass staging are rejected. Eval consumers validate GT and image paths under `grainseg_root`.
 
 ## Validation
 

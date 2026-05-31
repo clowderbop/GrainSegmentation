@@ -33,8 +33,8 @@ Training (`submit_tune_or_train_variants.sh`):
 | `PPL+AllPPX` | 1000G |
 
 Whole-section SAHI test (`submit_test_evaluations.sh` → `run_sahi_test_eval.sh`).
-Peak RSS ~12–15G on the current test mosaic; instance merge decodes one mask at
-a time (`yolo_detections_to_instance_map_by_score`).
+Peak RSS ~12–15G on the current test mosaic; **score merge** at predict decodes one
+proposal mask at a time (`yolo_detections_to_instance_map_by_score`).
 
 | Job | `sbatch --mem` | `sbatch --time` |
 |-----|----------------|-----------------|
@@ -76,6 +76,6 @@ sbatch --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
 | `runs/yolo26-seg/{variant}/weights/best.pt` | Patch and SAHI test eval |
 | `eval/yolo_patches/`, `eval/yolo_{variant}/` | Metrics comparison with U-Net (`instance_metrics.json`, `mask_ap_metrics.json` on whole eval) |
 
-Whole SAHI predict writes **`prediction_sets/{sample_id}.json`** (COCO RLE proposals + score) and **`run_provenance.json`** (conf, slice size, overlap). Patch predict writes the same prediction set layout and **`run_provenance.json`** (conf, imgsz). Neither path writes `instances/*_instances.tif` or `masks/*.npz`. Eval uses `stage_manifest write-eval` → `eval_manifest.json` with `instance_prediction_set` paths; overlay, instance metrics, and mask AP all read those JSON files.
+Whole SAHI and patch predict write **`prediction_sets/{sample_id}.json`** as the canonical **instance prediction set** (non-overlapping grains after **score merge** at predict, each with **score**). **`run_provenance.json`** records `score_merge_at_predict: true` plus conf, slice size / overlap (whole) or imgsz (patch). Pre-change eval trees on scratch are invalid — delete `eval/yolo_{variant}/` and `eval/yolo_patches/{variant}/*/` and re-run `bash SLURM/yolo/submit_test_evaluations.sh` before refreshing reporting. Neither path writes `instances/*_instances.tif` or `masks/*.npz`. Eval uses `stage_manifest write-eval` → `eval_manifest.json`; instance metrics, overlays, and mask AP read the same merged JSON (no second merge at eval).
 
 **Note:** U-Net patch test crops (`dataset/test/unet_from_yolo/`) are derived from YOLO patch geometry but are consumed by `SLURM/unet/`, not this pipeline.

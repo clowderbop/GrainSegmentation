@@ -9,6 +9,7 @@ from pycocotools import mask as mask_utils
 from common.prediction_set import (
     PredictionSet,
     binary_mask_to_segmentation,
+    merge_yolo_proposals_by_score,
     save_prediction_set,
     yolo_prediction_set_to_coco_dt,
 )
@@ -81,6 +82,31 @@ def test_yolo_prediction_set_to_coco_dt_rejects_unet_producer() -> None:
     )
     with pytest.raises(ValueError, match="producer"):
         yolo_prediction_set_to_coco_dt(ps, image_id=1, height=16, width=16)
+
+
+def test_yolo_mask_ap_uses_score_merged_canonical_detection() -> None:
+    height, width = 16, 16
+    masks = np.zeros((2, height, width), dtype=np.float32)
+    masks[0, 4:12, 4:12] = 1.0
+    masks[1, 4:12, 4:12] = 1.0
+    proposals = yolo_prediction_set_from_masks(
+        masks_hw=masks,
+        scores=np.array([0.2, 0.9], dtype=np.float32),
+        height=height,
+        width=width,
+    )
+    canonical = merge_yolo_proposals_by_score(proposals)
+
+    from_proposals = yolo_prediction_set_to_coco_dt(
+        proposals, image_id=1, height=height, width=width
+    )
+    from_canonical = yolo_prediction_set_to_coco_dt(
+        canonical, image_id=1, height=height, width=width
+    )
+
+    assert len(from_proposals) == 2
+    assert len(from_canonical) == 1
+    assert float(from_canonical[0]["score"]) == pytest.approx(0.9)
 
 
 def test_yolo_prediction_set_to_coco_dt_matches_mask_planes_fixture() -> None:

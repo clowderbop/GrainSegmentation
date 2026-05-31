@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from collections.abc import Callable
+from typing import Any, Literal, overload
 
 import numpy as np
 from pycocotools import mask as mask_utils
@@ -236,6 +237,52 @@ def build_unet_prediction_set_from_instance_map(
     instance_map: np.ndarray,
 ) -> PredictionSet:
     """Encode disjoint extracted grains from a U-Net instance label map."""
+    return _prediction_set_from_instance_map(
+        instance_map, producer="unet", include_score=False
+    )
+
+
+def build_yolo_prediction_set_from_instance_map(
+    instance_map: np.ndarray,
+    *,
+    score_for_label: Callable[[int], float],
+) -> PredictionSet:
+    """Encode disjoint YOLO grains from a score-merged instance label map."""
+    return _prediction_set_from_instance_map(
+        instance_map,
+        producer="yolo",
+        include_score=True,
+        score_for_label=score_for_label,
+    )
+
+
+@overload
+def _prediction_set_from_instance_map(
+    instance_map: np.ndarray,
+    *,
+    producer: Producer,
+    include_score: Literal[False],
+    score_for_label: None = ...,
+) -> PredictionSet: ...
+
+
+@overload
+def _prediction_set_from_instance_map(
+    instance_map: np.ndarray,
+    *,
+    producer: Producer,
+    include_score: Literal[True],
+    score_for_label: Callable[[int], float],
+) -> PredictionSet: ...
+
+
+def _prediction_set_from_instance_map(
+    instance_map: np.ndarray,
+    *,
+    producer: Producer,
+    include_score: bool,
+    score_for_label: Callable[[int], float] | None = None,
+) -> PredictionSet:
     arr = np.asarray(instance_map)
     if arr.ndim != 2:
         raise ValueError(f"instance_map must be 2D, got shape {arr.shape}")
@@ -245,20 +292,57 @@ def build_unet_prediction_set_from_instance_map(
         binary = arr == label_id
         if not binary.any():
             continue
-        detections.append(
-            {
-                "segmentation": binary_mask_to_segmentation(
-                    binary, height=height, width=width
-                ),
-                "category_id": GRAIN_CLASS_ID,
-            }
-        )
+        det: dict[str, Any] = {
+            "segmentation": binary_mask_to_segmentation(
+                binary, height=height, width=width
+            ),
+            "category_id": GRAIN_CLASS_ID,
+        }
+        if include_score:
+            if score_for_label is None:
+                raise ValueError("score_for_label is required for YOLO prediction sets")
+            det["score"] = float(score_for_label(label_id))
+        detections.append(det)
     return PredictionSet(
         schema_version=1,
         height=height,
         width=width,
-        producer="unet",
+        producer=producer,
         detections=tuple(detections),
+    )
+
+
+def assert_yolo_grains_non_overlapping(prediction_set: PredictionSet) -> None:
+    """Raise if any two YOLO grain masks in a canonical instance prediction set overlap."""
+    if prediction_set.producer != "yolo":
+        raise ValueError(
+            f"non-overlap check requires producer 'yolo', got {prediction_set.producer!r}"
+        )
+    occupied = np.zeros((prediction_set.height, prediction_set.width), dtype=bool)
+    for det in prediction_set.detections:
+        mask = segmentation_to_binary_mask(det["segmentation"])
+        if np.any(occupied & mask):
+            raise ValueError("YOLO instance prediction set has overlapping grain masks")
+        occupied |= mask
+
+
+def merge_yolo_proposals_by_score(prediction_set: PredictionSet) -> PredictionSet:
+    """Merge overlapping YOLO detector proposals into non-overlapping grains."""
+    if prediction_set.producer != "yolo":
+        raise ValueError(
+            f"score merge requires producer 'yolo', got {prediction_set.producer!r}"
+        )
+    height, width = prediction_set.height, prediction_set.width
+    instance_map = yolo_detections_to_instance_map_by_score(
+        prediction_set.detections,
+        height=height,
+        width=width,
+        decode_segmentation=segmentation_to_binary_mask,
+    )
+    proposals = prediction_set.detections
+    return build_yolo_prediction_set_from_instance_map(
+        instance_map,
+        score_for_label=lambda label_id: float(proposals[label_id - 1]["score"]),
     )
 
 
@@ -269,7 +353,7 @@ def yolo_prediction_set_to_coco_dt(
     height: int,
     width: int,
 ) -> list[dict[str, object]]:
-    """Build COCO detection annotations from YOLO detector proposals (RLE + scores)."""
+    """Build COCO detection annotations from a YOLO instance prediction set (RLE + scores)."""
     if not isinstance(prediction_set, PredictionSet):
         prediction_set = load_prediction_set(prediction_set)
     if prediction_set.producer != "yolo":
@@ -306,14 +390,6 @@ def prediction_set_to_merged_instance_view(prediction_set: PredictionSet) -> np.
     if not prediction_set.detections:
         return np.zeros((height, width), dtype=np.int32)
 
-    if prediction_set.producer == "yolo":
-        return yolo_detections_to_instance_map_by_score(
-            prediction_set.detections,
-            height=height,
-            width=width,
-            decode_segmentation=segmentation_to_binary_mask,
-        )
-
     out = np.zeros((height, width), dtype=np.int32)
     for index, det in enumerate(prediction_set.detections):
         mask = segmentation_to_binary_mask(det["segmentation"])
@@ -326,11 +402,14 @@ __all__ = [
     "PREDICTION_SETS_SUBDIR",
     "PredictionSet",
     "Producer",
+    "assert_yolo_grains_non_overlapping",
     "binary_mask_to_segmentation",
     "build_unet_prediction_set_from_instance_map",
+    "build_yolo_prediction_set_from_instance_map",
     "build_yolo_prediction_set_from_sahi_predictions",
     "build_yolo_prediction_set_from_ultralytics",
     "load_prediction_set",
+    "merge_yolo_proposals_by_score",
     "prediction_set_filename",
     "prediction_set_path",
     "prediction_set_to_dict",

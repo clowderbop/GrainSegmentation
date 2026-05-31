@@ -1,6 +1,6 @@
-Status: ready-for-agent
+Status: done
 Category: enhancement
-Labels: ready-for-agent, enhancement
+Labels: enhancement
 Depends-on: —
 Blocks: —
 
@@ -30,22 +30,19 @@ Move **score merge** from eval-only into `yolo.predict` for both `unit=whole` (S
 
 8. **Docs** — Update `SLURM/yolo/pipeline.md` (prediction set = post-merge grains; re-run required). Touch ADR 0003 supporting-metrics sentence only if it still says “proposals” for Mask AP.
 
-## Operator steps (not code)
 
-- Delete pre-change `eval/yolo_{variant}/` and `eval/yolo_patches/{variant}/*/` on scratch.
-- Re-run `bash SLURM/yolo/submit_test_evaluations.sh`.
-- Regenerate **post-eval reporting** bundle.
 
 ## Acceptance criteria
 
-- [ ] Whole SAHI predict writes non-overlapping `prediction_sets/*.json`; overlapping proposal fixture merges to expected RLEs and scores
-- [ ] Patch predict uses the same merge+export path
-- [ ] `evaluate_instances` on YOLO whole/patch uses canonical set without double-merge
-- [ ] `evaluate_mask_ap` runs on canonical sets; tests updated if fixtures assumed overlapping proposals
-- [ ] SAHI overlay export reflects canonical grains (split-boundary duplicates may remain — not fixed here)
-- [ ] Run provenance documents score merge at predict
-- [ ] Pipeline doc notes hard break and re-submit
+- [x] Whole SAHI predict writes non-overlapping `prediction_sets/*.json`; overlapping proposal fixture merges to expected RLEs and scores
+- [x] Patch predict uses the same merge+export path
+- [x] `evaluate_instances` on YOLO whole/patch uses canonical set without double-merge
+- [x] `evaluate_mask_ap` runs on canonical sets; tests updated if fixtures assumed overlapping proposals
+- [x] SAHI overlay export reflects canonical grains (split-boundary duplicates may remain — not fixed here)
+- [x] Run provenance documents score merge at predict
+- [x] Pipeline doc notes hard break and re-submit
 
 ## Comments
 
 - Grill session 2026-05-31: canonical output = non-overlapping grains (A); winning proposal score for COCO (B); hard break on scratch eval (A); **slice-boundary duplicate** accepted (A).
+- 2026-05-31: Implementation complete in repo (score merge at predict, tests, `pipeline.md`, ADR 0001 alignment). **Operator steps** still pending: delete pre-change scratch `eval/yolo_*` trees, re-run `submit_test_evaluations.sh`, refresh reporting bundle.

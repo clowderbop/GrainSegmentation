@@ -4,7 +4,7 @@ Status: accepted
 
 Whole-image YOLO inference materialized dense `(N, H, W)` mask stacks for COCO mask AP, which required hundreds of gigabytes of RAM on 10k×10k test mosaics. U-Net and YOLO also diverged on disk (instance label-map TIFF vs mask NPZ) while sharing only some evaluation steps.
 
-We store one **instance prediction set** per sample: JSON (`schema_version: 1`) under `prediction_sets/{sample_id}.json`, with COCO RLE per entry and manifest field `instance_prediction_set`. YOLO writes **detector proposals** (overlapping, with **score**); U-Net writes **extracted grains** (non-overlapping, no score field). Instance metrics build a transient **merged instance view** via **score merge** for YOLO; **mask AP** reads proposals directly and runs on whole-section YOLO test samples only. U-Net keeps a separate **semantic prediction** raster for pixel metrics. Run parameters live in a **run provenance** sidecar beside `prediction_sets/`, not in every file.
+We store one **instance prediction set** per sample: JSON (`schema_version: 1`) under `prediction_sets/{sample_id}.json`, with COCO RLE per entry and manifest field `instance_prediction_set`. **U-Net** writes **extracted grains** (non-overlapping, no score field) after instance extraction from **semantic prediction**. **YOLO** writes the canonical **instance prediction set** (non-overlapping grains after **score merge** at predict, each with **score**); see [ADR 0004](0004-yolo-score-merge-at-predict.md). Instance metrics rasterize the stored set via **merged instance view** (no second **score merge** at eval for YOLO). **Mask AP** uses the same canonical YOLO sets on whole-section test samples only. U-Net keeps a separate **semantic prediction** raster for pixel metrics. Run parameters live in a **run provenance** sidecar beside `prediction_sets/`, not in every file.
 
 Legacy instance label-map TIFFs and dense mask NPZs are not written or read (clean break). Domain terms are defined in `CONTEXT.md`.
 
@@ -12,4 +12,4 @@ Legacy instance label-map TIFFs and dense mask NPZs are not written or read (cle
 
 **Consequences:** `common.evaluate_instances`, `yolo.predict`, `unet.extract_instances`, manifest schema, and SLURM eval scripts must move together. Patch and whole use the same prediction set shape; `unit` stays on manifests.
 
-**Superseded (YOLO only):** Persisting overlapping proposals and computing **merged instance view** only at eval — see [ADR 0004](0004-yolo-score-merge-at-predict.md).
+**Superseded (YOLO persistence and eval merge):** Persisting overlapping **detector proposals** on disk and applying **score merge** only at eval — see [ADR 0004](0004-yolo-score-merge-at-predict.md).

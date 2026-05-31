@@ -9,18 +9,24 @@ import numpy as np
 import pytest
 import torch
 
-from common.mask_ops import instance_map_from_masks
+from common.instance_maps import yolo_detections_to_instance_map_by_score
 from common.prediction_set import (
     PredictionSet,
+    assert_yolo_grains_non_overlapping,
     build_yolo_prediction_set_from_ultralytics,
     load_prediction_set,
+    merge_yolo_proposals_by_score,
     prediction_set_path,
     prediction_set_to_merged_instance_view,
     save_prediction_set,
     segmentation_to_binary_mask,
     validate_prediction_set,
 )
-from common.tests.prediction_set_fixtures import yolo_prediction_set_from_masks
+from common.tests.prediction_set_fixtures import (
+    assert_instance_map_partitions_equal,
+    assert_yolo_canonical_sets_equal,
+    yolo_prediction_set_from_masks,
+)
 
 
 def test_prediction_set_save_load_round_trip(tmp_path: Path) -> None:
@@ -114,28 +120,110 @@ def test_yolo_merged_instance_view_decodes_one_mask_at_a_time() -> None:
 
     with patch("common.prediction_set.segmentation_to_binary_mask", counting_decode):
         with patch("numpy.stack", side_effect=AssertionError("must not stack all masks")):
-            merged = prediction_set_to_merged_instance_view(prediction_set)
+            canonical = merge_yolo_proposals_by_score(prediction_set)
+            merged = prediction_set_to_merged_instance_view(canonical)
 
-    expected = instance_map_from_masks(masks, scores, height=8, width=8)
-    np.testing.assert_array_equal(merged, expected)
+    pre_change_eval = yolo_detections_to_instance_map_by_score(
+        prediction_set.detections,
+        height=8,
+        width=8,
+        decode_segmentation=segmentation_to_binary_mask,
+    )
+    assert_instance_map_partitions_equal(merged, pre_change_eval)
     assert peak_decodes == 1
 
 
-def test_merged_instance_view_matches_score_painting() -> None:
+def test_merge_yolo_proposals_keeps_disjoint_grains() -> None:
+    height, width = 8, 8
+    masks = np.zeros((2, height, width), dtype=np.float32)
+    masks[0, 1:3, 1:3] = 1.0
+    masks[1, 5:7, 5:7] = 1.0
+    scores = np.array([0.3, 0.8], dtype=np.float32)
+    proposals = yolo_prediction_set_from_masks(
+        masks_hw=masks, scores=scores, height=height, width=width
+    )
+
+    merged = merge_yolo_proposals_by_score(proposals)
+
+    assert len(merged.detections) == 2
+    merged_scores = sorted(float(det["score"]) for det in merged.detections)
+    assert merged_scores == [pytest.approx(0.3), pytest.approx(0.8)]
+    assert_yolo_grains_non_overlapping(merged)
+
+
+def test_assert_yolo_grains_non_overlapping_rejects_overlapping_proposals() -> None:
     masks = np.zeros((2, 8, 8), dtype=np.float32)
     masks[0, 2:6, 2:6] = 1.0
     masks[1, 2:6, 2:6] = 1.0
-    scores = np.array([0.2, 0.9], dtype=np.float32)
-    expected = instance_map_from_masks(masks, scores, height=8, width=8)
-
-    ps = yolo_prediction_set_from_masks(
+    proposals = yolo_prediction_set_from_masks(
         masks_hw=masks,
-        scores=scores,
+        scores=np.array([0.2, 0.9], dtype=np.float32),
         height=8,
         width=8,
     )
-    merged = prediction_set_to_merged_instance_view(ps)
-    np.testing.assert_array_equal(merged, expected)
+    with pytest.raises(ValueError, match="overlapping"):
+        assert_yolo_grains_non_overlapping(proposals)
+
+
+def test_merge_yolo_proposals_collapses_overlapping_proposals_to_one_grain() -> None:
+    masks = np.zeros((2, 8, 8), dtype=np.float32)
+    masks[0, 2:6, 2:6] = 1.0
+    masks[1, 2:6, 2:6] = 1.0
+    proposals = yolo_prediction_set_from_masks(
+        masks_hw=masks,
+        scores=np.array([0.2, 0.9], dtype=np.float32),
+        height=8,
+        width=8,
+    )
+    canonical = merge_yolo_proposals_by_score(proposals)
+    assert len(proposals.detections) == 2
+    assert len(canonical.detections) == 1
+    assert canonical.detections[0]["score"] == pytest.approx(0.9)
+    assert_yolo_grains_non_overlapping(canonical)
+    assert_yolo_canonical_sets_equal(canonical, merge_yolo_proposals_by_score(proposals))
+
+
+def test_merge_yolo_proposals_save_load_preserves_canonical_rles(tmp_path: Path) -> None:
+    masks = np.zeros((2, 8, 8), dtype=np.float32)
+    masks[0, 2:6, 2:6] = 1.0
+    masks[1, 2:6, 2:6] = 1.0
+    proposals = yolo_prediction_set_from_masks(
+        masks_hw=masks,
+        scores=np.array([0.2, 0.9], dtype=np.float32),
+        height=8,
+        width=8,
+    )
+    canonical = merge_yolo_proposals_by_score(proposals)
+    path = prediction_set_path(tmp_path, "sample")
+    save_prediction_set(path, canonical)
+    reloaded = load_prediction_set(path)
+    assert_yolo_canonical_sets_equal(reloaded, canonical)
+
+
+def test_merge_yolo_proposals_matches_pre_change_eval_score_merge() -> None:
+    height, width = 8, 8
+    masks = np.zeros((2, height, width), dtype=np.float32)
+    masks[0, 2:6, 2:6] = 1.0
+    masks[1, 2:6, 2:6] = 1.0
+    scores = np.array([0.2, 0.9], dtype=np.float32)
+
+    proposals = yolo_prediction_set_from_masks(
+        masks_hw=masks,
+        scores=scores,
+        height=height,
+        width=width,
+    )
+    canonical = merge_yolo_proposals_by_score(proposals)
+    pre_change_eval = yolo_detections_to_instance_map_by_score(
+        proposals.detections,
+        height=height,
+        width=width,
+        decode_segmentation=segmentation_to_binary_mask,
+    )
+    post_eval = prediction_set_to_merged_instance_view(canonical)
+
+    assert_instance_map_partitions_equal(post_eval, pre_change_eval)
+    assert_yolo_canonical_sets_equal(canonical, merge_yolo_proposals_by_score(proposals))
 
 
 def test_prediction_set_path_layout() -> None:
@@ -182,6 +270,8 @@ def test_build_yolo_prediction_set_from_ultralytics_per_mask() -> None:
     assert len(from_ultralytics.detections) == len(expected.detections) == 1
     assert from_ultralytics.detections[0]["score"] == pytest.approx(0.75)
     np.testing.assert_array_equal(
-        prediction_set_to_merged_instance_view(from_ultralytics),
-        prediction_set_to_merged_instance_view(expected),
+        prediction_set_to_merged_instance_view(
+            merge_yolo_proposals_by_score(from_ultralytics)
+        ),
+        prediction_set_to_merged_instance_view(merge_yolo_proposals_by_score(expected)),
     )

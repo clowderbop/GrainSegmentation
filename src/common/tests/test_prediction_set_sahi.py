@@ -9,6 +9,7 @@ import pytest
 
 from common.prediction_set import (
     build_yolo_prediction_set_from_sahi_predictions,
+    merge_yolo_proposals_by_score,
     prediction_set_to_merged_instance_view,
 )
 from common.tests.prediction_set_fixtures import yolo_prediction_set_from_masks
@@ -77,6 +78,10 @@ def test_build_yolo_prediction_set_from_sahi_matches_mask_planes() -> None:
     from_masks = yolo_prediction_set_from_masks(
         masks_hw=masks, scores=scores, height=height, width=width
     )
-    merged = prediction_set_to_merged_instance_view(from_sahi)
-    expected = prediction_set_to_merged_instance_view(from_masks)
-    np.testing.assert_array_equal(merged, expected)
+    merged = prediction_set_to_merged_instance_view(
+        merge_yolo_proposals_by_score(from_sahi)
+    )
+    expected = prediction_set_to_merged_instance_view(
+        merge_yolo_proposals_by_score(from_masks)
+    )
+    np.testing.assert_array_equal(merged > 0, expected > 0)

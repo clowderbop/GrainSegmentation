@@ -11,6 +11,7 @@ import tifffile
 from common.evaluate_instances import collect_manifest_samples, evaluate_instance_samples
 from common.prediction_set import (
     build_unet_prediction_set_from_instance_map,
+    merge_yolo_proposals_by_score,
     prediction_set_path,
     save_prediction_set,
 )
@@ -51,11 +52,13 @@ def test_evaluate_instances_from_prediction_set_manifest(tmp_path: Path) -> None
 
     masks = np.zeros((1, height, width), dtype=np.float32)
     masks[0, 4:20, 4:20] = 1.0
-    ps = yolo_prediction_set_from_masks(
-        masks_hw=masks,
-        scores=np.array([0.99], dtype=np.float32),
-        height=height,
-        width=width,
+    ps = merge_yolo_proposals_by_score(
+        yolo_prediction_set_from_masks(
+            masks_hw=masks,
+            scores=np.array([0.99], dtype=np.float32),
+            height=height,
+            width=width,
+        )
     )
     ps_path = prediction_set_path(tmp_path, "sample")
     save_prediction_set(ps_path, ps)

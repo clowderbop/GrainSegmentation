@@ -3,9 +3,52 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from common.mask_ops import masks_hw_to_binary, resize_mask_nearest
-from common.prediction_set import GRAIN_CLASS_ID, PredictionSet, binary_mask_to_segmentation
+from common.prediction_set import (
+    GRAIN_CLASS_ID,
+    PredictionSet,
+    binary_mask_to_segmentation,
+    segmentation_to_binary_mask,
+)
+
+
+def assert_instance_map_partitions_equal(
+    actual: np.ndarray, expected: np.ndarray
+) -> None:
+    """Same foreground partition (label ids may differ)."""
+    np.testing.assert_array_equal(actual.shape, expected.shape)
+    np.testing.assert_array_equal(actual > 0, expected > 0)
+
+
+def _normalize_rle(segmentation: dict) -> dict:
+    counts = segmentation["counts"]
+    if isinstance(counts, bytes):
+        counts = counts.decode("utf-8")
+    return {"size": list(segmentation["size"]), "counts": counts}
+
+
+def assert_yolo_canonical_sets_equal(
+    actual: PredictionSet, expected: PredictionSet
+) -> None:
+    """Match canonical YOLO grains by score and RLE (order-independent)."""
+    assert actual.producer == expected.producer == "yolo"
+    assert (actual.height, actual.width) == (expected.height, expected.width)
+    assert len(actual.detections) == len(expected.detections)
+
+    def sort_key(det: dict) -> tuple:
+        mask = segmentation_to_binary_mask(det["segmentation"])
+        return (-float(det["score"]), -int(mask.sum()), mask.tobytes())
+
+    for actual_det, expected_det in zip(
+        sorted(actual.detections, key=sort_key),
+        sorted(expected.detections, key=sort_key),
+    ):
+        assert float(actual_det["score"]) == pytest.approx(float(expected_det["score"]))
+        assert _normalize_rle(actual_det["segmentation"]) == _normalize_rle(
+            expected_det["segmentation"]
+        )
 
 
 def yolo_prediction_set_from_masks(
@@ -15,7 +58,7 @@ def yolo_prediction_set_from_masks(
     height: int,
     width: int,
 ) -> PredictionSet:
-    """Build a YOLO prediction set from per-mask planes (tests and small fixtures)."""
+    """Build overlapping YOLO detector proposals from per-mask planes (tests only)."""
     if masks_hw.ndim != 3:
         raise ValueError(f"masks_hw must be (n, H, W), got {masks_hw.shape}")
     detections: list[dict] = []

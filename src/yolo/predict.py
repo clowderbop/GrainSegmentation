@@ -11,8 +11,11 @@ import numpy as np
 from tifffile import TiffFile
 
 from common.prediction_set import (
+    PredictionSet,
+    assert_yolo_grains_non_overlapping,
     build_yolo_prediction_set_from_sahi_predictions,
     build_yolo_prediction_set_from_ultralytics,
+    merge_yolo_proposals_by_score,
     prediction_set_path,
     save_prediction_set,
 )
@@ -188,6 +191,18 @@ def _get_sliced_prediction_preserve_channels(
     )
 
 
+def _save_merged_yolo_prediction_set(
+    path: Path, proposals: PredictionSet, *, sample_id: str
+) -> None:
+    merged = merge_yolo_proposals_by_score(proposals)
+    assert_yolo_grains_non_overlapping(merged)
+    save_prediction_set(path, merged)
+    print(
+        f"Wrote {path} ({len(merged.detections)} grains, "
+        f"{len(proposals.detections)} proposals merged for {sample_id})"
+    )
+
+
 def _write_patch_prediction_set(
     *,
     output_dir: Path,
@@ -197,11 +212,10 @@ def _write_patch_prediction_set(
     width: int,
 ) -> None:
     path = prediction_set_path(output_dir, sample_id)
-    prediction_set = build_yolo_prediction_set_from_ultralytics(
+    proposals = build_yolo_prediction_set_from_ultralytics(
         result, height=height, width=width
     )
-    save_prediction_set(path, prediction_set)
-    print(f"Wrote {path} ({len(prediction_set.detections)} detector proposals)")
+    _save_merged_yolo_prediction_set(path, proposals, sample_id=sample_id)
 
 
 def _write_whole_prediction_set(
@@ -213,11 +227,10 @@ def _write_whole_prediction_set(
     width: int,
 ) -> None:
     path = prediction_set_path(output_dir, sample_id)
-    prediction_set = build_yolo_prediction_set_from_sahi_predictions(
+    proposals = build_yolo_prediction_set_from_sahi_predictions(
         predictions, height=height, width=width
     )
-    save_prediction_set(path, prediction_set)
-    print(f"Wrote {path} ({len(prediction_set.detections)} detector proposals)")
+    _save_merged_yolo_prediction_set(path, proposals, sample_id=sample_id)
 
 
 def device_for_sahi(device: int | str | list[int]) -> str:
@@ -317,6 +330,7 @@ def _write_patch_run_provenance(args: argparse.Namespace, *, manifest: Path | No
         "conf": float(args.conf),
         "imgsz": int(args.imgsz),
         "variant": args.variant,
+        "score_merge_at_predict": True,
     }
     if manifest is not None:
         payload["manifest"] = str(manifest.resolve())
@@ -405,6 +419,7 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             "overlap_height_ratio": float(args.overlap_height_ratio),
             "overlap_width_ratio": float(args.overlap_width_ratio),
             "variant": args.variant,
+            "score_merge_at_predict": True,
         },
     )
 

@@ -73,10 +73,7 @@ def write_prediction_set_overlay_visual(
     import tifffile
 
     visual = _as_rgb_uint8(image).astype(np.float32)
-    detections = list(prediction_set.detections)
-    if prediction_set.producer == "yolo":
-        detections.sort(key=lambda det: float(det["score"]), reverse=False)
-    for index, det in enumerate(detections):
+    for index, det in enumerate(prediction_set.detections):
         mask = segmentation_to_binary_mask(det["segmentation"])
         if not mask.any():
             continue

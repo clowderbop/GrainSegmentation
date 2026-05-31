@@ -130,6 +130,10 @@ if [ "$DRY_RUN" = true ]; then
     echo
 else
     gt_job_id="$("${gt_cmd[@]}" | awk '{print $NF}')"
+    if [ -z "${gt_job_id:-}" ]; then
+        echo "GT cache sbatch did not return a job id" >&2
+        exit 1
+    fi
 fi
 
 if [ "${NO_RESUME:-0}" = "1" ] && [ "$DRY_RUN" = false ]; then
@@ -150,11 +154,12 @@ cand_cmd=(
     sbatch
     "--export=${cand_export}"
     "--array=1-${candidate_count}"
-    "$REPO_ROOT/SLURM/yolo/run_profile_tune_candidate.sh"
 )
+# sbatch requires all options before the script path (otherwise --dependency is ignored).
 if [ "$DRY_RUN" = false ]; then
     cand_cmd+=("--dependency=afterok:${gt_job_id}")
 fi
+cand_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_candidate.sh")
 
 if [ "$DRY_RUN" = true ]; then
     printf '%q ' "${cand_cmd[@]}"

@@ -80,6 +80,27 @@ def test_build_and_validate_unet_whole_manifest(tmp_path: Path) -> None:
     assert len(manifest.samples[0].images) == 7
 
 
+def test_load_rejects_obsolete_pred_instances_field(tmp_path: Path) -> None:
+    payload = {
+        "schema_version": 1,
+        "variant": "PPL",
+        "unit": "patch",
+        "grainseg_root": str(tmp_path),
+        "path_base": "grainseg_root",
+        "samples": [
+            {
+                "sample_id": "patch001",
+                "image": "patch001.tif",
+                "pred_instances": "instances/patch001_instances.tif",
+            }
+        ],
+    }
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="obsolete field"):
+        load_dataset_manifest(path)
+
+
 def test_load_rejects_stacked_mosaic_in_images(tmp_path: Path) -> None:
     grainseg = _synthetic_grainseg(tmp_path)
     spec = get_variant("PPL+PPXblend")
@@ -118,6 +139,38 @@ def test_collect_manifest_unet_samples_shape(tmp_path: Path) -> None:
     assert len(samples[0]["images"]) == 7
 
 
+def test_stage_manifest_copies_gt_txt_preserving_tree(tmp_path: Path) -> None:
+    grainseg = tmp_path / "grainseg"
+    rel_txt = "dataset/test/patches/PPL/labels/test/region_0001_y00000_x00000.txt"
+    rel_image = "dataset/test/patches/PPL/images/test/region_0001_y00000_x00000.tif"
+    (grainseg / rel_txt).parent.mkdir(parents=True, exist_ok=True)
+    (grainseg / rel_txt).write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+    _write_rgb_tiff(grainseg / rel_image)
+
+    source = DatasetManifest(
+        schema_version=1,
+        variant="PPL",
+        unit="patch",
+        grainseg_root=str(grainseg),
+        path_base="grainseg_root",
+        samples=(
+            ManifestSampleRow(
+                sample_id="region_0001_y00000_x00000",
+                image=rel_image,
+                gt_txt=rel_txt,
+                gt_origin="patch_stem",
+            ),
+        ),
+    )
+    work = tmp_path / "work"
+    staged = stage_manifest(source, work)
+    assert staged.path_base == "work_root"
+    resolved_txt = resolve_row_path(staged, staged.samples[0].gt_txt)
+    assert resolved_txt is not None
+    assert resolved_txt.is_file()
+    assert resolved_txt == (work / rel_txt).resolve()
+
+
 def test_stage_manifest_copies_channel_files(tmp_path: Path) -> None:
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
@@ -154,6 +207,113 @@ def test_stage_manifest_integration_file_count(tmp_path: Path) -> None:
     assert all(path.is_file() for path in channel_files)
 
 
+def test_build_eval_manifest_materializes_staged_assets_for_eval(tmp_path: Path) -> None:
+    """Cluster layout: inference staging and run output are sibling directories."""
+    grainseg = _synthetic_grainseg(tmp_path)
+    spec = get_variant("PPL+PPXblend")
+    stacked = grainseg / spec.paths.test_mosaic_stacked
+    stacked.parent.mkdir(parents=True, exist_ok=True)
+    _write_rgb_tiff(stacked)
+    test_gpkg = grainseg / spec.paths.test_labels_gpkg
+    test_gpkg.parent.mkdir(parents=True, exist_ok=True)
+    test_gpkg.write_text("", encoding="utf-8")
+    source = build_yolo_whole_manifest(
+        split="test", variant="PPL+PPXblend", grainseg_root=grainseg
+    )
+    staged_work = tmp_path / "staged"
+    staged = stage_manifest(source, staged_work)
+    pred_root = tmp_path / "eval" / "yolo_PPL+PPXblend"
+    pred_root.mkdir(parents=True)
+    from common.prediction_set import prediction_set_path, save_prediction_set
+
+    save_prediction_set(
+        prediction_set_path(pred_root, "test"),
+        {
+            "schema_version": 1,
+            "height": 8,
+            "width": 8,
+            "producer": "yolo",
+            "detections": [],
+        },
+    )
+    eval_doc = build_eval_manifest(
+        staged,
+        prediction_set_dir=pred_root,
+        manifest_parent=pred_root,
+    )
+    eval_path = pred_root / "eval_manifest.json"
+    write_dataset_manifest(eval_path, eval_doc)
+
+    work_base = pred_root.resolve()
+    image = resolve_row_path(eval_doc, eval_doc.samples[0].image)
+    gt = resolve_row_path(eval_doc, eval_doc.samples[0].gt_gpkg)
+    assert image is not None and gt is not None
+    assert work_base in image.parents
+    assert work_base in gt.parents
+    assert image.is_file()
+    assert gt.is_file()
+
+    samples = collect_manifest_samples(eval_path)
+    assert samples[0].image_path == image
+    assert samples[0].gt_gpkg == gt
+
+
+def test_build_eval_manifest_resolves_staged_gt_gpkg(tmp_path: Path) -> None:
+    grainseg = _synthetic_grainseg(tmp_path)
+    spec = get_variant("PPL+PPXblend")
+    stacked = grainseg / spec.paths.test_mosaic_stacked
+    stacked.parent.mkdir(parents=True, exist_ok=True)
+    stacked.write_bytes(b"")
+    test_gpkg = grainseg / spec.paths.test_labels_gpkg
+    test_gpkg.parent.mkdir(parents=True, exist_ok=True)
+    test_gpkg.write_text("", encoding="utf-8")
+    source = build_yolo_whole_manifest(
+        split="test", variant="PPL+PPXblend", grainseg_root=grainseg
+    )
+    work = tmp_path / "staged"
+    staged = stage_manifest(source, work)
+    pred_root = tmp_path / "run"
+    pred_root.mkdir()
+    from common.prediction_set import prediction_set_path, save_prediction_set
+
+    save_prediction_set(
+        prediction_set_path(pred_root, "test"),
+        {
+            "schema_version": 1,
+            "height": 8,
+            "width": 8,
+            "producer": "yolo",
+            "detections": [],
+        },
+    )
+    eval_doc = build_eval_manifest(
+        staged,
+        prediction_set_dir=pred_root,
+        manifest_parent=pred_root,
+    )
+    resolved = resolve_row_path(eval_doc, eval_doc.samples[0].gt_gpkg)
+    assert resolved is not None
+    assert resolved.is_file()
+
+
+def test_build_eval_manifest_rejects_scratch_gt_gpkg(tmp_path: Path) -> None:
+    grainseg = _synthetic_grainseg(tmp_path)
+    source = build_unet_whole_manifest(
+        split="train", variant="PPL+AllPPX", grainseg_root=grainseg
+    )
+    pred_root = tmp_path / "run"
+    pred_root.mkdir()
+    scratch_gt = grainseg / get_variant("PPL+AllPPX").paths.train_labels_gpkg
+
+    with pytest.raises(ValueError, match="staged work"):
+        build_eval_manifest(
+            source,
+            prediction_set_dir=pred_root,
+            manifest_parent=pred_root,
+            gt_gpkg=scratch_gt,
+        )
+
+
 def test_build_eval_manifest_gt_gpkg_overrides_source(tmp_path: Path) -> None:
     grainseg = _synthetic_grainseg(tmp_path)
     source = build_unet_whole_manifest(
@@ -163,25 +323,86 @@ def test_build_eval_manifest_gt_gpkg_overrides_source(tmp_path: Path) -> None:
 
     pred_root = tmp_path / "run_model"
     pred_root.mkdir()
-    instances_dir = pred_root / "instances"
-    instances_dir.mkdir()
-    tifffile.imwrite(
-        instances_dir / "train_instances.tif",
-        np.zeros((8, 8), dtype=np.int32),
+    from common.prediction_set import prediction_set_path, save_prediction_set
+
+    ps_path = prediction_set_path(pred_root, "train")
+    save_prediction_set(
+        ps_path,
+        {
+            "schema_version": 1,
+            "height": 8,
+            "width": 8,
+            "producer": "unet",
+            "detections": [],
+        },
     )
 
-    local_gt = tmp_path / "staged" / "train_labels.gpkg"
-    local_gt.parent.mkdir(parents=True)
+    local_gt = pred_root / "train_labels.gpkg"
     local_gt.write_text("", encoding="utf-8")
 
     eval_doc = build_eval_manifest(
         source,
-        pred_instances_dir=instances_dir,
+        prediction_set_dir=pred_root,
         manifest_parent=pred_root,
         gt_gpkg=local_gt,
     )
+    assert eval_doc.samples[0].instance_prediction_set is not None
+    assert eval_doc.samples[0].instance_prediction_set.endswith(
+        "prediction_sets/train.json"
+    )
     resolved = resolve_row_path(eval_doc, eval_doc.samples[0].gt_gpkg)
     assert resolved == local_gt.resolve()
+
+
+def test_build_eval_manifest_preserves_gt_txt(tmp_path: Path) -> None:
+    grainseg = tmp_path / "grainseg"
+    grainseg.mkdir()
+    image_path = grainseg / "patch001.tif"
+    image_path.write_bytes(b"\x00" * 64)
+    gt_txt = grainseg / "labels" / "patch001.txt"
+    gt_txt.parent.mkdir(parents=True)
+    gt_txt.write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+
+    source = DatasetManifest(
+        schema_version=1,
+        variant="PPL",
+        unit="patch",
+        grainseg_root=str(grainseg),
+        path_base="grainseg_root",
+        samples=(
+            ManifestSampleRow(
+                sample_id="patch001",
+                image="patch001.tif",
+                gt_txt="labels/patch001.txt",
+                gt_origin="patch_stem",
+            ),
+        ),
+    )
+
+    pred_root = tmp_path / "run"
+    pred_root.mkdir()
+    from common.prediction_set import prediction_set_path, save_prediction_set
+
+    save_prediction_set(
+        prediction_set_path(pred_root, "patch001"),
+        {
+            "schema_version": 1,
+            "height": 16,
+            "width": 16,
+            "producer": "yolo",
+            "detections": [],
+        },
+    )
+
+    eval_doc = build_eval_manifest(
+        source,
+        prediction_set_dir=pred_root,
+        manifest_parent=pred_root,
+    )
+    row = eval_doc.samples[0]
+    assert row.gt_txt is not None
+    assert row.gt_origin == "patch_stem"
+    assert resolve_row_path(eval_doc, row.gt_txt) == (pred_root / "labels/patch001.txt").resolve()
 
 
 def test_collect_manifest_samples_multi_input_anchor(tmp_path: Path) -> None:
@@ -192,14 +413,24 @@ def test_collect_manifest_samples_multi_input_anchor(tmp_path: Path) -> None:
     out_path = tmp_path / "m.json"
     write_dataset_manifest(out_path, manifest)
 
-    instances_dir = tmp_path / "instances"
-    instances_dir.mkdir()
-    pred = instances_dir / "train_instances.tif"
-    tifffile.imwrite(pred, np.zeros((8, 8), dtype=np.int32))
+    from common.prediction_set import prediction_set_path, save_prediction_set
+
+    run_dir = tmp_path / "run"
+    ps_path = prediction_set_path(run_dir, "train")
+    save_prediction_set(
+        ps_path,
+        {
+            "schema_version": 1,
+            "height": 8,
+            "width": 8,
+            "producer": "unet",
+            "detections": [],
+        },
+    )
 
     samples = collect_manifest_samples(
         out_path,
-        pred_instances_dir=instances_dir,
+        prediction_set_dir=run_dir,
         default_gt_gpkg=grainseg / get_variant("PPL+AllPPX").paths.train_labels_gpkg,
     )
     assert len(samples) == 1

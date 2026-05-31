@@ -26,7 +26,7 @@ class ManifestSampleRow:
     gt_gpkg: str | None = None
     gt_origin: GtOrigin | None = None
     gt_txt: str | None = None
-    pred_instances: str | None = None
+    instance_prediction_set: str | None = None
     semantic: str | None = None
 
     def __post_init__(self) -> None:
@@ -113,6 +113,21 @@ def resolve_row_path(manifest: DatasetManifest, raw: str | None) -> Path | None:
     return resolve_manifest_path(raw, manifest_path_base_dir(manifest))
 
 
+def require_eval_local_path(path: Path | str, *allowed_roots: Path) -> Path:
+    """Require ground-truth paths used in eval to live under staged work directories."""
+    resolved = Path(path).resolve()
+    if not allowed_roots:
+        raise ValueError("require_eval_local_path needs at least one allowed root")
+    for root in allowed_roots:
+        root = root.resolve()
+        if resolved == root or root in resolved.parents:
+            return resolved
+    roots = ", ".join(str(r) for r in allowed_roots)
+    raise ValueError(
+        f"Ground-truth path must be under staged work directory ({roots}): {resolved}"
+    )
+
+
 def load_manifest_json(path: Path) -> list[dict[str, Any]]:
     """Load raw sample dicts from ``{"samples": [...]}`` (legacy helper)."""
     manifest = load_dataset_manifest(path)
@@ -197,6 +212,10 @@ def collect_manifest_image_paths(
         else:
             image_path = resolve_row_path(manifest, row.anchor_image_path())
         assert image_path is not None
+        if manifest.path_base == "work_root":
+            image_path = require_eval_local_path(
+                image_path, manifest_path_base_dir(manifest)
+            )
         samples.append((image_path, row.sample_id))
     if not samples:
         raise ValueError(f"Manifest contains no samples: {manifest_path}")
@@ -274,8 +293,8 @@ def iter_manifest_asset_paths(manifest: DatasetManifest) -> Iterable[tuple[str, 
             yield row.gt_gpkg, "gt_gpkg"
         if row.gt_txt is not None:
             yield row.gt_txt, "gt_txt"
-        if row.pred_instances is not None:
-            yield row.pred_instances, "pred_instances"
+        if row.instance_prediction_set is not None:
+            yield row.instance_prediction_set, "instance_prediction_set"
         if row.semantic is not None:
             yield row.semantic, "semantic"
 
@@ -283,44 +302,56 @@ def iter_manifest_asset_paths(manifest: DatasetManifest) -> Iterable[tuple[str, 
 def build_eval_manifest(
     source: DatasetManifest,
     *,
-    pred_instances_dir: Path,
+    prediction_set_dir: Path,
     manifest_parent: Path,
     gt_gpkg: str | Path | None = None,
     anchor_suffix: str = "_PPL",
 ) -> DatasetManifest:
-    """Single-image eval manifest with ``pred_instances`` filled in."""
-    from common.instance_predictions import instance_map_filename
+    """Single-image eval manifest with ``instance_prediction_set`` filled in."""
+    from common.prediction_set import prediction_set_path
+    from common.stage_manifest import materialize_eval_row_assets
 
     manifest_parent = Path(manifest_parent).resolve()
-    pred_instances_dir = pred_instances_dir.resolve()
+    prediction_set_dir = prediction_set_dir.resolve()
+    gt_override = Path(gt_gpkg).resolve() if gt_gpkg is not None else None
     rows: list[ManifestSampleRow] = []
     for row in source.samples:
-        anchor = row.anchor_image_path(suffix=anchor_suffix)
-        anchor_resolved = resolve_row_path(source, anchor)
-        assert anchor_resolved is not None
+        image_resolved, gt_resolved, gt_txt_resolved = materialize_eval_row_assets(
+            source,
+            row,
+            manifest_parent,
+            anchor_suffix=anchor_suffix,
+            gt_gpkg_override=gt_override,
+        )
         try:
-            rel_image = os.path.relpath(anchor_resolved, manifest_parent)
+            rel_image = os.path.relpath(image_resolved, manifest_parent)
         except ValueError:
-            rel_image = str(anchor_resolved)
-        pred_path = pred_instances_dir / instance_map_filename(row.sample_id)
+            rel_image = str(image_resolved)
+        pred_path = prediction_set_path(prediction_set_dir, row.sample_id)
         try:
             rel_pred = os.path.relpath(pred_path, manifest_parent)
         except ValueError:
             rel_pred = str(pred_path)
-        if gt_gpkg is not None:
+        rel_gt: str | None = None
+        if gt_resolved is not None:
             try:
-                gt = os.path.relpath(Path(gt_gpkg).resolve(), manifest_parent)
+                rel_gt = os.path.relpath(gt_resolved, manifest_parent)
             except ValueError:
-                gt = str(Path(gt_gpkg).resolve())
-        else:
-            gt = row.gt_gpkg
+                rel_gt = str(gt_resolved)
+        rel_gt_txt: str | None = None
+        if gt_txt_resolved is not None:
+            try:
+                rel_gt_txt = os.path.relpath(gt_txt_resolved, manifest_parent)
+            except ValueError:
+                rel_gt_txt = str(gt_txt_resolved)
         rows.append(
             ManifestSampleRow(
                 sample_id=row.sample_id,
                 image=rel_image,
-                gt_gpkg=gt,
+                gt_gpkg=rel_gt,
                 gt_origin=row.gt_origin or "whole_image",
-                pred_instances=rel_pred,
+                gt_txt=rel_gt_txt,
+                instance_prediction_set=rel_pred,
             )
         )
     return DatasetManifest(
@@ -365,8 +396,8 @@ def sample_row_to_dict(row: ManifestSampleRow) -> dict[str, Any]:
         payload["gt_origin"] = row.gt_origin
     if row.gt_txt is not None:
         payload["gt_txt"] = row.gt_txt
-    if row.pred_instances is not None:
-        payload["pred_instances"] = row.pred_instances
+    if row.instance_prediction_set is not None:
+        payload["instance_prediction_set"] = row.instance_prediction_set
     if row.semantic is not None:
         payload["semantic"] = row.semantic
     return payload
@@ -406,6 +437,11 @@ def _parse_dataset_manifest(
 def _parse_sample_row(raw: Any, index: int) -> ManifestSampleRow:
     if not isinstance(raw, dict):
         raise ValueError(f"manifest samples[{index}] must be an object")
+    if "pred_instances" in raw:
+        raise ValueError(
+            f'manifest samples[{index}] uses obsolete field "pred_instances"; '
+            'use "instance_prediction_set"'
+        )
     sample_id = str(raw.get("sample_id") or "")
     if not sample_id:
         stem_fallback = raw.get("image") or (raw.get("images") or [None])[0]
@@ -426,8 +462,10 @@ def _parse_sample_row(raw: Any, index: int) -> ManifestSampleRow:
         gt_gpkg=str(raw["gt_gpkg"]) if raw.get("gt_gpkg") is not None else None,
         gt_origin=raw.get("gt_origin"),  # type: ignore[arg-type]
         gt_txt=str(raw["gt_txt"]) if raw.get("gt_txt") is not None else None,
-        pred_instances=(
-            str(raw["pred_instances"]) if raw.get("pred_instances") is not None else None
+        instance_prediction_set=(
+            str(raw["instance_prediction_set"])
+            if raw.get("instance_prediction_set") is not None
+            else None
         ),
         semantic=str(raw["semantic"]) if raw.get("semantic") is not None else None,
     )

@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 import tifffile
 
-from common.evaluate_instances import _resolve_eval_samples
-from common.instance_predictions import instance_map_path, write_instance_map_tiff
+from common.evaluate_instances import _resolve_eval_samples, collect_manifest_samples
+from common.prediction_set import prediction_set_path, save_prediction_set
 
 
 def _write_blank(path: Path, w: int = 16, h: int = 16) -> None:
@@ -23,8 +23,8 @@ def test_whole_requires_manifest(tmp_path: Path) -> None:
         unit = "whole"
         manifest = None
         image = None
-        pred_instances = None
-        pred_instances_dir = None
+        instance_prediction_set = None
+        prediction_set_dir = None
         gt_gpkg = None
         gt_txt = None
         gt_origin = None
@@ -37,8 +37,17 @@ def test_whole_requires_manifest(tmp_path: Path) -> None:
 def test_whole_accepts_manifest(tmp_path: Path) -> None:
     image = tmp_path / "train_PPL.tif"
     _write_blank(image)
-    pred = instance_map_path(tmp_path, "train")
-    write_instance_map_tiff(pred, np.zeros((16, 16), dtype=np.int32))
+    pred = prediction_set_path(tmp_path, "train")
+    save_prediction_set(
+        pred,
+        {
+            "schema_version": 1,
+            "height": 16,
+            "width": 16,
+            "producer": "unet",
+            "detections": [],
+        },
+    )
     manifest_path = tmp_path / "eval.json"
     manifest_path.write_text(
         json.dumps(
@@ -52,7 +61,7 @@ def test_whole_accepts_manifest(tmp_path: Path) -> None:
                     {
                         "sample_id": "train",
                         "image": str(image),
-                        "pred_instances": str(pred),
+                        "instance_prediction_set": str(pred),
                         "gt_gpkg": str(tmp_path / "labels.gpkg"),
                         "gt_origin": "whole_image",
                     }
@@ -67,8 +76,8 @@ def test_whole_accepts_manifest(tmp_path: Path) -> None:
         unit = "whole"
         manifest = manifest_path
         image = None
-        pred_instances = None
-        pred_instances_dir = None
+        instance_prediction_set = None
+        prediction_set_dir = None
         gt_gpkg = None
         gt_txt = None
         gt_origin = None
@@ -77,3 +86,48 @@ def test_whole_accepts_manifest(tmp_path: Path) -> None:
     samples = _resolve_eval_samples(Args())  # type: ignore[arg-type]
     assert len(samples) == 1
     assert samples[0].sample_id == "train"
+
+
+def test_collect_manifest_samples_rejects_image_outside_work_root(tmp_path: Path) -> None:
+    work_root = tmp_path / "run"
+    work_root.mkdir()
+    external_image = tmp_path / "external.tif"
+    _write_blank(external_image)
+    gt = work_root / "labels.gpkg"
+    gt.write_text("", encoding="utf-8")
+    pred = prediction_set_path(work_root, "test")
+    save_prediction_set(
+        pred,
+        {
+            "schema_version": 1,
+            "height": 16,
+            "width": 16,
+            "producer": "yolo",
+            "detections": [],
+        },
+    )
+    manifest_path = work_root / "eval.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "variant": "PPL",
+                "unit": "whole",
+                "grainseg_root": str(work_root),
+                "path_base": "work_root",
+                "samples": [
+                    {
+                        "sample_id": "test",
+                        "image": "../external.tif",
+                        "instance_prediction_set": "prediction_sets/test.json",
+                        "gt_gpkg": "labels.gpkg",
+                        "gt_origin": "whole_image",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="staged work"):
+        collect_manifest_samples(manifest_path)

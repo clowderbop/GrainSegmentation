@@ -3,7 +3,7 @@ Long term maintainability is a core priority. If you add new functionality, firs
 Always read the README before starting. 
 Always use `uv` as the Python package manager and execution tool.
 Agents for this project run on a SLURM cluster node. Do not run long, intensive, or training jobs directly on the node. Keep direct terminal commands lightweight. For substantial work, use `srun` for interactive runs or `sbatch` for scheduled jobs.
-Use brief conventional commits for commit messages.
+Use brief conventional commits for commit messages. Suggest committing if it seems appropriate (e.g. starting to work on different feature).
 
 ## Agent skills
 

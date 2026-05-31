@@ -1,0 +1,31 @@
+[project]
+name = "grainsegmentation-analysis"
+version = "0.1.0"
+description = "Post-eval reporting for GrainSegmentation"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "grainsegmentation-common",
+    "pandas==2.2.3",
+]
+
+[project.optional-dependencies]
+analysis = [
+    "matplotlib==3.10.9",
+    "seaborn==0.13.2",
+]
+
+[tool.uv.sources]
+grainsegmentation-common = { path = "../common", editable = true }
+
+[dependency-groups]
+dev = ["pytest==9.0.3"]
+
+[build-system]
+requires = ["setuptools==81.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["analysis"]
+
+[tool.setuptools.package-dir]
+analysis = "."

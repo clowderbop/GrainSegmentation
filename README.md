@@ -254,4 +254,24 @@ Evaluation metrics include:
 - **F1 Score:** The harmonic mean of Precision and Recall, providing a single metric that balances both false positives and false negatives.
 - **Mean P/R/F1 over IoU 0.50-0.95:** `mP_iou50_95`, `mR_iou50_95`, and `mF1_iou50_95` average precision, recall, and F1 at IoU thresholds 0.50, 0.55, ..., 0.95 using the same matching rule at each threshold.
 
-For the YOLO models, **COCO-style mask AP (Average Precision)** is also used. It decouples detection performance from spatial accuracy by averaging across multiple IoU thresholds (`mAP@0.5:0.95`) and uses YOLO's prediction confidence scores. AP is not calculated for U-Net models because they don't output the needed confidence scores.
+For the YOLO models, **COCO-style mask AP (Average Precision)** is also used. It decouples detection performance from spatial accuracy by averaging across IoU thresholds (`mAP@0.5:0.95`) and uses YOLO's prediction confidence scores. AP is not calculated for U-Net models because they don't output the needed confidence scores.
+
+### Post-eval reporting
+
+After SLURM test eval jobs finish, build comparison tables and thesis figures from artifacts on scratch (not part of eval jobs):
+
+```bash
+uv sync --group analysis
+uv run --group analysis python -m analysis.build_report \
+  --grainseg-root "$SCRATCH/GrainSeg"
+```
+
+On the cluster after test eval jobs finish:
+
+```bash
+bash SLURM/analysis/submit_build_report.sh
+```
+
+See `SLURM/analysis/pipeline.md` for resources and optional `OUTPUT_DIR` / `REPORT_STRICT` env vars.
+
+Outputs under `$SCRATCH/GrainSeg/eval/reporting/` (`derived/`, `figures/`, `analysis_summary.json`). Headline charts use whole-section **AJI** and **F1@IoU50**; patch and Ultralytics val panels are labelled supporting only. Variant axis labels come from `display_name` in `config/variants.yaml` (thesis order: PPL → FullStack → PPL+XPLComp → FullComp).

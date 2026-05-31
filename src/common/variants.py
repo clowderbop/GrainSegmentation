@@ -16,6 +16,13 @@ import yaml
 
 _REGISTRY_RELATIVE = Path("config") / "variants.yaml"
 _VARIANT_ORDER = ("PPL+AllPPX", "PPL+PPXblend", "PPLPPXblend", "PPL")
+_THESIS_VARIANT_ORDER = ("PPL", "PPL+AllPPX", "PPL+PPXblend", "PPLPPXblend")
+_EXPECTED_DISPLAY_NAMES = {
+    "PPL": "PPL",
+    "PPL+AllPPX": "FullStack",
+    "PPL+PPXblend": "PPL+XPLComp",
+    "PPLPPXblend": "FullComp",
+}
 
 @dataclass(frozen=True)
 class UnetSpec:
@@ -88,6 +95,7 @@ class VariantSlugs:
 @dataclass(frozen=True)
 class VariantSpec:
     name: str
+    display_name: str
     unet: UnetSpec
     yolo: YoloSpec
     paths: PathTemplates
@@ -164,6 +172,20 @@ def all_variant_names() -> tuple[str, ...]:
     return tuple(reg.variants)
 
 
+def variants_in_thesis_order() -> tuple[str, ...]:
+    """Registry keys in thesis figure/table order (PPL → FullStack → …)."""
+    reg = load_registry()
+    missing = [name for name in _THESIS_VARIANT_ORDER if name not in reg.variants]
+    if missing:
+        raise ValueError(f"Thesis-order variants missing from registry: {missing}")
+    return _THESIS_VARIANT_ORDER
+
+
+def variant_display_names_in_thesis_order() -> tuple[str, ...]:
+    reg = load_registry()
+    return tuple(reg.variants[name].display_name for name in variants_in_thesis_order())
+
+
 def get_variant(name: str) -> VariantSpec:
     reg = load_registry()
     try:
@@ -192,7 +214,24 @@ def validate(registry: VariantRegistry | None = None) -> None:
             f"{sorted(expected_yolo_channels)}"
         )
 
+    if set(_EXPECTED_DISPLAY_NAMES) != set(reg.variants):
+        raise ValueError(
+            f"Registry variants {sorted(reg.variants)} != expected "
+            f"{sorted(_EXPECTED_DISPLAY_NAMES)}"
+        )
+    seen_display: set[str] = set()
     for name, spec in reg.variants.items():
+        expected_display = _EXPECTED_DISPLAY_NAMES.get(name)
+        if expected_display is None:
+            raise ValueError(f"Unexpected variant {name!r}")
+        if spec.display_name != expected_display:
+            raise ValueError(
+                f"{name}: display_name {spec.display_name!r} != "
+                f"{expected_display!r}"
+            )
+        if spec.display_name in seen_display:
+            raise ValueError(f"Duplicate display_name: {spec.display_name!r}")
+        seen_display.add(spec.display_name)
         if spec.unet.channels_per_input != 3:
             raise ValueError(f"{name}: channels_per_input must be 3")
         if len(spec.unet.input_suffixes) != spec.unet.num_inputs:
@@ -259,7 +298,15 @@ def _parse_variant(name: str, entry: dict[str, Any]) -> VariantSpec:
         slurm_job=str(slugs_raw["slurm_job"]),
         model_file=str(slugs_raw["model_file"]),
     )
-    return VariantSpec(name=name, unet=unet, yolo=yolo, paths=paths, slugs=slugs)
+    display_name = str(entry["display_name"])
+    return VariantSpec(
+        name=name,
+        display_name=display_name,
+        unet=unet,
+        yolo=yolo,
+        paths=paths,
+        slugs=slugs,
+    )
 
 
 def _shell_quote(value: str) -> str:
@@ -302,6 +349,7 @@ def _format_env_exports(
 def _variant_to_json(spec: VariantSpec, *, grainseg_root: Path | None = None) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "name": spec.name,
+        "display_name": spec.display_name,
         "unet": {
             "num_inputs": spec.unet.num_inputs,
             "input_suffixes": list(spec.unet.input_suffixes),

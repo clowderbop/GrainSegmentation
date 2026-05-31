@@ -20,6 +20,7 @@ slug_notes:
 
 variants:
   PPL:
+    display_name: PPL
     unet:
       num_inputs: 1
       input_suffixes: [_PPL]
@@ -49,6 +50,7 @@ variants:
       model_file: unet_finetuned_PPL.keras
 
   PPLPPXblend:
+    display_name: FullComp
     unet:
       num_inputs: 1
       input_suffixes: [_PPLPPXblend]
@@ -78,6 +80,7 @@ variants:
       model_file: unet_finetuned_PPLPPXblend.keras
 
   PPL+PPXblend:
+    display_name: PPL+XPLComp
     unet:
       num_inputs: 2
       input_suffixes: [_PPL, _PPXblend]
@@ -107,6 +110,7 @@ variants:
       model_file: unet_finetuned_PPL+PPXblend.keras
 
   PPL+AllPPX:
+    display_name: FullStack
     unet:
       num_inputs: 7
       input_suffixes: [_PPL, _PPX1, _PPX2, _PPX3, _PPX4, _PPX5, _PPX6]

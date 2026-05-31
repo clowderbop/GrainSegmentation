@@ -23,6 +23,12 @@ EXPECTED_UNET_NUM_INPUTS = {
     "PPL+PPXblend": 2,
     "PPL+AllPPX": 7,
 }
+EXPECTED_DISPLAY_NAMES = {
+    "PPL": "PPL",
+    "PPL+AllPPX": "FullStack",
+    "PPL+PPXblend": "PPL+XPLComp",
+    "PPLPPXblend": "FullComp",
+}
 EXPECTED_WATERSHED_JOB_SLUGS = {
     "PPL": "PPL",
     "PPLPPXblend": "PPLPPXblend",
@@ -47,6 +53,11 @@ def test_schema_version(registry: dict) -> None:
 def test_all_four_variants_present(registry: dict) -> None:
     variants = registry["variants"]
     assert set(variants) == set(EXPECTED_VARIANTS)
+
+
+@pytest.mark.parametrize("name", EXPECTED_VARIANTS)
+def test_display_name(registry: dict, name: str) -> None:
+    assert registry["variants"][name]["display_name"] == EXPECTED_DISPLAY_NAMES[name]
 
 
 @pytest.mark.parametrize("name", EXPECTED_VARIANTS)

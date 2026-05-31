@@ -5,7 +5,7 @@ Research codebase comparing U-Net (semantic segmentation + instance extraction) 
 ## Language
 
 **Instance prediction set**:
-The canonical per-sample model output: a list of grain instances, each with geometry (COCO RLE) and optional **score** (YOLO only), for one microscopy sample.
+The canonical per-sample model output: a list of non-overlapping grain instances, each with geometry (COCO RLE). YOLO entries also carry **score** (winning proposal after **score merge** at predict time); U-Net entries do not.
 _Avoid:_ handover file, predictions JSON, NPZ (format names, not the concept)
 
 **Instance label map**:
@@ -16,16 +16,20 @@ _Avoid:_ instance map, instances TIFF (implementation paths)
 One segmented grain region in an image, represented as a mask or polygon regardless of which model produced it.
 
 **Detector proposal**:
-One entry in a YOLO instance prediction set: a detected grain mask and **score** from the instance segmentation model. Proposals may overlap each other before evaluation merges them.
-_Avoid:_ detection, prediction row (too generic)
+A detected grain mask and **score** from the YOLO instance segmentation model before **score merge**. Proposals may overlap; the default predict pipeline does not persist them as the canonical **instance prediction set**.
+_Avoid:_ detection, prediction row (too generic), canonical YOLO output (use **instance prediction set**)
 
 **Extracted grain**:
 One entry in a U-Net instance prediction set: a grain region produced by instance extraction (connected components or watershed) on a semantic prediction. Extracted grains do not overlap each other.
 _Avoid:_ watershed instance, CC label (method names)
 
 **Score merge**:
-Resolving overlapping YOLO detector proposals into a single non-overlapping view by painting higher-**score** masks over lower-score ones. Used for instance-level metrics and overlays, not stored in the prediction set.
+YOLO post-processing that resolves overlapping **detector proposals** into non-overlapping grains by painting higher-**score** masks over lower-score ones. Runs at predict time for both whole and patch **sample unit**; each surviving grain keeps the **score** of its winning proposal. Produces the canonical **instance prediction set**.
 _Avoid:_ NMS, confidence merge (legacy name), instance map from masks (implementation)
+
+**Slice-boundary duplicate**:
+Two or more YOLO grains in the canonical **instance prediction set** that correspond to one ground-truth grain, often when adjacent **sliding window** tiles each detect part of the same grain and **score merge** cannot fuse them (no overlapping masks). Treated as a known limitation of the current YOLO system, not a separate post-processing stage.
+_Avoid:_ split grain, tile artifact (informal only)
 
 **Score**:
 A detector-assigned value for how likely a YOLO detector proposal is a true grain instance. Stored as JSON field `score` on each detection (COCO-aligned). Required on YOLO proposals; must be absent on U-Net extracted grains.
@@ -48,16 +52,20 @@ The single object category for instance segmentation in this project (identifier
 _Avoid:_ category, label id (ambiguous with instance ids)
 
 **Merged instance view**:
-The non-overlapping grain layout produced by applying **score merge** to YOLO detector proposals, or taken directly from U-Net extracted grains. Used for instance-level metrics and may be built transiently at evaluation time.
+A single raster where each pixel has one instance id (or background). For YOLO, equivalent to rasterizing the canonical **instance prediction set** after **score merge**; for U-Net, rasterizing **extracted grains**. Built transiently for instance-level metrics when a label map is required.
 _Avoid:_ pred map, prediction raster (too vague)
 
 **Prediction overlay**:
-A visualization that blends predicted grain regions onto the microscopy image. For YOLO, overlapping proposals are resolved on the canvas in **score** order; for U-Net, extracted grains are drawn without overlap.
+A visualization that blends predicted grain regions onto the microscopy image from the canonical **instance prediction set** (non-overlapping grains for both **producer** families).
 _Avoid:_ SAHI visualization (pipeline step name)
 
 **Producer**:
-Which model family wrote an instance prediction set: `yolo` (detector proposals) or `unet` (extracted grains). Declares overlap and score-field rules for consumers.
+Which model family wrote an instance prediction set: `yolo` (non-overlapping grains with **score**) or `unet` (non-overlapping **extracted grains** without **score**). JSON and derived reporting tables use the field name `producer`; thesis figures do not show that word on axes (see **Model display label**).
 _Avoid:_ model_type, source (too vague)
+
+**Model display label**:
+Thesis-facing name for a **producer** family on post-eval figures and legends: **YOLO** and **U-Net**. Axis titles read **Model**; tick and legend entries use these labels, not registry tokens (`yolo`, `unet`). Aligns with **Model test comparison** prose. Data columns and eval JSON keep `producer`.
+_Avoid:_ Producer on figure axes, renaming `producer` in code, using Model for input configuration (that is **Variant display name**)
 
 **Sample unit**:
 Whether a manifest row refers to a whole microscopy section or a single patch crop. Carried on dataset manifests (`patch` or `whole`), not duplicated inside instance prediction set files.
@@ -68,7 +76,7 @@ The stable key for one manifest row and its instance prediction set file (`predi
 _Avoid:_ TIFF filename, channel suffix, split directory name (paths, not ids)
 
 **Run provenance**:
-Inference and post-processing parameters for a model run (e.g. minimum detection score / `conf`, SAHI slice size, watershed settings), stored once per run output directory alongside prediction sets.
+Inference and post-processing parameters for a model run (e.g. minimum detection score / `conf`, SAHI slice size, **score merge**, watershed settings), stored once per run output directory alongside prediction sets.
 _Avoid:_ metadata, .extract_meta (legacy filename)
 
 **Staging**:
@@ -76,7 +84,7 @@ Copying every file a dataset manifest references (images, masks, vector labels, 
 _Avoid:_ TMPDIR copy (implementation), partial staging (images only)
 
 **Mask AP**:
-COCO instance mask average precision computed from YOLO detector proposals (with **score**) against vector ground truth on whole-section test samples. A YOLO evaluation metric, not used for U-Net extracted grains or patch samples in the default pipelines.
+COCO instance mask average precision on the canonical YOLO **instance prediction set** (non-overlapping grains with **score**) against vector ground truth on whole-section test samples. Measures the full YOLO system including **score merge**, not raw overlapping **detector proposals**. Not used for U-Net or patch samples in the default pipelines.
 _Avoid:_ mask_ap_metrics.json (filename), COCO AP (unless distinguishing from instance AJI/F1)
 
 **Variant test ranking**:
@@ -84,11 +92,11 @@ The primary ordering of multi-modal input variants on held-out test: whole-secti
 _Avoid:_ test mAP, patch mean AJI as headline (training-crop or detector-native, not deployment unit)
 
 **Model test comparison**:
-Comparing **producer** families (YOLO vs U-Net) on the same input variant and test mosaic: same headline as **variant test ranking** — whole-section instance **AJI** (and **F1@IoU50**) under the shared **test inference recipe**; U-Net reaches instances via extraction after semantic prediction, YOLO via detector proposals and **score merge**.
+Comparing **producer** families (YOLO vs U-Net) on the same input variant and test mosaic: same headline as **variant test ranking** — whole-section instance **AJI** (and **F1@IoU50**) under the shared **test inference recipe**; both use non-overlapping grain lists (U-Net via extraction after semantic prediction, YOLO via **score merge** at predict time).
 _Avoid:_ comparing models on patch mAP alone, YOLO-only **Mask AP** as the cross-model headline
 
 **Supporting test metrics**:
-Diagnostics bundled with default YOLO test jobs but not used for **variant test ranking**: patch-level instance AJI/F1 (custom **merged instance view**) plus Ultralytics segmentation mAP on the patch test split (always computed on patch test jobs); whole-section **Mask AP** on SAHI runs (COCO on detector proposals, same **grain class** as predictions).
+Diagnostics bundled with default YOLO test jobs but not used for **variant test ranking**: patch-level instance AJI/F1 plus Ultralytics segmentation mAP on the patch test split (native detector output on patches, not the whole-section YOLO system); whole-section **Mask AP** on SAHI runs (COCO on the canonical YOLO **instance prediction set**, same **grain class** as predictions).
 _Avoid:_ optional val, secondary eval (vague), RUN_ULTRALYTICS_VAL (implementation flag; val is not optional in the default patch test job)
 
 **Patch metric aggregate**:
@@ -102,3 +110,35 @@ _Avoid:_ per-variant conf, hardcoded SLURM constants (duplicated or divergent re
 **U-Net extraction profile**:
 Per-model watershed (or other) settings used after semantic prediction to produce **extracted grains** at test time. Selected from tune JSON or CLI defaults per checkpoint, not from the **test inference recipe**.
 _Avoid:_ global watershed in test recipe, extraction recipe (ambiguous with instance prediction set)
+
+**Post-eval reporting**:
+Aggregating finished test eval artifacts on scratch and producing comparison tables and thesis figures. Runs after SLURM eval jobs complete; not part of inference or per-job metric computation. Ingests whole-section metrics for headline charts plus **supporting test metrics** (patch aggregates, **Mask AP**, Ultralytics val) in separately labelled panels. Headline figures rank by **AJI** with **F1@IoU50** alongside; derived efficiency views (gain vs PPL, per-input) use those metrics, not composite quality indices.
+_Avoid:_ eval pipeline, in-job plotting (implementation placement), quality index (legacy composite)
+
+**Eval run discovery**:
+How **post-eval reporting** locates finished eval outputs on scratch. V1 uses path conventions per **producer**, **variant**, and **sample unit** (whole vs patch; latest job dir for patch runs). No catalog file in v1; a future **eval run catalog** may pin paths when conventions are insufficient.
+_Avoid:_ submit script name as discovery key, yolo-only paths, required TSV before plotting
+
+**Reporting bundle**:
+The **post-eval reporting** output tree under the grainseg eval area on scratch (`figures/`, `derived/` tables, `analysis_summary.json`). Not versioned in git; regenerated by the reporting CLI after eval jobs finish. Initial figure set: headline AJI/F1 heatmap and model×input-configuration bars, PPL-relative delta heatmap, and one supporting YOLO patch-val panel; additional diagnostic charts deferred.
+_Avoid:_ repo `reports/` binaries, figures committed to git
+
+**Variant display name**:
+Thesis-facing label for an input configuration on tables and figures. Stored on each registry variant in `config/variants.yaml` (`display_name`); join key remains the variant key. In prose, names are emphasised (e.g. *FullStack*). Figures use these strings on axes, not registry keys or legacy names (`All-Stack`, `All-Comp`).
+_Avoid:_ modality (ambiguous), registry key on plot axes, separate reporting config for labels only
+
+**PPL configuration**:
+Single plane-polarized (PPL) image only. Registry variant `PPL`. Display name **PPL**.
+_Avoid:_ PPL-only, 1-channel (implementation)
+
+**FullStack configuration**:
+PPL plus each cross-polarized (XPL) image as separate inputs. Registry variant `PPL+AllPPX`. Display name **FullStack**.
+_Avoid:_ All-Stack, PPL+AllPPX on figures, seven-input (channel count)
+
+**PPL+XPLComp configuration**:
+PPL plus one screen-blend composite of all XPL images. Registry variant `PPL+PPXblend`. Display name **PPL+XPLComp**.()
+_Avoid:_ PPL+XPL-Comp, PPL+PPXblend on figures (registry spelling)
+
+**FullComp configuration**:
+Single screen-blend composite of PPL and all XPL images. Registry variant `PPLPPXblend`. Display name **FullComp**.
+_Avoid:_ All-Comp, PPLPPXblend on figures, PPLPPXblend (file stem, not thesis name)

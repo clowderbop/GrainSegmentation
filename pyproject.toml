@@ -15,18 +15,29 @@ dev = [
     "pytest==9.0.3",
     "pyyaml==6.0.3",
     "grainsegmentation-common",
+    "grainsegmentation-analysis",
     "unet-pipeline",
     "yolo",
+]
+analysis = [
+    "grainsegmentation-analysis[analysis]",
 ]
 
 [tool.uv.sources]
 grainsegmentation-common = { path = "src/common", editable = true }
+grainsegmentation-analysis = { path = "src/analysis", editable = true }
 unet-pipeline = { path = "src/unet", editable = true }
 yolo = { path = "src/yolo", editable = true }
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "src/common/tests", "src/unet/tests", "src/yolo/tests"]
-pythonpath = ["src/common", "src/unet", "src/yolo"]
+testpaths = [
+    "tests",
+    "src/common/tests",
+    "src/analysis/tests",
+    "src/unet/tests",
+    "src/yolo/tests",
+]
+pythonpath = ["src/common", "src/analysis", "src/unet", "src/yolo"]
 markers = [
     "integration: copies manifest assets on disk (staging contract)",
 ]

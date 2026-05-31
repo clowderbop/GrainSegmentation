@@ -16,6 +16,8 @@ from common.variants import (
     registry_path,
     repo_root,
     validate,
+    variant_display_names_in_thesis_order,
+    variants_in_thesis_order,
 )
 
 EXPECTED_VARIANTS = ("PPL", "PPLPPXblend", "PPL+PPXblend", "PPL+AllPPX")
@@ -31,6 +33,13 @@ EXPECTED_WATERSHED_JOB_SLUGS = {
     "PPL+PPXblend": "PPL_PlusPPXblend",
     "PPL+AllPPX": "PPL_AllPPX",
 }
+EXPECTED_DISPLAY_NAMES = {
+    "PPL": "PPL",
+    "PPL+AllPPX": "FullStack",
+    "PPL+PPXblend": "PPL+XPLComp",
+    "PPLPPXblend": "FullComp",
+}
+THESIS_VARIANT_ORDER = ("PPL", "PPL+AllPPX", "PPL+PPXblend", "PPLPPXblend")
 
 
 def test_registry_path_under_repo_root() -> None:
@@ -72,6 +81,21 @@ def test_resolve_paths_under_grainseg_root(tmp_path: Path) -> None:
 
 def test_all_variant_names_matches_registry_order() -> None:
     assert all_variant_names() == EXPECTED_VARIANTS
+
+
+@pytest.mark.parametrize("name", EXPECTED_VARIANTS)
+def test_display_name(name: str) -> None:
+    assert get_variant(name).display_name == EXPECTED_DISPLAY_NAMES[name]
+
+
+def test_variants_in_thesis_order() -> None:
+    assert variants_in_thesis_order() == THESIS_VARIANT_ORDER
+
+
+def test_variant_display_names_in_thesis_order() -> None:
+    assert variant_display_names_in_thesis_order() == tuple(
+        EXPECTED_DISPLAY_NAMES[k] for k in THESIS_VARIANT_ORDER
+    )
 
 
 def test_get_variant_unknown_raises() -> None:

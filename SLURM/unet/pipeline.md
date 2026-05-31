@@ -27,12 +27,14 @@ Jobs stage **manifest-listed files only** into `$TMPDIR` via `python -m common.s
 
 5. **`submit_whole_test_eval.sh`** → **`run_whole_test_eval.sh`**
    Held-out **test** whole-section eval (default instance method: watershed; reads tune JSONs from `runs/watershed_tune/`).
+   - Same prediction set layout as patch eval: `prediction_sets/*.json`, `run_provenance.json`, semantic TIFFs for `evaluate_semantic`.
    - Output: `eval/unet_test/`.
    - Override instance method or paths by calling `run_whole_test_eval.sh` directly (`--instance-method cc|watershed`, `--config-file`, etc.).
 
 6. **`submit_patch_test_eval.sh`** → **`run_patch_test_eval.sh`**
    One job per variant; patch-wise test eval on `dataset/test/unet_from_yolo/{variant}/manifest.json`.
-   - Output: `eval/unet_patches/{variant}/{job_id}/` (`instance_metrics.json`, predictions under job dir).
+   - Pipeline: `unet.predict` → semantic TIFFs under `semantic/`; `unet.extract_instances` → `prediction_sets/{sample_id}.json` + `run_provenance.json` (instance method, watershed/CC params); `stage_manifest write-eval` → `eval_manifest.json`; `common.evaluate_instances`.
+   - Output: `eval/unet_patches/{variant}/{job_id}/` (`instance_metrics.json`, `prediction_sets/`, `semantic/`, `run_provenance.json`). Legacy `instances/*_instances.tif` and `instances/.extract_meta.json` are not written.
 
 ## Config
 

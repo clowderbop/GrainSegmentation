@@ -17,8 +17,11 @@ source "$SLURM_ROOT/utils/manifest_shell.sh"
 source "$SLURM_ROOT/utils/watershed.sh"
 # shellcheck source=SLURM/utils/tensorflow.sh
 source "$SLURM_ROOT/utils/tensorflow.sh"
+# shellcheck source=SLURM/utils/test_inference.sh
+source "$SLURM_ROOT/utils/test_inference.sh"
 
 GRAINSEG_ROOT="$(grainseg_root)"
+load_test_inference_exports
 MANIFEST_SPLIT=""
 
 MODEL_DIR=""
@@ -28,8 +31,8 @@ CONFIG_FILE=""
 OVERLAY_VARIANT="${OVERLAY_VARIANT:-PPL}"
 GT_PATH=""
 DEFAULT_CONFIG_FILE="$SLURM_ROOT/unet/whole_eval_models.tsv"
-PATCH_SIZE=1024
-STRIDE=512
+PATCH_SIZE="$UNET_WHOLE_PATCH_SIZE"
+STRIDE="$UNET_WHOLE_STRIDE"
 BATCH_SIZE=1
 MASK_EXT=".tif"
 MASK_STEM_SUFFIX="_labels"
@@ -244,12 +247,10 @@ export TF_CPP_MIN_LOG_LEVEL=2
 
 WORK_DIR="$TMPDIR/eval_models_${SLURM_JOB_ID:-$$}"
 LOCAL_MODEL_DIR="$WORK_DIR/models"
-LOCAL_GT_GPKG="$WORK_DIR/$(basename "$GT_GPKG")"
 mkdir -p "$LOCAL_MODEL_DIR"
 
-echo "Copying models and ground-truth GeoPackage to TMPDIR..."
+echo "Copying models to TMPDIR..."
 cp -r "$MODEL_DIR"/. "$LOCAL_MODEL_DIR"/
-cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 
 cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
@@ -376,9 +377,8 @@ for i in "${!MODEL_PATHS[@]}"; do
     echo "Model ${MODEL_LABELS[$i]}: write eval manifest"
     stage_manifest_write_eval_in_unet_env \
         --source "$model_image_dir/manifest.json" \
-        --pred-instances-dir "$pred_root/instances" \
-        --output "$eval_manifest" \
-        --gt-gpkg "$LOCAL_GT_GPKG"
+        --prediction-set-dir "$pred_root" \
+        --output "$eval_manifest"
 
     echo "Model ${MODEL_LABELS[$i]}: evaluate_instances"
     instance_cmd=(

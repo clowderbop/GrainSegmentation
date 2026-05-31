@@ -23,15 +23,18 @@ source "$SLURM_ROOT/utils/watershed.sh"
 source "$SLURM_ROOT/utils/manifest_shell.sh"
 # shellcheck source=SLURM/utils/tensorflow.sh
 source "$SLURM_ROOT/utils/tensorflow.sh"
+# shellcheck source=SLURM/utils/test_inference.sh
+source "$SLURM_ROOT/utils/test_inference.sh"
 
 GRAINSEG_ROOT="$(grainseg_root)"
+load_test_inference_exports
 
 VARIANT="${VARIANT:-PPL}"
 JOB_TAG="${SLURM_JOB_ID:-local}"
 
-PATCH_SIZE="${PATCH_SIZE:-1024}"
-STRIDE="${STRIDE:-$PATCH_SIZE}"
-BATCH_SIZE="${BATCH_SIZE:-1}"
+PATCH_SIZE="${PATCH_SIZE:-$UNET_PATCH_SIZE}"
+STRIDE="${STRIDE:-$UNET_PATCH_STRIDE}"
+BATCH_SIZE="${BATCH_SIZE:-$UNET_PATCH_BATCH_SIZE}"
 
 TEST_ROOT="${TEST_ROOT:-$GRAINSEG_ROOT/dataset/test}"
 GT_GPKG="${GT_GPKG:-$TEST_ROOT/test_labels.gpkg}"
@@ -58,7 +61,6 @@ export TF_CPP_MIN_LOG_LEVEL=2
 WORK_ROOT="$TMPDIR/unet_patch_eval_${VARIANT}_$JOB_TAG"
 STAGED_PATCH="$WORK_ROOT/patch_manifest"
 LOCAL_MODEL_DIR="$WORK_ROOT/model"
-LOCAL_GT_GPKG="$WORK_ROOT/$(basename "$GT_GPKG")"
 TMP_OUT="$WORK_ROOT/out"
 
 rm -rf "$WORK_ROOT"
@@ -72,7 +74,6 @@ require_file "$STAGED_MANIFEST" "Staged patch manifest missing"
 
 LOCAL_MODEL_PATH="$LOCAL_MODEL_DIR/$(basename "$MODEL_PATH")"
 cp -f "$MODEL_PATH" "$LOCAL_MODEL_PATH"
-cp -f "$GT_GPKG" "$LOCAL_GT_GPKG"
 
 cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
@@ -101,7 +102,7 @@ predict_cmd=(
 )
 "${predict_cmd[@]}"
 
-echo "2/3 unet.extract_instances (instance label-map TIFFs)..."
+echo "2/3 unet.extract_instances (instance prediction sets)..."
 extract_cmd=(
     uv run --no-sync python -u -m unet.extract_instances
     --semantic-dir "$TMP_OUT/semantic"
@@ -130,9 +131,8 @@ EVAL_MANIFEST="$TMP_OUT/eval_manifest.json"
 echo "Building eval manifest..."
 stage_manifest_write_eval_in_unet_env \
     --source "$STAGED_MANIFEST" \
-    --pred-instances-dir "$TMP_OUT/instances" \
-    --output "$EVAL_MANIFEST" \
-    --gt-gpkg "$LOCAL_GT_GPKG"
+    --prediction-set-dir "$TMP_OUT" \
+    --output "$EVAL_MANIFEST"
 
 echo "3/3 common.evaluate_instances..."
 instance_cmd=(

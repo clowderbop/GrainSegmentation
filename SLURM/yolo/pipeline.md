@@ -20,7 +20,7 @@ Jobs stage patch manifests (and listed images/labels) into `$TMPDIR` for train a
    - **Patch eval** — non-overlapping 1024×1024 test patches via `dataset/test/patches/{variant}/manifest.json`.
    - **Whole eval (SAHI)** — sliding-window inference on the held-out test mosaic; manifest written at job start from registry + test layout.
    - Requires `runs/yolo26-seg/{variant}/weights/best.pt` and `dataset/test/test_labels.gpkg`.
-   - Outputs: `eval/yolo_patches/{variant}/{job_id}/`, `eval/yolo_{variant}/` (override with `OUTPUT_ROOT` / `SAHI_OUT` env on the run scripts).
+   - Outputs: `eval/yolo_patches/{variant}/{job_id}/` (`prediction_sets/*.json`, `instance_metrics.json`), `eval/yolo_{variant}/` for whole SAHI (`prediction_sets/*.json`, `run_provenance.json`, `instance_metrics.json`, `mask_ap_metrics.json`; override with `OUTPUT_ROOT` / `SAHI_OUT` env on the run scripts).
 
 ## Variant memory
 
@@ -32,16 +32,16 @@ Training (`submit_tune_or_train_variants.sh`):
 | `PPL+PPXblend` | 350G |
 | `PPL+AllPPX` | 1000G |
 
-Whole-section SAHI test (`submit_test_evaluations.sh` — higher than train because
-`yolo.predict` materializes full-resolution mask stacks):
+Whole-section SAHI test (`submit_test_evaluations.sh` → `run_sahi_test_eval.sh`).
+Peak RSS ~12–15G on the current test mosaic; instance merge decodes one mask at
+a time (`yolo_detections_to_instance_map_by_score`).
 
-| Variant | `sbatch --mem` |
-|---------|----------------|
-| `PPL`, `PPLPPXblend` | 400G |
-| `PPL+PPXblend` | 500G |
-| `PPL+AllPPX` | 1000G |
+| Job | `sbatch --mem` | `sbatch --time` |
+|-----|----------------|-----------------|
+| SAHI whole (all variants) | 48G | 00:25:00 |
+| Patch test (`run_patch_test_eval.sh`) | 48G | 00:15:00 |
 
-`sbatch --mem=…` on the command line overrides `#SBATCH --mem` in the run script.
+`sbatch --mem` / `--time` on the command line override `#SBATCH` in the run script.
 
 ## Example commands
 
@@ -61,7 +61,7 @@ Direct run (one variant, after weights exist):
 ```bash
 export VARIANT='PPL+AllPPX'
 sbatch --export=ALL,VARIANT SLURM/yolo/run_patch_test_eval.sh
-sbatch --mem=1000G --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
+sbatch --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
 ```
 
 ## Upstream / downstream
@@ -75,5 +75,7 @@ sbatch --mem=1000G --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
 |---------|----------|
 | `runs/yolo26-seg/{variant}/weights/best.pt` | Patch and SAHI test eval |
 | `eval/yolo_patches/`, `eval/yolo_{variant}/` | Metrics comparison with U-Net (`instance_metrics.json`, `mask_ap_metrics.json` on whole eval) |
+
+Whole SAHI predict writes **`prediction_sets/{sample_id}.json`** (COCO RLE proposals + score) and **`run_provenance.json`** (conf, slice size, overlap). Patch predict writes the same prediction set layout and **`run_provenance.json`** (conf, imgsz). Neither path writes `instances/*_instances.tif` or `masks/*.npz`. Eval uses `stage_manifest write-eval` → `eval_manifest.json` with `instance_prediction_set` paths; overlay, instance metrics, and mask AP all read those JSON files.
 
 **Note:** U-Net patch test crops (`dataset/test/unet_from_yolo/`) are derived from YOLO patch geometry but are consumed by `SLURM/unet/`, not this pipeline.

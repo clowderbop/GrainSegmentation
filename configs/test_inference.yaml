@@ -1,0 +1,26 @@
+# Shared test inference recipe (ADR 0003). Official ranking tables use these values only.
+# U-Net watershed tuning stays per-model (tune JSON / whole_eval_models.tsv).
+
+whole:
+  window: 1024
+  stride: 512
+
+patch:
+  imgsz: 1024
+
+yolo:
+  conf: 0.25
+  patch:
+    batch: 16
+  val:
+    imgsz: 1024
+    batch: 16
+
+unet:
+  whole:
+    patch_size: 1024
+    stride: 512
+  patch:
+    patch_size: 1024
+    stride: 1024
+    batch_size: 1

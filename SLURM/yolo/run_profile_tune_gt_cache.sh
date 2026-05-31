@@ -22,9 +22,13 @@ require_file "$train_gpkg" "Train labels GeoPackage not found"
 source "$SLURM_ROOT/prepare_env.sh"
 
 cd "$REPO_ROOT/src/yolo"
+echo "[$(date -Is)] uv sync …"
 uv sync
+echo "[$(date -Is)] uv sync done"
 
 echo "GT cache → $OUTPUT_DIR/_work/gt_cache/"
+echo "  train_labels: $train_gpkg"
+echo "  grainseg_root: $GRAINSEG_ROOT"
 uv run python -u -m yolo.profile_tune_gt_cache \
     --output-dir "$OUTPUT_DIR" \
     --grainseg-root "$GRAINSEG_ROOT" \

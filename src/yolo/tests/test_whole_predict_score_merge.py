@@ -26,7 +26,7 @@ from yolo import predict as predict_module
 
 @patch("yolo.predict._load_whole_predict_pairs")
 @patch("yolo.predict.load_image_for_yolo")
-@patch("yolo.predict._get_sliced_prediction_preserve_channels")
+@patch("yolo.predict.get_sliced_prediction_preserve_channels")
 @patch("sahi.AutoDetectionModel.from_pretrained")
 def test_whole_predict_writes_score_merged_canonical_set(
     mock_from_pretrained: MagicMock,

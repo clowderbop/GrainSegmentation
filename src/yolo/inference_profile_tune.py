@@ -1,10 +1,12 @@
-"""YOLO inference profile train selection (staged grid search, ADR 0005)."""
+"""YOLO inference profile train selection (full factorial grid, ADR 0005)."""
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import itertools
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -19,34 +21,26 @@ from common.test_inference import (
     rewrite_yolo_profile_in_recipe_text,
 )
 from common.variants import repo_root
+from yolo.profile_tune_work import weights_path
+from yolo.tiled_proposal_cache import recipe_whole_window_fingerprint, weights_sha256
+
+VariantScorer = Callable[[str, YoloInferenceProfileCandidate, Path], Path]
 
 _TUNE_GRID_RELATIVE = Path("configs") / "yolo_inference_profile_tune.yaml"
 
 
 @dataclass(frozen=True)
-class Stage1FixedKnobs:
-    conf: float
-    mask_threshold: float
-
-
-@dataclass(frozen=True)
-class Stage1Grid:
+class ProfileTuneGrid:
     postprocess_type: tuple[str, ...]
     match_metric: tuple[str, ...]
     match_threshold: tuple[float, ...]
-
-
-@dataclass(frozen=True)
-class Stage2Grid:
     conf: tuple[float, ...]
     mask_threshold: tuple[float, ...]
 
 
 @dataclass(frozen=True)
 class TuneGridSpec:
-    stage1_fixed: Stage1FixedKnobs
-    stage1: Stage1Grid
-    stage2: Stage2Grid
+    grid: ProfileTuneGrid
 
 
 def tune_grid_path(path: Path | None = None) -> Path:
@@ -58,59 +52,54 @@ def load_tune_grid(path: Path | None = None) -> TuneGridSpec:
     with resolved.open(encoding="utf-8") as handle:
         raw = yaml.safe_load(handle)
     doc = yv.require_mapping(raw, context=str(resolved))
-    stage1_raw = yv.require_mapping(doc.get("stage1"), context="stage1")
-    stage2_raw = yv.require_mapping(doc.get("stage2"), context="stage2")
-    recipe = load_test_inference_recipe()
-    stage1_fixed = Stage1FixedKnobs(
-        conf=recipe.yolo.conf,
-        mask_threshold=recipe.yolo.profile.mask_threshold,
-    )
+    grid_raw = yv.require_mapping(doc.get("grid"), context="grid")
     return TuneGridSpec(
-        stage1_fixed=stage1_fixed,
-        stage1=Stage1Grid(
+        grid=ProfileTuneGrid(
             postprocess_type=yv.require_str_list(
-                stage1_raw.get("postprocess_type"), context="stage1.postprocess_type"
+                grid_raw.get("postprocess_type"), context="grid.postprocess_type"
             ),
             match_metric=yv.require_str_list(
-                stage1_raw.get("match_metric"), context="stage1.match_metric"
+                grid_raw.get("match_metric"), context="grid.match_metric"
             ),
             match_threshold=yv.require_float_list(
-                stage1_raw.get("match_threshold"), context="stage1.match_threshold"
+                grid_raw.get("match_threshold"), context="grid.match_threshold"
             ),
-        ),
-        stage2=Stage2Grid(
-            conf=yv.require_float_list(stage2_raw.get("conf"), context="stage2.conf"),
+            conf=yv.require_float_list(grid_raw.get("conf"), context="grid.conf"),
             mask_threshold=yv.require_float_list(
-                stage2_raw.get("mask_threshold"), context="stage2.mask_threshold"
+                grid_raw.get("mask_threshold"), context="grid.mask_threshold"
             ),
         ),
     )
 
 
-def iter_stage1_candidates(spec: TuneGridSpec) -> Iterable[YoloInferenceProfileCandidate]:
-    fixed = spec.stage1_fixed
-    for ppt, metric, threshold in itertools.product(
-        spec.stage1.postprocess_type,
-        spec.stage1.match_metric,
-        spec.stage1.match_threshold,
+def iter_detector_jobs(
+    spec: TuneGridSpec, variants: tuple[str, ...]
+) -> Iterable[tuple[str, float, float]]:
+    """One GPU detector job per (variant, conf, mask_threshold)."""
+    for variant in variants:
+        for conf, mask_threshold in itertools.product(spec.grid.conf, spec.grid.mask_threshold):
+            yield variant, conf, mask_threshold
+
+
+def iter_grid_candidates(spec: TuneGridSpec) -> Iterable[YoloInferenceProfileCandidate]:
+    grid = spec.grid
+    for (
+        postprocess_type,
+        match_metric,
+        match_threshold,
+        conf,
+        mask_threshold,
+    ) in itertools.product(
+        grid.postprocess_type,
+        grid.match_metric,
+        grid.match_threshold,
+        grid.conf,
+        grid.mask_threshold,
     ):
         yield YoloInferenceProfileCandidate(
-            postprocess_type=ppt,
-            match_metric=metric,
-            match_threshold=threshold,
-            conf=fixed.conf,
-            mask_threshold=fixed.mask_threshold,
-        )
-
-
-def iter_stage2_candidates(
-    spec: TuneGridSpec, stage1_winner: YoloInferenceProfileCandidate
-) -> Iterable[YoloInferenceProfileCandidate]:
-    for conf, mask_threshold in itertools.product(spec.stage2.conf, spec.stage2.mask_threshold):
-        yield YoloInferenceProfileCandidate(
-            postprocess_type=stage1_winner.postprocess_type,
-            match_metric=stage1_winner.match_metric,
-            match_threshold=stage1_winner.match_threshold,
+            postprocess_type=postprocess_type,
+            match_metric=match_metric,
+            match_threshold=match_threshold,
             conf=conf,
             mask_threshold=mask_threshold,
         )
@@ -159,15 +148,8 @@ def score_candidate_across_variants(
     return mean_aji_across_variants(per_variant), per_variant
 
 
-def write_stage_results_csv(
-    path: Path,
-    rows: list[dict[str, Any]],
-    *,
-    variant_names: tuple[str, ...],
-) -> None:
-    if not rows:
-        raise ValueError("rows must not be empty")
-    fieldnames = [
+def grid_results_fieldnames(variant_names: tuple[str, ...]) -> list[str]:
+    return [
         "candidate_id",
         "postprocess_type",
         "match_metric",
@@ -176,6 +158,17 @@ def write_stage_results_csv(
         "mask_threshold",
         "mean_aji",
     ] + [f"aji__{variant}" for variant in variant_names]
+
+
+def write_grid_results_csv(
+    path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    variant_names: tuple[str, ...],
+) -> None:
+    if not rows:
+        raise ValueError("rows must not be empty")
+    fieldnames = grid_results_fieldnames(variant_names)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -184,17 +177,208 @@ def write_stage_results_csv(
             writer.writerow(row)
 
 
-def write_stage_winner_json(
+def append_grid_result_row(
+    path: Path,
+    row: dict[str, Any],
+    *,
+    variant_names: tuple[str, ...],
+) -> None:
+    fieldnames = grid_results_fieldnames(variant_names)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.is_file() or path.stat().st_size == 0
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
+def load_grid_results_csv(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def tune_grid_fingerprint(grid_config: Path | None) -> str:
+    resolved = tune_grid_path(grid_config)
+    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    return digest
+
+
+@dataclass(frozen=True)
+class GridResumeContext:
+    grainseg_root: Path
+    run_root: Path
+    grid_config: Path | None
+
+
+def variant_eval_resume_meta_path(metrics_path: Path) -> Path:
+    return metrics_path.with_name(f"{metrics_path.stem}.resume.json")
+
+
+def variant_eval_fingerprint(
+    *,
+    candidate: YoloInferenceProfileCandidate,
+    variant: str,
+    context: GridResumeContext,
+) -> dict[str, Any]:
+    weights = weights_path(context.grainseg_root, variant, context.run_root)
+    recipe = load_test_inference_recipe()
+    return {
+        "candidate_id": candidate.candidate_id(),
+        "postprocess_type": candidate.postprocess_type,
+        "match_metric": candidate.match_metric,
+        "match_threshold": candidate.match_threshold,
+        "conf": candidate.conf,
+        "mask_threshold": candidate.mask_threshold,
+        "variant": variant,
+        "weights_sha256": weights_sha256(weights),
+        "recipe_window_fingerprint": recipe_whole_window_fingerprint(recipe),
+        "tune_grid_fingerprint": tune_grid_fingerprint(context.grid_config),
+    }
+
+
+def write_variant_eval_resume_meta(metrics_path: Path, fingerprint: dict[str, Any]) -> None:
+    variant_eval_resume_meta_path(metrics_path).write_text(
+        json.dumps(fingerprint, indent=2),
+        encoding="utf-8",
+    )
+
+
+def metrics_resume_valid(metrics_path: Path, *, expected: dict[str, Any]) -> bool:
+    if not metrics_path.is_file():
+        return False
+    meta_path = variant_eval_resume_meta_path(metrics_path)
+    if not meta_path.is_file():
+        return False
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    for key, expected_value in expected.items():
+        if meta.get(key) != expected_value:
+            return False
+    return True
+
+
+def should_skip_variant_eval(
+    metrics_path: Path,
+    *,
+    resume: bool,
+    expected_fingerprint: dict[str, Any] | None,
+) -> bool:
+    if not resume:
+        return False
+    if expected_fingerprint is None:
+        return metrics_path.is_file()
+    return metrics_resume_valid(metrics_path, expected=expected_fingerprint)
+
+
+def finalize_grid_winner(
+    grid_dir: Path,
+    rows: list[dict[str, Any]],
+    *,
+    variant_names: tuple[str, ...],
+) -> YoloInferenceProfileCandidate:
+    if not rows:
+        raise ValueError("rows must not be empty")
+    write_grid_results_csv(grid_dir / "results.csv", rows, variant_names=variant_names)
+    best_row = select_best_candidate(rows)
+    winner = YoloInferenceProfileCandidate(
+        postprocess_type=str(best_row["postprocess_type"]),
+        match_metric=str(best_row["match_metric"]),
+        match_threshold=float(best_row["match_threshold"]),
+        conf=float(best_row["conf"]),
+        mask_threshold=float(best_row["mask_threshold"]),
+    )
+    write_grid_winner_json(
+        grid_dir / "winner.json",
+        candidate=winner,
+        mean_aji=float(best_row["mean_aji"]),
+        per_variant={
+            variant: float(best_row[f"aji__{variant}"]) for variant in variant_names
+        },
+    )
+    return winner
+
+
+def run_grid_search(
+    *,
+    candidates: list[YoloInferenceProfileCandidate],
+    variants: tuple[str, ...],
+    output_dir: Path,
+    score_variant: VariantScorer,
+    resume: bool = False,
+    resume_context: GridResumeContext | None = None,
+    on_variant_scored: Callable[
+        [YoloInferenceProfileCandidate, str, Path], None
+    ]
+    | None = None,
+) -> tuple[YoloInferenceProfileCandidate, list[dict[str, object]]]:
+    grid_dir = output_dir / "grid"
+    results_csv = grid_dir / "results.csv"
+    rows: list[dict[str, object]] = []
+    if resume:
+        rows = [dict(row) for row in load_grid_results_csv(results_csv)]
+    completed_ids = {str(row["candidate_id"]) for row in rows}
+
+    for candidate in candidates:
+        if resume and candidate.candidate_id() in completed_ids:
+            continue
+        candidate_dir = grid_dir / "candidates" / candidate.candidate_id()
+        variant_reports: dict[str, Path] = {}
+        for variant in variants:
+            variant_out = candidate_dir / variant
+            metrics_path = variant_out / "instance_metrics.json"
+            fingerprint = (
+                variant_eval_fingerprint(
+                    candidate=candidate, variant=variant, context=resume_context
+                )
+                if resume_context is not None
+                else None
+            )
+            if should_skip_variant_eval(
+                metrics_path, resume=resume, expected_fingerprint=fingerprint
+            ):
+                if not metrics_path.is_file():
+                    raise FileNotFoundError(
+                        f"Resume expected metrics at {metrics_path}"
+                    )
+                variant_reports[variant] = metrics_path
+            else:
+                variant_reports[variant] = score_variant(variant, candidate, variant_out)
+                if resume_context is not None and fingerprint is not None:
+                    write_variant_eval_resume_meta(metrics_path, fingerprint)
+            if on_variant_scored is not None:
+                on_variant_scored(candidate, variant, variant_reports[variant])
+        mean_aji, per_variant = score_candidate_across_variants(variant_reports)
+        row: dict[str, object] = {
+            "candidate_id": candidate.candidate_id(),
+            **candidate.to_dict(),
+            "mean_aji": mean_aji,
+        }
+        for variant, aji in per_variant.items():
+            row[f"aji__{variant}"] = aji
+        rows.append(row)
+        write_grid_results_csv(results_csv, rows, variant_names=variants)
+        print(
+            f"grid {candidate.candidate_id()}: mean_aji={mean_aji:.6f}",
+            flush=True,
+        )
+
+    if not rows:
+        raise ValueError("no grid results to finalize")
+    winner = finalize_grid_winner(grid_dir, rows, variant_names=variants)
+    return winner, rows
+
+
+def write_grid_winner_json(
     path: Path,
     *,
-    stage: int,
     candidate: YoloInferenceProfileCandidate,
     mean_aji: float,
     per_variant: dict[str, float],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "stage": stage,
         "mean_aji": mean_aji,
         "profile": candidate.to_dict(),
         "per_variant_aji": per_variant,
@@ -207,16 +391,8 @@ def candidate_from_winner_json(payload: dict[str, Any]) -> YoloInferenceProfileC
     return parse_yolo_profile_candidate_mapping(profile, context="profile")
 
 
-def load_stage_winner(
-    path: Path, *, expected_stage: int | None = None
-) -> YoloInferenceProfileCandidate:
+def load_grid_winner(path: Path) -> YoloInferenceProfileCandidate:
     payload = json.loads(path.read_text(encoding="utf-8"))
-    if expected_stage is not None:
-        stage = payload.get("stage")
-        if stage != expected_stage:
-            raise ValueError(
-                f"winner JSON must be from tune stage {expected_stage}, got {stage!r}"
-            )
     return candidate_from_winner_json(payload)
 
 

@@ -15,8 +15,8 @@ Jobs stage patch manifests (and listed images/labels) into `$TMPDIR` for train a
    - Pretrained weights: `pretrained/yolo26l-seg.pt` on scratch.
    - Writes `runs/yolo26-seg/{variant}/weights/best.pt` (and run artifacts under that project dir).
 
-2. **`submit_inference_profile_tune.sh`** → **`run_inference_profile_tune.sh`** (rare)
-   Staged **profile selection** on the **train** whole section after **all registry** variant weights exist and after **score merge** at predict is in use. Maximizes mean train whole-section **AJI** on canonical **instance prediction sets**, averaged across registry variants; promotes one shared **YOLO inference profile** into `configs/test_inference.yaml` via `yolo.promote_inference_profile`. Re-run when train labels or YOLO weights change materially—not after every single-variant training job. Audit tables: `runs/yolo_inference_profile_tune/<job_id>/stage{1,2}/results.csv` and `winner.json`. Stage 1 holds `conf` and `mask_threshold` from the committed test inference recipe (`configs/test_inference.yaml`); `configs/yolo_inference_profile_tune.yaml` lists only the SAHI merge search axes (stage 2 lists `conf` and `mask_threshold`).
+2. **`submit_inference_profile_tune.sh`** → **`run_profile_tune_detector.sh`** (×36 GPU) + **`run_profile_tune_grid.sh`** (×1 CPU)
+   **Profile selection** on the **train** whole section after **all registry** variant weights exist and **score merge** at predict is in use. Submit assigns `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/` before jobs start. Detector jobs (32G, one GPU each) write **tiled detector proposals** under `_work/{variant}/tiled_proposals/c{conf}_t{mask}/`. The grid coordinator (32G CPU, `afterok` on all detectors) runs the full factorial grid, reusing cached proposals for merge+eval. Audit: `grid/results.csv`, `grid/winner.json`. Promote via `yolo.promote_inference_profile` → commit `configs/test_inference.yaml`. Re-run when train labels or YOLO weights change materially.
 
 3. **`submit_test_evaluations.sh`** → **`run_patch_test_eval.sh`** + **`run_sahi_test_eval.sh`**
    For each registry variant (`PPL`, `PPLPPXblend`, `PPL+PPXblend`, `PPL+AllPPX`), submits two jobs:
@@ -42,6 +42,8 @@ proposal mask at a time (`yolo_detections_to_instance_map_by_score`).
 | Job | `sbatch --mem` | `sbatch --time` |
 |-----|----------------|-----------------|
 | SAHI whole (all variants) | 32G | 00:20:00 |
+| Profile tune detector (`run_profile_tune_detector.sh`) | 32G | 00:10:00 |
+| Profile tune grid (`run_profile_tune_grid.sh`) | 32G | 48:00:00 |
 | Patch test (`run_patch_test_eval.sh`) | 32G | 00:08:00 |
 
 `sbatch --mem` / `--time` on the command line override `#SBATCH` in the run script.
@@ -57,9 +59,14 @@ bash SLURM/yolo/submit_tune_or_train_variants.sh --all
 
 # Profile selection on train (after all variant weights exist)
 bash SLURM/yolo/submit_inference_profile_tune.sh
-# Promote stage2 winner into the committed recipe (then commit configs/test_inference.yaml)
+# Promote grid winner into the committed recipe (then commit configs/test_inference.yaml)
 uv run --directory src/yolo python -m yolo.promote_inference_profile \
-  --winner-json "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<job_id>/stage2/winner.json"
+  --winner-json "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<run_id>/grid/winner.json"
+
+# If the grid coordinator exited after all rows were appended but before winner.json:
+uv run --directory src/yolo python -m yolo.profile_tune_grid \
+  --output-dir "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<run_id>" \
+  --recompute-winner-from-csv
 
 # Test patch + whole (SAHI) for all variants
 bash SLURM/yolo/submit_test_evaluations.sh

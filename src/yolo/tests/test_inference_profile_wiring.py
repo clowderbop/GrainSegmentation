@@ -14,6 +14,7 @@ from common.prediction_set import PredictionSet
 from common.run_provenance import load_run_provenance
 from common.test_inference import load_test_inference_recipe, sahi_overlap_ratio
 from yolo import predict as predict_module
+from yolo.sliced_detection import get_sliced_prediction_preserve_channels
 
 
 def _resolved_defaults(recipe_path: Path | None = None) -> dict[str, object]:
@@ -181,7 +182,7 @@ def test_whole_sliced_prediction_uses_profile_postprocess() -> None:
             clear=False,
         ),
     ):
-        predict_module._get_sliced_prediction_preserve_channels(
+        get_sliced_prediction_preserve_channels(
             image,
             detection_model,
             slice_height=16,
@@ -306,7 +307,7 @@ def test_whole_run_provenance_records_inference_profile(
 
 @patch("yolo.predict._save_merged_yolo_prediction_set")
 @patch("yolo.predict.build_yolo_prediction_set_from_sahi_predictions")
-@patch("yolo.predict._get_sliced_prediction_preserve_channels")
+@patch("yolo.predict.get_sliced_prediction_preserve_channels")
 @patch("yolo.predict._load_whole_predict_pairs")
 @patch("sahi.AutoDetectionModel.from_pretrained")
 def test_whole_predict_passes_mask_threshold_to_prediction_set_builder(

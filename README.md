@@ -223,7 +223,7 @@ For each input variant, the YOLO workflow is:
 
 1. Tune hyperparameters with the Ultralytics tuner over learning rate and dropout.
 2. Train the final YOLO segmentation model using the best selected hyperparameters.
-3. After all variant weights exist, run staged **YOLO inference profile** selection on the train whole section (mean train AJI on canonical instance prediction sets), then promote the shared winner into `configs/test_inference.yaml` (see `SLURM/yolo/pipeline.md`). Re-run when train labels or weights change materially—not after every single-variant job.
+3. After all variant weights exist, run **profile selection** (full factorial grid over the **YOLO inference profile** on the train whole section; mean train AJI on canonical instance prediction sets), then **profile promotion** of the shared winner into `configs/test_inference.yaml` (see `SLURM/yolo/pipeline.md`). Re-run when train labels or weights change materially—not after every single-variant job.
 4. Evaluate on the held-out test data in two ways:
   - patch-wise evaluation on the non-overlapping 1024px x 1024px patches
   - whole-section sliding-window evaluation (using SAHI)

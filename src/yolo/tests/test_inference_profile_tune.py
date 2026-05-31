@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from math import prod
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,29 +16,37 @@ from common.test_inference import (
 )
 
 from yolo.inference_profile_tune import (
+    GridResumeContext,
+    append_grid_result_row,
     extract_mean_aji_from_report,
-    iter_stage1_candidates,
-    iter_stage2_candidates,
-    load_stage_winner,
+    iter_detector_jobs,
+    iter_grid_candidates,
+    load_grid_results_csv,
+    load_grid_winner,
     load_tune_grid,
     mean_aji_across_variants,
+    metrics_resume_valid,
     promote_profile_to_recipe,
+    run_grid_search,
     score_candidate_across_variants,
     select_best_candidate,
-    write_stage_winner_json,
+    should_skip_variant_eval,
+    variant_eval_fingerprint,
+    write_grid_winner_json,
+    write_variant_eval_resume_meta,
 )
+from yolo.profile_tune_dry_run import dry_run_scorer
+from yolo.profile_tune_grid import score_variant_from_cache, validate_detector_caches
 
 
 def _write_grid(path: Path) -> None:
     path.write_text(
         yaml.safe_dump(
             {
-                "stage1": {
+                "grid": {
                     "postprocess_type": ["GREEDYNMM", "NMM"],
                     "match_metric": ["IOS"],
                     "match_threshold": [0.4, 0.5],
-                },
-                "stage2": {
                     "conf": [0.2, 0.3],
                     "mask_threshold": [0.45, 0.55],
                 },
@@ -47,64 +56,37 @@ def _write_grid(path: Path) -> None:
     )
 
 
-def test_load_tune_grid_without_stage1_fixed_uses_recipe_baseline(tmp_path: Path) -> None:
+def test_load_tune_grid_reads_full_factorial_search_space(tmp_path: Path) -> None:
     grid_path = tmp_path / "grid.yaml"
     _write_grid(grid_path)
-    recipe = load_test_inference_recipe()
     spec = load_tune_grid(grid_path)
-    assert spec.stage1_fixed.conf == recipe.yolo.conf
-    assert spec.stage1_fixed.mask_threshold == recipe.yolo.profile.mask_threshold
+    assert spec.grid.postprocess_type == ("GREEDYNMM", "NMM")
+    assert spec.grid.match_metric == ("IOS",)
+    assert spec.grid.match_threshold == (0.4, 0.5)
+    assert spec.grid.conf == (0.2, 0.3)
+    assert spec.grid.mask_threshold == (0.45, 0.55)
 
 
-def test_load_tune_grid_reads_staged_search_space(tmp_path: Path) -> None:
-    grid_path = tmp_path / "grid.yaml"
-    _write_grid(grid_path)
-    recipe = load_test_inference_recipe()
-    spec = load_tune_grid(grid_path)
-    assert spec.stage1_fixed.conf == recipe.yolo.conf
-    assert spec.stage1_fixed.mask_threshold == recipe.yolo.profile.mask_threshold
-    assert spec.stage1.postprocess_type == ("GREEDYNMM", "NMM")
-    assert spec.stage2.conf == (0.2, 0.3)
-
-
-def test_iter_stage1_candidates_cartesian_merge_knobs_only(tmp_path: Path) -> None:
+def test_iter_detector_jobs_one_per_variant_and_detector_key(tmp_path: Path) -> None:
     _write_grid(tmp_path / "grid.yaml")
     spec = load_tune_grid(tmp_path / "grid.yaml")
-    recipe = load_test_inference_recipe()
-    candidates = list(iter_stage1_candidates(spec))
-    assert len(candidates) == 2 * 1 * 2  # postprocess × metric × threshold
-    assert all(
-        c.conf == recipe.yolo.conf and c.mask_threshold == recipe.yolo.profile.mask_threshold
-        for c in candidates
-    )
-    assert candidates[0].postprocess_type == "GREEDYNMM"
-    assert candidates[0].match_metric == "IOS"
+    jobs = list(iter_detector_jobs(spec, ("PPL", "PPL+AllPPX")))
+    assert len(jobs) == 2 * 2 * 2  # variants × conf × mask_threshold
 
 
-def test_iter_stage2_candidates_uses_stage1_winner_merge_settings(tmp_path: Path) -> None:
+def test_iter_grid_candidates_full_factorial_product(tmp_path: Path) -> None:
     _write_grid(tmp_path / "grid.yaml")
     spec = load_tune_grid(tmp_path / "grid.yaml")
-    winner = YoloInferenceProfileCandidate(
-        postprocess_type="NMM",
+    candidates = list(iter_grid_candidates(spec))
+    assert len(candidates) == 2 * 1 * 2 * 2 * 2
+    assert candidates[0] == YoloInferenceProfileCandidate(
+        postprocess_type="GREEDYNMM",
         match_metric="IOS",
         match_threshold=0.4,
-        conf=0.25,
-        mask_threshold=0.5,
+        conf=0.2,
+        mask_threshold=0.45,
     )
-    stage2 = list(iter_stage2_candidates(spec, winner))
-    assert len(stage2) == 2 * 2
-    assert all(
-        c.postprocess_type == "NMM"
-        and c.match_metric == "IOS"
-        and c.match_threshold == 0.4
-        for c in stage2
-    )
-    assert {(c.conf, c.mask_threshold) for c in stage2} == {
-        (0.2, 0.45),
-        (0.2, 0.55),
-        (0.3, 0.45),
-        (0.3, 0.55),
-    }
+    assert len({c.candidate_id() for c in candidates}) == len(candidates)
 
 
 def test_mean_aji_across_variants_equal_weights_per_variant() -> None:
@@ -327,15 +309,26 @@ unet:
     assert recipe_path.read_text(encoding="utf-8") == original
 
 
-def test_committed_tune_grid_loads() -> None:
+def test_committed_tune_grid_matches_yaml_factorial() -> None:
     from common.variants import repo_root
 
     spec = load_tune_grid(repo_root() / "configs" / "yolo_inference_profile_tune.yaml")
-    assert len(spec.stage1.postprocess_type) >= 2
-    assert len(spec.stage2.conf) >= 2
+    grid = spec.grid
+    expected = prod(
+        (
+            len(grid.postprocess_type),
+            len(grid.match_metric),
+            len(grid.match_threshold),
+            len(grid.conf),
+            len(grid.mask_threshold),
+        )
+    )
+    candidates = list(iter_grid_candidates(spec))
+    assert len(candidates) == expected
+    assert grid.match_metric == ("IOS", "IOU")
 
 
-def test_load_stage_winner_for_promote_requires_stage_two(tmp_path: Path) -> None:
+def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:
     profile = YoloInferenceProfileCandidate(
         postprocess_type="GREEDYNMM",
         match_metric="IOS",
@@ -343,12 +336,12 @@ def test_load_stage_winner_for_promote_requires_stage_two(tmp_path: Path) -> Non
         conf=0.25,
         mask_threshold=0.5,
     )
-    stage1_path = tmp_path / "stage1_winner.json"
-    write_stage_winner_json(
-        stage1_path, stage=1, candidate=profile, mean_aji=0.7, per_variant={"PPL": 0.7}
+    winner_path = tmp_path / "grid" / "winner.json"
+    write_grid_winner_json(
+        winner_path, candidate=profile, mean_aji=0.7, per_variant={"PPL": 0.7}
     )
-    with pytest.raises(ValueError, match="stage 2"):
-        load_stage_winner(stage1_path, expected_stage=2)
+    loaded = load_grid_winner(winner_path)
+    assert loaded == profile
 
 
 def test_score_candidate_across_variants_reads_variant_reports(tmp_path: Path) -> None:
@@ -371,33 +364,56 @@ def test_score_candidate_across_variants_reads_variant_reports(tmp_path: Path) -
 
 
 def test_uv_run_cmd_uses_uv_directory_for_each_project() -> None:
-    from yolo.tune_inference_profile import _uv_run_cmd
+    from yolo.profile_tune_work import uv_run_cmd
 
-    yolo_cmd = _uv_run_cmd(Path("/repo/src/yolo"), "yolo.predict", "--unit", "whole")
+    yolo_cmd = uv_run_cmd(Path("/repo/src/yolo"), "yolo.predict", "--unit", "whole")
     assert yolo_cmd[:4] == ["uv", "run", "--directory", "/repo/src/yolo"]
     assert yolo_cmd[4:7] == ["python", "-m", "yolo.predict"]
 
-    common_cmd = _uv_run_cmd(
+    common_cmd = uv_run_cmd(
         Path("/repo/src/common"), "common.evaluate_instances", unbuffered=True
     )
     assert common_cmd[4:7] == ["python", "-u", "-m"]
 
 
-def test_score_variant_on_cluster_runs_predict_write_eval_and_evaluate(
+def test_evaluate_variant_predictions_runs_write_eval_and_evaluate(
     tmp_path: Path,
 ) -> None:
-    from yolo.tune_inference_profile import _score_variant_on_cluster
+    from yolo.profile_tune_work import evaluate_variant_predictions
 
     repo = tmp_path / "repo"
     common_src = repo / "src" / "common"
-    yolo_src = repo / "src" / "yolo"
     common_src.mkdir(parents=True)
-    yolo_src.mkdir(parents=True)
+    variant_out = tmp_path / "variant_out"
+    staged_manifest = tmp_path / "manifest.json"
+    staged_manifest.write_text("{}", encoding="utf-8")
+    invoked: list[str] = []
+
+    def _fake_run(cmd: list[str]) -> None:
+        invoked.append(cmd[cmd.index("-m") + 1])
+
+    with patch("yolo.profile_tune_work.run_subprocess", side_effect=_fake_run):
+        metrics_path = evaluate_variant_predictions(
+            variant="PPL",
+            variant_output_dir=variant_out,
+            staged_manifest=staged_manifest,
+            repo=repo,
+        )
+
+    assert metrics_path == variant_out / "instance_metrics.json"
+    assert invoked == ["common.stage_manifest", "common.evaluate_instances"]
+
+
+def test_score_variant_from_cache_loads_tiled_proposals_and_evaluates(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    (repo / "src" / "common").mkdir(parents=True)
     grainseg_root = tmp_path / "grainseg"
     run_root = grainseg_root / "runs" / "yolo26-seg"
     weights = run_root / "PPL" / "weights" / "best.pt"
     weights.parent.mkdir(parents=True)
-    weights.write_text("", encoding="utf-8")
+    weights.write_bytes(b"weights")
     work_root = tmp_path / "work"
     variant_out = tmp_path / "variant_out"
     candidate = YoloInferenceProfileCandidate(
@@ -407,62 +423,57 @@ def test_score_variant_on_cluster_runs_predict_write_eval_and_evaluate(
         conf=0.3,
         mask_threshold=0.55,
     )
-    invoked: list[list[str]] = []
-
-    def _fake_run(cmd: list[str]) -> None:
-        invoked.append(cmd)
-        if "yolo.predict" in cmd:
-            variant_out.mkdir(parents=True, exist_ok=True)
-            (variant_out / "run_provenance.json").write_text("{}", encoding="utf-8")
-        elif "write-eval" in cmd:
-            (variant_out / "eval_manifest.json").write_text("{}", encoding="utf-8")
-        elif "evaluate_instances" in cmd:
-            metrics = variant_out / "instance_metrics.json"
-            metrics.write_text(
-                json.dumps({"samples": [{"sample_id": "train", "aji": 0.5}]}),
-                encoding="utf-8",
-            )
-
     staged_manifest = work_root / "PPL" / "staged" / "manifest.json"
     staged_manifest.parent.mkdir(parents=True)
     staged_manifest.write_text("{}", encoding="utf-8")
+    cache_calls = {"load": 0, "eval": 0}
+
+    def _fake_load(*_args, **_kwargs):
+        cache_calls["load"] += 1
+        return ["proposal"], {}
+
+    def _fake_eval(**_kwargs) -> Path:
+        cache_calls["eval"] += 1
+        metrics = variant_out / "instance_metrics.json"
+        metrics.write_text(
+            json.dumps({"samples": [{"sample_id": "train", "aji": 0.5}]}),
+            encoding="utf-8",
+        )
+        return metrics
 
     with (
-        patch("yolo.tune_inference_profile._run_subprocess", side_effect=_fake_run),
+        patch("yolo.profile_tune_grid.load_tiled_proposals", side_effect=_fake_load),
         patch(
-            "yolo.tune_inference_profile._prepare_train_whole_manifest",
-            return_value=grainseg_root / "canonical.json",
-        ),
-        patch(
-            "yolo.tune_inference_profile._staged_manifest_path",
+            "yolo.profile_tune_grid.ensure_staged_train_manifest",
             return_value=staged_manifest,
         ),
+        patch(
+            "yolo.profile_tune_grid.collect_manifest_image_paths",
+            return_value=[(tmp_path / "train.tif", "train")],
+        ),
+        patch(
+            "yolo.predict.load_image_for_yolo",
+            return_value=__import__("numpy").zeros((4, 4, 3), dtype="uint8"),
+        ),
+        patch("yolo.profile_tune_grid.merge_sliced_object_predictions", return_value=["merged"]),
+        patch("yolo.profile_tune_grid.build_yolo_prediction_set_from_sahi_predictions"),
+        patch("yolo.profile_tune_grid.merge_yolo_proposals_by_score"),
+        patch("yolo.profile_tune_grid.assert_yolo_grains_non_overlapping"),
+        patch("yolo.profile_tune_grid.save_prediction_set"),
+        patch("yolo.profile_tune_grid.evaluate_variant_predictions", side_effect=_fake_eval),
     ):
-        metrics_path = _score_variant_on_cluster(
+        metrics_path = score_variant_from_cache(
             variant="PPL",
             candidate=candidate,
             variant_output_dir=variant_out,
             grainseg_root=grainseg_root,
             run_root=run_root,
             work_root=work_root,
-            device="0",
             repo=repo,
         )
 
+    assert cache_calls == {"load": 1, "eval": 1}
     assert metrics_path == variant_out / "instance_metrics.json"
-    assert len(invoked) == 4
-    modules = [cmd[cmd.index("-m") + 1] for cmd in invoked if "-m" in cmd]
-    assert modules == [
-        "common.stage_manifest",
-        "yolo.predict",
-        "common.stage_manifest",
-        "common.evaluate_instances",
-    ]
-    predict_cmd = invoked[1]
-    assert "yolo.predict" in predict_cmd
-    assert "--conf" in predict_cmd and "0.3" in predict_cmd
-    assert "--mask-threshold" in predict_cmd and "0.55" in predict_cmd
-    assert "--postprocess-type" in predict_cmd and "NMM" in predict_cmd
 
 
 def test_extract_mean_aji_from_evaluate_instances_report_shape() -> None:
@@ -486,52 +497,425 @@ def test_extract_mean_aji_from_evaluate_instances_report_shape() -> None:
     assert extract_mean_aji_from_report(report) == pytest.approx(0.42)
 
 
-def test_run_stage_search_dry_run_picks_best_across_all_registry_variants(
+def test_run_grid_search_dry_run_picks_best_across_all_registry_variants(
     tmp_path: Path,
 ) -> None:
     from common.variants import all_variant_names
-    from yolo.tune_inference_profile import _dry_run_scorer, run_stage_search
-
     variants = all_variant_names()
     _write_grid(tmp_path / "grid.yaml")
     spec = load_tune_grid(tmp_path / "grid.yaml")
-    candidates = list(iter_stage1_candidates(spec))[:2]
+    candidates = list(iter_grid_candidates(spec))[:2]
     better, worse = candidates[0], candidates[1]
     scores: dict[tuple[str, str], float] = {}
     for variant in variants:
         scores[(variant, better.candidate_id())] = 0.9
         scores[(variant, worse.candidate_id())] = 0.1
-    winner, _ = run_stage_search(
-        stage=1,
+    winner, _ = run_grid_search(
         candidates=[better, worse],
         variants=variants,
         output_dir=tmp_path / "tune_all",
-        score_variant=_dry_run_scorer(scores),
+        score_variant=dry_run_scorer(scores),
     )
     assert winner == better
 
 
-def test_run_stage_search_dry_run_writes_winner(tmp_path: Path) -> None:
-    from yolo.tune_inference_profile import _dry_run_scorer, run_stage_search
-
+def test_run_grid_search_dry_run_writes_winner(tmp_path: Path) -> None:
     _write_grid(tmp_path / "grid.yaml")
     spec = load_tune_grid(tmp_path / "grid.yaml")
-    candidates = list(iter_stage1_candidates(spec))
+    candidates = list(iter_grid_candidates(spec))
     assert len(candidates) >= 2
     better, worse = candidates[0], candidates[1]
-    scorer = _dry_run_scorer(
+    scorer = dry_run_scorer(
         {
             ("PPL", better.candidate_id()): 0.9,
             ("PPL", worse.candidate_id()): 0.4,
         }
     )
-    winner, _ = run_stage_search(
-        stage=1,
+    winner, _ = run_grid_search(
         candidates=[better, worse],
         variants=("PPL",),
         output_dir=tmp_path / "tune",
         score_variant=scorer,
     )
     assert winner == better
-    assert (tmp_path / "tune" / "stage1" / "winner.json").is_file()
-    assert (tmp_path / "tune" / "stage1" / "results.csv").is_file()
+    assert (tmp_path / "tune" / "grid" / "winner.json").is_file()
+    assert (tmp_path / "tune" / "grid" / "results.csv").is_file()
+
+
+def test_should_skip_variant_eval_requires_matching_resume_fingerprint(
+    tmp_path: Path,
+) -> None:
+    metrics = tmp_path / "instance_metrics.json"
+    expected = {"candidate_id": "x", "conf": 0.25}
+    assert not should_skip_variant_eval(
+        metrics, resume=True, expected_fingerprint=expected
+    )
+    metrics.write_text("{}", encoding="utf-8")
+    assert not should_skip_variant_eval(
+        metrics, resume=True, expected_fingerprint=expected
+    )
+    write_variant_eval_resume_meta(metrics, expected)
+    assert should_skip_variant_eval(metrics, resume=True, expected_fingerprint=expected)
+    assert not should_skip_variant_eval(
+        metrics, resume=True, expected_fingerprint={**expected, "conf": 0.99}
+    )
+    assert not should_skip_variant_eval(metrics, resume=False, expected_fingerprint=expected)
+
+
+def test_run_grid_search_no_resume_does_not_delete_existing_csv_at_start(
+    tmp_path: Path,
+) -> None:
+    grid_dir = tmp_path / "grid"
+    grid_dir.mkdir(parents=True)
+    csv_path = grid_dir / "results.csv"
+    csv_path.write_text(
+        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_aji,aji__PPL\n"
+        "stale,GREEDYNMM,IOS,0.5,0.25,0.5,0.1,0.1\n",
+        encoding="utf-8",
+    )
+    _write_grid(tmp_path / "grid.yaml")
+    spec = load_tune_grid(tmp_path / "grid.yaml")
+    candidate = list(iter_grid_candidates(spec))[0]
+
+    def scorer(variant: str, cand: YoloInferenceProfileCandidate, out_dir: Path) -> Path:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        metrics = out_dir / "instance_metrics.json"
+        metrics.write_text(
+            json.dumps({"samples": [{"sample_id": "train", "aji": 0.55}]}),
+            encoding="utf-8",
+        )
+        return metrics
+
+    run_grid_search(
+        candidates=[candidate],
+        variants=("PPL",),
+        output_dir=tmp_path,
+        score_variant=scorer,
+        resume=False,
+        resume_context=None,
+    )
+    assert csv_path.is_file()
+    loaded = load_grid_results_csv(csv_path)
+    assert len(loaded) == 1
+    assert loaded[0]["candidate_id"] == candidate.candidate_id()
+    assert float(loaded[0]["mean_aji"]) == pytest.approx(0.55)
+
+
+def test_append_grid_result_row_writes_incrementally(tmp_path: Path) -> None:
+    csv_path = tmp_path / "grid" / "results.csv"
+    row_a = {
+        "candidate_id": "a",
+        "postprocess_type": "GREEDYNMM",
+        "match_metric": "IOS",
+        "match_threshold": 0.5,
+        "conf": 0.25,
+        "mask_threshold": 0.5,
+        "mean_aji": 0.7,
+        "aji__PPL": 0.7,
+    }
+    append_grid_result_row(csv_path, row_a, variant_names=("PPL",))
+    loaded = load_grid_results_csv(csv_path)
+    assert len(loaded) == 1
+    assert loaded[0]["candidate_id"] == "a"
+    assert float(loaded[0]["mean_aji"]) == pytest.approx(0.7)
+    row_b = {**row_a, "candidate_id": "b", "mean_aji": 0.8, "aji__PPL": 0.8}
+    append_grid_result_row(csv_path, row_b, variant_names=("PPL",))
+    assert len(load_grid_results_csv(csv_path)) == 2
+
+
+def test_validate_detector_caches_raises_when_cache_missing(tmp_path: Path) -> None:
+    _write_grid(tmp_path / "grid.yaml")
+    spec = load_tune_grid(tmp_path / "grid.yaml")
+    run_root = tmp_path / "grainseg" / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    with pytest.raises(FileNotFoundError, match="Missing or invalid"):
+        validate_detector_caches(
+            work_root=tmp_path / "_work",
+            spec=spec,
+            variants=("PPL",),
+            grainseg_root=tmp_path / "grainseg",
+            run_root=run_root,
+        )
+
+
+def test_run_grid_search_resume_skips_when_fingerprint_matches(tmp_path: Path) -> None:
+    _write_grid(tmp_path / "grid.yaml")
+    spec = load_tune_grid(tmp_path / "grid.yaml")
+    candidates = list(iter_grid_candidates(spec))[:1]
+    candidate = candidates[0]
+    grainseg_root = tmp_path / "grainseg"
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    existing = tmp_path / "grid" / "candidates" / candidate.candidate_id() / "PPL"
+    existing.mkdir(parents=True)
+    metrics = existing / "instance_metrics.json"
+    metrics.write_text(
+        json.dumps({"samples": [{"sample_id": "train", "aji": 0.88}]}),
+        encoding="utf-8",
+    )
+    resume_context = GridResumeContext(
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        grid_config=tmp_path / "grid.yaml",
+    )
+    write_variant_eval_resume_meta(
+        metrics,
+        variant_eval_fingerprint(
+            candidate=candidate, variant="PPL", context=resume_context
+        ),
+    )
+    calls: list[tuple[str, str]] = []
+
+    def scorer(variant: str, cand: YoloInferenceProfileCandidate, out_dir: Path) -> Path:
+        calls.append((variant, cand.candidate_id()))
+        raise AssertionError("scorer should not run when resume fingerprint matches")
+
+    winner, _ = run_grid_search(
+        candidates=[candidate],
+        variants=("PPL",),
+        output_dir=tmp_path,
+        score_variant=scorer,
+        resume=True,
+        resume_context=resume_context,
+    )
+    assert winner == candidate
+    assert calls == []
+    assert metrics_resume_valid(
+        metrics,
+        expected=variant_eval_fingerprint(
+            candidate=candidate, variant="PPL", context=resume_context
+        ),
+    )
+
+
+def test_recompute_winner_from_csv_picks_highest_mean_aji(tmp_path: Path) -> None:
+    from yolo.inference_profile_tune import load_grid_winner
+    from yolo.profile_tune_grid import recompute_winner_from_csv
+
+    grid_dir = tmp_path / "grid"
+    grid_dir.mkdir(parents=True)
+    (grid_dir / "results.csv").write_text(
+        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_aji,aji__PPL\n"
+        "low,GREEDYNMM,IOS,0.5,0.25,0.5,0.4,0.4\n"
+        "high,NMM,IOU,0.6,0.35,0.6,0.9,0.9\n",
+        encoding="utf-8",
+    )
+    winner = recompute_winner_from_csv(tmp_path, variant_names=("PPL",))
+    assert winner.postprocess_type == "NMM"
+    assert winner.conf == pytest.approx(0.35)
+    loaded = load_grid_winner(grid_dir / "winner.json")
+    assert loaded == winner
+
+
+def test_profile_tune_grid_cli_recompute_winner_from_csv(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from yolo.profile_tune_grid import main
+
+    grid_dir = tmp_path / "grid"
+    grid_dir.mkdir(parents=True)
+    (grid_dir / "results.csv").write_text(
+        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_aji,aji__PPL\n"
+        "winner,GREEDYNMM,IOS,0.5,0.2,0.45,0.95,0.95\n",
+        encoding="utf-8",
+    )
+    main(
+        [
+            "--output-dir",
+            str(tmp_path),
+            "--recompute-winner-from-csv",
+            "--variants",
+            "PPL",
+        ]
+    )
+    captured = json.loads(capsys.readouterr().out.strip())
+    assert captured["conf"] == pytest.approx(0.2)
+    assert (grid_dir / "winner.json").is_file()
+
+
+def test_grid_coordinator_loads_disk_cache_for_each_candidate(tmp_path: Path) -> None:
+    """run_grid_search + score_variant_from_cache use on-disk tiled proposal cache."""
+    from common.test_inference import load_test_inference_recipe
+    from yolo.tiled_proposal_cache import (
+        proposal_cache_dir,
+        proposal_cache_record,
+        recipe_whole_window_fingerprint,
+        weights_sha256,
+        write_tiled_proposals,
+    )
+
+    candidates = [
+        YoloInferenceProfileCandidate(
+            postprocess_type="GREEDYNMM",
+            match_metric="IOS",
+            match_threshold=0.4,
+            conf=0.2,
+            mask_threshold=0.45,
+        ),
+        YoloInferenceProfileCandidate(
+            postprocess_type="NMM",
+            match_metric="IOS",
+            match_threshold=0.5,
+            conf=0.2,
+            mask_threshold=0.45,
+        ),
+    ]
+
+    grainseg_root = tmp_path / "grainseg"
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"same-weights")
+    work_root = tmp_path / "_work"
+    recipe = load_test_inference_recipe()
+    cache_dir = proposal_cache_dir(
+        work_root / "PPL", conf=candidates[0].conf, mask_threshold=candidates[0].mask_threshold
+    )
+    cached_proposals = [{"cache_marker": "disk-proposals-v1"}]
+    write_tiled_proposals(
+        cache_dir,
+        cached_proposals,
+        proposal_cache_record(
+            variant="PPL",
+            weights_sha256=weights_sha256(weights),
+            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+            conf=candidates[0].conf,
+            mask_threshold=candidates[0].mask_threshold,
+            sample_id="train",
+        ),
+    )
+
+    repo = tmp_path / "repo"
+    (repo / "src" / "common").mkdir(parents=True)
+    staged_manifest = work_root / "PPL" / "staged" / "manifest.json"
+    staged_manifest.parent.mkdir(parents=True)
+    staged_manifest.write_text("{}", encoding="utf-8")
+    load_log: list[list] = []
+
+    from yolo.tiled_proposal_cache import load_tiled_proposals as real_load
+
+    def _tracking_load(cache_path: Path, *, expected: dict) -> tuple[list, dict]:
+        proposals, meta = real_load(cache_path, expected=expected)
+        load_log.append(proposals)
+        return proposals, meta
+
+    eval_calls: list[str] = []
+
+    def _fake_eval(**kwargs) -> Path:
+        variant_output_dir = kwargs["variant_output_dir"]
+        eval_calls.append(variant_output_dir.name)
+        metrics = variant_output_dir / "instance_metrics.json"
+        metrics.write_text(
+            json.dumps({"samples": [{"sample_id": "train", "aji": 0.5}]}),
+            encoding="utf-8",
+        )
+        return metrics
+
+    with (
+        patch("yolo.profile_tune_grid.load_tiled_proposals", side_effect=_tracking_load),
+        patch(
+            "yolo.profile_tune_grid.ensure_staged_train_manifest",
+            return_value=staged_manifest,
+        ),
+        patch(
+            "yolo.profile_tune_grid.collect_manifest_image_paths",
+            return_value=[(tmp_path / "train.tif", "train")],
+        ),
+        patch(
+            "yolo.predict.load_image_for_yolo",
+            return_value=__import__("numpy").zeros((8, 8, 3), dtype="uint8"),
+        ),
+        patch("yolo.profile_tune_grid.evaluate_variant_predictions", side_effect=_fake_eval),
+    ):
+        run_grid_search(
+            candidates=candidates,
+            variants=("PPL",),
+            output_dir=tmp_path / "run",
+            score_variant=lambda variant, candidate, out_dir: score_variant_from_cache(
+                variant=variant,
+                candidate=candidate,
+                variant_output_dir=out_dir,
+                grainseg_root=grainseg_root,
+                run_root=run_root,
+                work_root=work_root,
+                repo=repo,
+            ),
+            resume=False,
+            resume_context=None,
+        )
+
+    assert len(load_log) == 2
+    assert load_log[0] == cached_proposals
+    assert load_log[1] == cached_proposals
+    assert len(eval_calls) == 2
+
+
+def test_grid_coordinator_cache_miss_fails_validation(tmp_path: Path) -> None:
+    _write_grid(tmp_path / "grid.yaml")
+    spec = load_tune_grid(tmp_path / "grid.yaml")
+    run_root = tmp_path / "grainseg" / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    with pytest.raises(FileNotFoundError, match="Missing or invalid detector caches"):
+        validate_detector_caches(
+            work_root=tmp_path / "_work",
+            spec=spec,
+            variants=("PPL",),
+            grainseg_root=tmp_path / "grainseg",
+            run_root=run_root,
+        )
+
+
+def test_grid_coordinator_cache_fingerprint_mismatch_on_score(tmp_path: Path) -> None:
+    from common.test_inference import load_test_inference_recipe
+    from yolo.tiled_proposal_cache import (
+        proposal_cache_dir,
+        proposal_cache_record,
+        recipe_whole_window_fingerprint,
+        weights_sha256,
+        write_tiled_proposals,
+    )
+
+    grainseg_root = tmp_path / "grainseg"
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    work_root = tmp_path / "_work"
+    recipe = load_test_inference_recipe()
+    write_tiled_proposals(
+        proposal_cache_dir(work_root / "PPL", conf=0.2, mask_threshold=0.45),
+        [{"id": 1}],
+        proposal_cache_record(
+            variant="PPL",
+            weights_sha256=weights_sha256(weights),
+            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+            conf=0.2,
+            mask_threshold=0.45,
+            sample_id="train",
+        ),
+    )
+    candidate = YoloInferenceProfileCandidate(
+        postprocess_type="GREEDYNMM",
+        match_metric="IOS",
+        match_threshold=0.5,
+        conf=0.99,
+        mask_threshold=0.45,
+    )
+    repo = tmp_path / "repo"
+    (repo / "src" / "common").mkdir(parents=True)
+    with pytest.raises(FileNotFoundError):
+        score_variant_from_cache(
+            variant="PPL",
+            candidate=candidate,
+            variant_output_dir=tmp_path / "out",
+            grainseg_root=grainseg_root,
+            run_root=run_root,
+            work_root=work_root,
+            repo=repo,
+        )

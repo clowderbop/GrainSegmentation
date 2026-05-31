@@ -9,6 +9,8 @@ import numpy as np
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
+from common.prediction_set import GRAIN_CLASS_ID
+
 
 @dataclass
 class InstanceAPSummary:
@@ -48,7 +50,7 @@ def evaluate_mask_ap(
     width: int,
     gt_annotations: list[dict[str, Any]],
     dt_annotations: list[dict[str, Any]],
-    category_id: int = 1,
+    category_id: int = GRAIN_CLASS_ID,
     category_name: str = "grain",
 ) -> InstanceAPSummary:
     if not gt_annotations:

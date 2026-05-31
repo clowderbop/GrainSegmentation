@@ -1,4 +1,4 @@
-"""Write SAHI whole-image prediction overlay TIFFs from instance label maps."""
+"""Write SAHI whole-image prediction overlay TIFFs from instance prediction sets."""
 
 from __future__ import annotations
 
@@ -7,8 +7,13 @@ from pathlib import Path
 
 import numpy as np
 
-from common.instance_predictions import instance_map_filename, read_instance_map_tiff
-from common.manifest_io import collect_manifest_image_paths
+from common.manifest_io import collect_manifest_image_paths, load_dataset_manifest, resolve_row_path
+from common.prediction_set import (
+    PredictionSet,
+    load_prediction_set,
+    prediction_set_path,
+    segmentation_to_binary_mask,
+)
 from yolo.config import variant_choices
 from yolo.predict import load_image_for_yolo
 
@@ -30,6 +35,17 @@ def _as_rgb_uint8(image: np.ndarray) -> np.ndarray:
     return np.clip(display, 0, 255).astype(np.uint8, copy=False)
 
 
+def _overlay_color_for_index(index: int) -> np.ndarray:
+    return np.array(
+        [
+            (37 * index) % 255,
+            (97 * index) % 255,
+            (173 * index) % 255,
+        ],
+        dtype=np.float32,
+    )
+
+
 def write_mask_overlay_visual(
     image: np.ndarray, pred_map: np.ndarray, out_path: Path
 ) -> None:
@@ -40,14 +56,31 @@ def write_mask_overlay_visual(
     labels = labels[labels > 0]
     for label in labels:
         mask = pred_map == label
-        color = np.array(
-            [
-                (37 * int(label)) % 255,
-                (97 * int(label)) % 255,
-                (173 * int(label)) % 255,
-            ],
-            dtype=np.float32,
-        )
+        color = _overlay_color_for_index(int(label))
+        visual[mask] = (0.45 * visual[mask]) + (0.55 * color)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tifffile.imwrite(
+        out_path,
+        np.clip(visual, 0, 255).astype(np.uint8),
+        photometric="rgb",
+        compression="deflate",
+    )
+
+
+def write_prediction_set_overlay_visual(
+    image: np.ndarray, prediction_set: PredictionSet, out_path: Path
+) -> None:
+    import tifffile
+
+    visual = _as_rgb_uint8(image).astype(np.float32)
+    detections = list(prediction_set.detections)
+    if prediction_set.producer == "yolo":
+        detections.sort(key=lambda det: float(det["score"]), reverse=False)
+    for index, det in enumerate(detections):
+        mask = segmentation_to_binary_mask(det["segmentation"])
+        if not mask.any():
+            continue
+        color = _overlay_color_for_index(index + 1)
         visual[mask] = (0.45 * visual[mask]) + (0.55 * color)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tifffile.imwrite(
@@ -69,27 +102,46 @@ def _resolve_manifest_image_samples(
     return [(image_path, image_path.stem)]
 
 
-def export_sample_visualization(
+def _resolve_prediction_set_path(
+    *,
+    pred_dir: Path,
+    manifest_path: Path | None,
+    sample_id: str,
+) -> Path:
+    if manifest_path is not None:
+        doc = load_dataset_manifest(manifest_path)
+        for row in doc.samples:
+            if row.sample_id != sample_id:
+                continue
+            if row.instance_prediction_set:
+                resolved = resolve_row_path(doc, row.instance_prediction_set)
+                assert resolved is not None
+                return resolved
+    return prediction_set_path(pred_dir, sample_id)
+
+
+def export_sample_visualization_from_prediction_set(
     *,
     image_path: Path,
-    pred_instances_path: Path,
+    prediction_set_path: Path,
     sample_out_dir: Path,
 ) -> None:
     if not image_path.is_file():
         raise FileNotFoundError(f"Image not found: {image_path}")
-    if not pred_instances_path.is_file():
-        raise FileNotFoundError(f"Prediction instance map not found: {pred_instances_path}")
+    if not prediction_set_path.is_file():
+        raise FileNotFoundError(f"Prediction set not found: {prediction_set_path}")
 
     image = load_image_for_yolo(image_path)
-    pred_map = read_instance_map_tiff(pred_instances_path)
-    if pred_map.shape[:2] != image.shape[:2]:
+    prediction_set = load_prediction_set(prediction_set_path)
+    if (prediction_set.height, prediction_set.width) != image.shape[:2]:
         raise ValueError(
-            f"Prediction map shape {pred_map.shape} does not match image {image.shape[:2]}"
+            f"Prediction set size {(prediction_set.height, prediction_set.width)} "
+            f"does not match image {image.shape[:2]}"
         )
 
     sample_out_dir.mkdir(parents=True, exist_ok=True)
     out_path = sample_out_dir / "prediction_visual.tif"
-    write_mask_overlay_visual(image, pred_map, out_path)
+    write_prediction_set_overlay_visual(image, prediction_set, out_path)
     print(f"Wrote {out_path}")
 
 
@@ -97,6 +149,7 @@ def run_export_sahi_visualization(args: argparse.Namespace) -> None:
     pred_dir = args.pred_dir.resolve()
     out_root = args.output_dir.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
+    manifest_path = args.manifest.resolve() if args.manifest is not None else None
 
     samples = _resolve_manifest_image_samples(args)
     n_samples = len(samples)
@@ -107,12 +160,14 @@ def run_export_sahi_visualization(args: argparse.Namespace) -> None:
 
     for idx, (image_path, sample_id) in enumerate(samples):
         print(f"Rendering visualization {sample_id} ({idx + 1}/{n_samples})...")
-        pred_path = pred_dir / "instances" / instance_map_filename(sample_id)
-        if not pred_path.is_file():
-            pred_path = pred_dir / "instances" / instance_map_filename(image_path.stem)
-        export_sample_visualization(
+        ps_path = _resolve_prediction_set_path(
+            pred_dir=pred_dir,
+            manifest_path=manifest_path,
+            sample_id=sample_id,
+        )
+        export_sample_visualization_from_prediction_set(
             image_path=image_path,
-            pred_instances_path=pred_path,
+            prediction_set_path=ps_path,
             sample_out_dir=out_root / image_path.stem,
         )
     print(f"Wrote {n_samples} visualization(s) under {out_root}")
@@ -127,7 +182,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--pred-dir",
         required=True,
         type=Path,
-        help="YOLO predict output root containing instances/{sample_id}_instances.tif",
+        help="YOLO predict output root containing prediction_sets/{sample_id}.json",
     )
     parser.add_argument("--manifest", default=None, type=Path)
     parser.add_argument("--image", default=None, type=Path)

@@ -10,14 +10,13 @@ from typing import Any
 import numpy as np
 from tifffile import TiffFile
 
-from common.instance_predictions import (
-    instance_map_from_masks,
-    instance_map_path,
-    save_yolo_mask_npz,
-    ultralytics_result_prediction_arrays,
-    write_instance_map_tiff,
-    yolo_mask_npz_path,
+from common.prediction_set import (
+    build_yolo_prediction_set_from_sahi_predictions,
+    build_yolo_prediction_set_from_ultralytics,
+    prediction_set_path,
+    save_prediction_set,
 )
+from common.run_provenance import write_run_provenance
 from common.manifest_io import (
     collect_manifest_image_paths,
     default_patch_manifest_path,
@@ -82,12 +81,13 @@ def collect_yolo_patch_image_paths(
     raise ValueError("Dataset YAML must define a `test` or `val` split")
 
 
-def _load_whole_image_paths(args: argparse.Namespace) -> list[Path]:
+def _load_whole_predict_pairs(args: argparse.Namespace) -> list[tuple[Path, str]]:
     if args.manifest is not None:
-        return [image_path for image_path, _ in collect_manifest_image_paths(args.manifest)]
+        return collect_manifest_image_paths(args.manifest)
     if args.image is None:
         raise ValueError("whole mode requires --manifest or --image")
-    return [args.image.resolve()]
+    image_path = args.image.resolve()
+    return [(image_path, image_path.stem)]
 
 
 class _NumpyPredictionResult:
@@ -188,64 +188,36 @@ def _get_sliced_prediction_preserve_channels(
     )
 
 
-def sahi_predictions_to_mask_arrays(
-    predictions: list[Any], height: int, width: int
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    from common.instance_predictions import resize_mask_nearest
-
-    masks: list[np.ndarray] = []
-    scores: list[float] = []
-    classes: list[int] = []
-    for pred in predictions:
-        if pred.mask is None:
-            continue
-        mask = pred.mask.bool_mask
-        if mask is None:
-            continue
-        if mask.shape != (height, width):
-            mask = resize_mask_nearest(mask, height, width)
-        masks.append(np.asarray(mask, dtype=np.float32))
-        scores.append(float(pred.score.value))
-        classes.append(int(pred.category.id))
-    if not masks:
-        return (
-            np.zeros((0, height, width), dtype=np.float32),
-            np.zeros((0,), dtype=np.float32),
-            np.zeros((0,), dtype=np.float32),
-        )
-    return (
-        np.stack(masks, axis=0),
-        np.asarray(scores, dtype=np.float32),
-        np.asarray(classes, dtype=np.float32),
-    )
-
-
-def _write_prediction_artifacts(
+def _write_patch_prediction_set(
     *,
     output_dir: Path,
     sample_id: str,
-    image_path: Path,
+    result: Any,
     height: int,
     width: int,
-    instance_map: np.ndarray,
-    masks: np.ndarray,
-    scores: np.ndarray,
-    classes: np.ndarray,
-    orig_shape: tuple[int, ...],
 ) -> None:
-    inst_path = instance_map_path(output_dir, sample_id)
-    write_instance_map_tiff(inst_path, instance_map)
-    npz_path = yolo_mask_npz_path(output_dir, sample_id)
-    save_yolo_mask_npz(
-        npz_path,
-        masks=masks,
-        scores=scores,
-        classes=classes,
-        orig_shape=np.array(orig_shape),
-        image_path=str(image_path),
+    path = prediction_set_path(output_dir, sample_id)
+    prediction_set = build_yolo_prediction_set_from_ultralytics(
+        result, height=height, width=width
     )
-    n_inst = int(np.sum(np.unique(instance_map) != 0))
-    print(f"Wrote {inst_path} and {npz_path} ({n_inst} instances)")
+    save_prediction_set(path, prediction_set)
+    print(f"Wrote {path} ({len(prediction_set.detections)} detector proposals)")
+
+
+def _write_whole_prediction_set(
+    *,
+    output_dir: Path,
+    sample_id: str,
+    predictions: list[Any],
+    height: int,
+    width: int,
+) -> None:
+    path = prediction_set_path(output_dir, sample_id)
+    prediction_set = build_yolo_prediction_set_from_sahi_predictions(
+        predictions, height=height, width=width
+    )
+    save_prediction_set(path, prediction_set)
+    print(f"Wrote {path} ({len(prediction_set.detections)} detector proposals)")
 
 
 def device_for_sahi(device: int | str | list[int]) -> str:
@@ -328,25 +300,35 @@ def _run_patch_predict_from_manifest(
             retina_masks=True,
         )
         result = results[0]
-        instance_map, masks, scores, classes = ultralytics_result_prediction_arrays(
-            result, height=h, width=w
-        )
-        _write_prediction_artifacts(
+        _write_patch_prediction_set(
             output_dir=args.output_dir,
             sample_id=sample_id,
-            image_path=image_path,
+            result=result,
             height=h,
             width=w,
-            instance_map=instance_map,
-            masks=masks,
-            scores=scores,
-            classes=classes,
-            orig_shape=tuple(result.orig_shape),
         )
+
+
+def _write_patch_run_provenance(args: argparse.Namespace, *, manifest: Path | None) -> None:
+    payload: dict[str, Any] = {
+        "producer": "yolo",
+        "unit": "patch",
+        "weights": str(Path(args.weights).resolve()),
+        "conf": float(args.conf),
+        "imgsz": int(args.imgsz),
+        "variant": args.variant,
+    }
+    if manifest is not None:
+        payload["manifest"] = str(manifest.resolve())
+    write_run_provenance(args.output_dir, payload)
 
 
 def run_patch_predict(args: argparse.Namespace, data_yaml: Path | None) -> None:
     manifest_path = _resolve_patch_manifest(args)
+    _write_patch_run_provenance(
+        args,
+        manifest=manifest_path,
+    )
     if manifest_path is not None:
         print(f"YOLO patch predict: using manifest {manifest_path}", file=sys.stderr)
         _run_patch_predict_from_manifest(args, manifest_path)
@@ -378,28 +360,20 @@ def run_patch_predict(args: argparse.Namespace, data_yaml: Path | None) -> None:
             retina_masks=True,
         )
         result = results[0]
-        instance_map, masks, scores, classes = ultralytics_result_prediction_arrays(
-            result, height=h, width=w
-        )
-        _write_prediction_artifacts(
+        _write_patch_prediction_set(
             output_dir=args.output_dir,
             sample_id=image_path.stem,
-            image_path=image_path,
+            result=result,
             height=h,
             width=w,
-            instance_map=instance_map,
-            masks=masks,
-            scores=scores,
-            classes=classes,
-            orig_shape=tuple(result.orig_shape),
         )
 
 
 def run_whole_predict(args: argparse.Namespace) -> None:
     from sahi import AutoDetectionModel
 
-    image_paths = _load_whole_image_paths(args)
-    n_samples = len(image_paths)
+    predict_pairs = _load_whole_predict_pairs(args)
+    n_samples = len(predict_pairs)
 
     device = device_for_sahi(_parse_device(args.device))
     weights_path = Path(args.weights).resolve()
@@ -418,10 +392,26 @@ def run_whole_predict(args: argparse.Namespace) -> None:
         image_size=args.imgsz,
     )
 
-    for idx, tiff_path in enumerate(image_paths):
+    write_run_provenance(
+        args.output_dir,
+        {
+            "producer": "yolo",
+            "unit": "whole",
+            "weights": str(weights_path),
+            "conf": float(args.conf),
+            "imgsz": int(args.imgsz),
+            "slice_height": int(args.slice_height),
+            "slice_width": int(args.slice_width),
+            "overlap_height_ratio": float(args.overlap_height_ratio),
+            "overlap_width_ratio": float(args.overlap_width_ratio),
+            "variant": args.variant,
+        },
+    )
+
+    for idx, (tiff_path, sample_id) in enumerate(predict_pairs):
         if not tiff_path.is_file():
             raise FileNotFoundError(f"Image not found: {tiff_path}")
-        print(f"Predicting {tiff_path.stem} ({idx + 1}/{n_samples})...", flush=True)
+        print(f"Predicting {sample_id} ({idx + 1}/{n_samples})...", flush=True)
         image = load_image_for_yolo(tiff_path)
         height, width = image.shape[:2]
         result = _get_sliced_prediction_preserve_channels(
@@ -432,23 +422,12 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             overlap_height_ratio=args.overlap_height_ratio,
             overlap_width_ratio=args.overlap_width_ratio,
         )
-        masks, scores, classes = sahi_predictions_to_mask_arrays(
-            result.object_prediction_list, height, width
-        )
-        instance_map = instance_map_from_masks(
-            masks, scores, height=height, width=width
-        )
-        _write_prediction_artifacts(
+        _write_whole_prediction_set(
             output_dir=args.output_dir,
-            sample_id=tiff_path.stem,
-            image_path=tiff_path,
+            sample_id=sample_id,
+            predictions=result.object_prediction_list,
             height=height,
             width=width,
-            instance_map=instance_map,
-            masks=masks,
-            scores=scores,
-            classes=classes,
-            orig_shape=(height, width),
         )
 
 

@@ -1,0 +1,13 @@
+# YOLO inference profile train selection
+
+Status: accepted
+
+YOLO whole-section inference uses SAHI sliding windows plus per-slice Ultralytics detection. Hyperparameters for slice-merge postprocess (`postprocess_type`, `match_metric`, `match_threshold`), minimum **score** (`conf`), and `mask_threshold` were previously hard-coded (GREEDYNMM, IOS, 0.5, 0.25, SAHI default 0.5) and not train-selected. ADR 0003 fixed window geometry and rejected **per-variant** inference tuning on test so **variant test ranking** is not confounded by modality-specific settings. We still need a defensible way to choose YOLO inference settings before held-out test.
+
+We introduce **YOLO inference profile** selection on the **train** section: a **staged search** (SAHI merge settings first, then `conf` and `mask_threshold` with merge settings fixed) over a grid defined in repo config. Each candidate is scored by **mean whole-section train AJI** on the canonical **instance prediction set** (after **score merge** at predict — [ADR 0004](0004-yolo-score-merge-at-predict.md)), averaged across all registry variants (each variant uses its own `best.pt`). Pre-merge metrics (e.g. proposal counts, optional mask AP on overlapping proposals) are diagnostic only, not the selection objective. The winning profile is **one shared set of values for all variants**, promoted into `configs/test_inference.yaml` and **committed to git**; scratch tune runs retain audit tables. Re-run profile selection when train labels or YOLO weights change materially, not after every single-variant training job. Patch test jobs use `conf` and `mask_threshold` from the same recipe; SAHI merge keys apply to whole-section predict only.
+
+**Slice-boundary duplicate** (non-overlapping halves of one grain across tiles) is not expected to be fixed by this tuning; it remains an accepted limitation of the YOLO system.
+
+**Considered options:** Per-variant profiles on train (rejected — confounds **variant test ranking** on test); full factorial grid over all five knobs (rejected — cost); primary objective on overlapping **detector proposals** (rejected — not the deployed system after ADR 0004); Bayesian search (deferred — staged grid sufficient for v1); scratch-only winning values without git commit (rejected — weak reproducibility).
+
+**Consequences:** Depends on ADR 0004 implementation before tune jobs. Extend `configs/test_inference.yaml` and `test_inference` loader with YOLO profile fields; wire `yolo.predict` and SLURM whole/patch test scripts; add `SLURM/yolo` train whole tune step and `configs/yolo_inference_profile_tune.yaml` (search space). Amend ADR 0003 pointer. U-Net **extraction profile** stays per-model (watershed JSON), unchanged.

@@ -11,3 +11,5 @@ Legacy instance label-map TIFFs and dense mask NPZs are not written or read (cle
 **Considered options:** Keep dense NPZ; store merged grains only (breaks mask AP); dual artifacts with legacy readers; RLE-only eval without ever rasterizing (rejected for metric parity and simplicity).
 
 **Consequences:** `common.evaluate_instances`, `yolo.predict`, `unet.extract_instances`, manifest schema, and SLURM eval scripts must move together. Patch and whole use the same prediction set shape; `unit` stays on manifests.
+
+**Superseded (YOLO only):** Persisting overlapping proposals and computing **merged instance view** only at eval — see [ADR 0004](0004-yolo-score-merge-at-predict.md).

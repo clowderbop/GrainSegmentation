@@ -36,7 +36,7 @@ from yolo.inference_profile_tune import (
     write_variant_eval_resume_meta,
 )
 from yolo.profile_tune_dry_run import dry_run_scorer
-from yolo.profile_tune_grid import score_variant_from_cache, validate_detector_caches
+from yolo.profile_tune_cli import validate_detector_caches
 
 
 def _write_grid(path: Path) -> None:
@@ -404,77 +404,6 @@ def test_evaluate_variant_predictions_runs_write_eval_and_evaluate(
     assert invoked == ["common.stage_manifest", "common.evaluate_instances"]
 
 
-def test_score_variant_from_cache_loads_tiled_proposals_and_evaluates(
-    tmp_path: Path,
-) -> None:
-    repo = tmp_path / "repo"
-    (repo / "src" / "common").mkdir(parents=True)
-    grainseg_root = tmp_path / "grainseg"
-    run_root = grainseg_root / "runs" / "yolo26-seg"
-    weights = run_root / "PPL" / "weights" / "best.pt"
-    weights.parent.mkdir(parents=True)
-    weights.write_bytes(b"weights")
-    work_root = tmp_path / "work"
-    variant_out = tmp_path / "variant_out"
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="NMM",
-        match_metric="IOU",
-        match_threshold=0.6,
-        conf=0.3,
-        mask_threshold=0.55,
-    )
-    staged_manifest = work_root / "PPL" / "staged" / "manifest.json"
-    staged_manifest.parent.mkdir(parents=True)
-    staged_manifest.write_text("{}", encoding="utf-8")
-    cache_calls = {"load": 0, "eval": 0}
-
-    def _fake_load(*_args, **_kwargs):
-        cache_calls["load"] += 1
-        return ["proposal"], {}
-
-    def _fake_eval(**_kwargs) -> Path:
-        cache_calls["eval"] += 1
-        metrics = variant_out / "instance_metrics.json"
-        metrics.write_text(
-            json.dumps({"samples": [{"sample_id": "train", "aji": 0.5}]}),
-            encoding="utf-8",
-        )
-        return metrics
-
-    with (
-        patch("yolo.profile_tune_grid.load_tiled_proposals", side_effect=_fake_load),
-        patch(
-            "yolo.profile_tune_grid.ensure_staged_train_manifest",
-            return_value=staged_manifest,
-        ),
-        patch(
-            "yolo.profile_tune_grid.collect_manifest_image_paths",
-            return_value=[(tmp_path / "train.tif", "train")],
-        ),
-        patch(
-            "yolo.predict.load_image_for_yolo",
-            return_value=__import__("numpy").zeros((4, 4, 3), dtype="uint8"),
-        ),
-        patch("yolo.profile_tune_grid.merge_sliced_object_predictions", return_value=["merged"]),
-        patch("yolo.profile_tune_grid.build_yolo_prediction_set_from_sahi_predictions"),
-        patch("yolo.profile_tune_grid.merge_yolo_proposals_by_score"),
-        patch("yolo.profile_tune_grid.assert_yolo_grains_non_overlapping"),
-        patch("yolo.profile_tune_grid.save_prediction_set"),
-        patch("yolo.profile_tune_grid.evaluate_variant_predictions", side_effect=_fake_eval),
-    ):
-        metrics_path = score_variant_from_cache(
-            variant="PPL",
-            candidate=candidate,
-            variant_output_dir=variant_out,
-            grainseg_root=grainseg_root,
-            run_root=run_root,
-            work_root=work_root,
-            repo=repo,
-        )
-
-    assert cache_calls == {"load": 1, "eval": 1}
-    assert metrics_path == variant_out / "instance_metrics.json"
-
 
 def test_extract_mean_aji_from_evaluate_instances_report_shape() -> None:
     from common.reporting import build_instance_eval_report
@@ -693,8 +622,7 @@ def test_run_grid_search_resume_skips_when_fingerprint_matches(tmp_path: Path) -
 
 
 def test_recompute_winner_from_csv_picks_highest_mean_aji(tmp_path: Path) -> None:
-    from yolo.inference_profile_tune import load_grid_winner
-    from yolo.profile_tune_grid import recompute_winner_from_csv
+    from yolo.inference_profile_tune import load_grid_winner, recompute_winner_from_csv
 
     grid_dir = tmp_path / "grid"
     grid_dir.mkdir(parents=True)
@@ -711,10 +639,10 @@ def test_recompute_winner_from_csv_picks_highest_mean_aji(tmp_path: Path) -> Non
     assert loaded == winner
 
 
-def test_profile_tune_grid_cli_recompute_winner_from_csv(
+def test_profile_tune_finalize_cli_recompute_winner_from_csv(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from yolo.profile_tune_grid import main
+    from yolo.profile_tune_finalize import main
 
     grid_dir = tmp_path / "grid"
     grid_dir.mkdir(parents=True)
@@ -737,123 +665,6 @@ def test_profile_tune_grid_cli_recompute_winner_from_csv(
     assert (grid_dir / "winner.json").is_file()
 
 
-def test_grid_coordinator_loads_disk_cache_for_each_candidate(tmp_path: Path) -> None:
-    """run_grid_search + score_variant_from_cache use on-disk tiled proposal cache."""
-    from common.test_inference import load_test_inference_recipe
-    from yolo.tiled_proposal_cache import (
-        proposal_cache_dir,
-        proposal_cache_record,
-        recipe_whole_window_fingerprint,
-        weights_sha256,
-        write_tiled_proposals,
-    )
-
-    candidates = [
-        YoloInferenceProfileCandidate(
-            postprocess_type="GREEDYNMM",
-            match_metric="IOS",
-            match_threshold=0.4,
-            conf=0.2,
-            mask_threshold=0.45,
-        ),
-        YoloInferenceProfileCandidate(
-            postprocess_type="NMM",
-            match_metric="IOS",
-            match_threshold=0.5,
-            conf=0.2,
-            mask_threshold=0.45,
-        ),
-    ]
-
-    grainseg_root = tmp_path / "grainseg"
-    run_root = grainseg_root / "runs" / "yolo26-seg"
-    weights = run_root / "PPL" / "weights" / "best.pt"
-    weights.parent.mkdir(parents=True)
-    weights.write_bytes(b"same-weights")
-    work_root = tmp_path / "_work"
-    recipe = load_test_inference_recipe()
-    cache_dir = proposal_cache_dir(
-        work_root / "PPL", conf=candidates[0].conf, mask_threshold=candidates[0].mask_threshold
-    )
-    cached_proposals = [{"cache_marker": "disk-proposals-v1"}]
-    write_tiled_proposals(
-        cache_dir,
-        cached_proposals,
-        proposal_cache_record(
-            variant="PPL",
-            weights_sha256=weights_sha256(weights),
-            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
-            conf=candidates[0].conf,
-            mask_threshold=candidates[0].mask_threshold,
-            sample_id="train",
-        ),
-    )
-
-    repo = tmp_path / "repo"
-    (repo / "src" / "common").mkdir(parents=True)
-    staged_manifest = work_root / "PPL" / "staged" / "manifest.json"
-    staged_manifest.parent.mkdir(parents=True)
-    staged_manifest.write_text("{}", encoding="utf-8")
-    load_log: list[list] = []
-
-    from yolo.tiled_proposal_cache import load_tiled_proposals as real_load
-
-    def _tracking_load(cache_path: Path, *, expected: dict) -> tuple[list, dict]:
-        proposals, meta = real_load(cache_path, expected=expected)
-        load_log.append(proposals)
-        return proposals, meta
-
-    eval_calls: list[str] = []
-
-    def _fake_eval(**kwargs) -> Path:
-        variant_output_dir = kwargs["variant_output_dir"]
-        eval_calls.append(variant_output_dir.name)
-        metrics = variant_output_dir / "instance_metrics.json"
-        metrics.write_text(
-            json.dumps({"samples": [{"sample_id": "train", "aji": 0.5}]}),
-            encoding="utf-8",
-        )
-        return metrics
-
-    with (
-        patch("yolo.profile_tune_grid.load_tiled_proposals", side_effect=_tracking_load),
-        patch(
-            "yolo.profile_tune_grid.ensure_staged_train_manifest",
-            return_value=staged_manifest,
-        ),
-        patch(
-            "yolo.profile_tune_grid.collect_manifest_image_paths",
-            return_value=[(tmp_path / "train.tif", "train")],
-        ),
-        patch(
-            "yolo.predict.load_image_for_yolo",
-            return_value=__import__("numpy").zeros((8, 8, 3), dtype="uint8"),
-        ),
-        patch("yolo.profile_tune_grid.evaluate_variant_predictions", side_effect=_fake_eval),
-    ):
-        run_grid_search(
-            candidates=candidates,
-            variants=("PPL",),
-            output_dir=tmp_path / "run",
-            score_variant=lambda variant, candidate, out_dir: score_variant_from_cache(
-                variant=variant,
-                candidate=candidate,
-                variant_output_dir=out_dir,
-                grainseg_root=grainseg_root,
-                run_root=run_root,
-                work_root=work_root,
-                repo=repo,
-            ),
-            resume=False,
-            resume_context=None,
-        )
-
-    assert len(load_log) == 2
-    assert load_log[0] == cached_proposals
-    assert load_log[1] == cached_proposals
-    assert len(eval_calls) == 2
-
-
 def test_grid_coordinator_cache_miss_fails_validation(tmp_path: Path) -> None:
     _write_grid(tmp_path / "grid.yaml")
     spec = load_tune_grid(tmp_path / "grid.yaml")
@@ -871,8 +682,96 @@ def test_grid_coordinator_cache_miss_fails_validation(tmp_path: Path) -> None:
         )
 
 
-def test_grid_coordinator_cache_fingerprint_mismatch_on_score(tmp_path: Path) -> None:
+def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
+    tmp_path: Path,
+) -> None:
+    """Disk tiled-proposal cache + GT cache → in-process AJI matches evaluate_instances."""
     from common.test_inference import load_test_inference_recipe
+    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.profile_tune_gt_cache import (
+        build_gt_fingerprint,
+        gt_cache_dir,
+        write_gt_instance_map_cache,
+    )
+    from yolo.tests.test_profile_tune_scoring import (
+        _disjoint_proposals,
+        _tiny_gt_map,
+        _train_aji_via_evaluate_instances,
+    )
+    from yolo.tiled_proposal_cache import (
+        proposal_cache_dir,
+        proposal_cache_record,
+        recipe_whole_window_fingerprint,
+        weights_sha256,
+        write_tiled_proposals,
+    )
+
+    height, width = 16, 16
+    candidate = YoloInferenceProfileCandidate(
+        postprocess_type="GREEDYNMM",
+        match_metric="IOS",
+        match_threshold=0.4,
+        conf=0.2,
+        mask_threshold=0.45,
+    )
+    grainseg_root = tmp_path / "grainseg"
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    work_root = tmp_path / "_work"
+    recipe = load_test_inference_recipe()
+    proposals = _disjoint_proposals(height, width)
+    write_tiled_proposals(
+        proposal_cache_dir(work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold),
+        proposals,
+        proposal_cache_record(
+            variant="PPL",
+            weights_sha256=weights_sha256(weights),
+            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+            conf=candidate.conf,
+            mask_threshold=candidate.mask_threshold,
+            sample_id="train",
+        ),
+    )
+    gt_map = _tiny_gt_map(height, width)
+    labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
+    labels_gpkg.parent.mkdir(parents=True)
+    labels_gpkg.write_bytes(b"labels")
+    write_gt_instance_map_cache(
+        gt_cache_dir(work_root, "PPL"),
+        gt_map,
+        fingerprint=build_gt_fingerprint(
+            variant="PPL", sample_id="train", labels_gpkg=labels_gpkg
+        ),
+    )
+    image_path = tmp_path / "train.tif"
+    image_path.write_bytes(b"\x00")
+    pred_path = tmp_path / "prediction_sets" / "train.json"
+
+    fast_aji = score_variant_train_aji_from_cache(
+        variant="PPL",
+        candidate=candidate,
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        work_root=work_root,
+    )
+    canonical_aji = _train_aji_via_evaluate_instances(
+        gt_map,
+        proposals,
+        candidate=candidate,
+        height=height,
+        width=width,
+        variant="PPL",
+        image_path=image_path,
+        prediction_set_path=pred_path,
+    )
+    assert fast_aji == pytest.approx(canonical_aji, rel=0.0, abs=1e-9)
+
+
+def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
+    from common.test_inference import load_test_inference_recipe
+    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
     from yolo.tiled_proposal_cache import (
         proposal_cache_dir,
         proposal_cache_record,
@@ -907,15 +806,11 @@ def test_grid_coordinator_cache_fingerprint_mismatch_on_score(tmp_path: Path) ->
         conf=0.99,
         mask_threshold=0.45,
     )
-    repo = tmp_path / "repo"
-    (repo / "src" / "common").mkdir(parents=True)
     with pytest.raises(FileNotFoundError):
-        score_variant_from_cache(
+        score_variant_train_aji_from_cache(
             variant="PPL",
             candidate=candidate,
-            variant_output_dir=tmp_path / "out",
             grainseg_root=grainseg_root,
             run_root=run_root,
             work_root=work_root,
-            repo=repo,
         )

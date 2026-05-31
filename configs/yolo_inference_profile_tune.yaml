@@ -1,7 +1,3 @@
-# Full factorial YOLO inference profile search on train whole section (ADR 0005).
-# Cartesian product of five knobs; match_metric includes IOS and IOU (exploratory).
-# Current axis lists: 2×2×3×3×3 = 216 candidates.
-
 grid:
   postprocess_type:
     - GREEDYNMM

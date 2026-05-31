@@ -15,8 +15,8 @@ Jobs stage patch manifests (and listed images/labels) into `$TMPDIR` for train a
    - Pretrained weights: `pretrained/yolo26l-seg.pt` on scratch.
    - Writes `runs/yolo26-seg/{variant}/weights/best.pt` (and run artifacts under that project dir).
 
-2. **`submit_inference_profile_tune.sh`** → **`run_profile_tune_detector.sh`** (×36 GPU) + **`run_profile_tune_grid.sh`** (×1 CPU)
-   **Profile selection** on the **train** whole section after **all registry** variant weights exist and **score merge** at predict is in use. Submit assigns `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/` before jobs start. Detector jobs (32G, one GPU each) write **tiled detector proposals** under `_work/{variant}/tiled_proposals/c{conf}_t{mask}/`. The grid coordinator (32G CPU, `afterok` on all detectors) runs the full factorial grid, reusing cached proposals for merge+eval. Audit: `grid/results.csv`, `grid/winner.json`. Promote via `yolo.promote_inference_profile` → commit `configs/test_inference.yaml`. Re-run when train labels or YOLO weights change materially.
+2. **`submit_inference_profile_tune.sh`** → detector GPU jobs + GT cache + candidate array + finalize
+   **Profile selection** on the **train** whole section after **all registry** variant weights exist and **score merge** at predict is in use. Submit assigns `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/` before jobs start. Workflow: (1) **`run_profile_tune_detector.sh`** (×36, 32G GPU) writes **tiled detector proposals** under `_work/{variant}/tiled_proposals/c{conf}_t{mask}/`; (2) **`run_profile_tune_gt_cache.sh`** (32G CPU, `afterok` detectors) rasterizes train GT to `_work/gt_cache/{variant}/`; (3) **`run_profile_tune_candidate.sh`** array (32G, 8 CPUs, 4h, one task per grid candidate, `afterok` GT cache) scores in-process and writes `grid/rows/{candidate_id}.json`; (4) **`run_profile_tune_finalize.sh`** (`afterok` array) writes `grid/results.csv` and `grid/winner.json`. Salvage an in-flight run with existing `_work/`: `OUTPUT_DIR=.../run_id bash SLURM/yolo/submit_inference_profile_tune.sh --skip-detectors`. Promote via `yolo.promote_inference_profile` → commit `configs/test_inference.yaml`.
 
 3. **`submit_test_evaluations.sh`** → **`run_patch_test_eval.sh`** + **`run_sahi_test_eval.sh`**
    For each registry variant (`PPL`, `PPLPPXblend`, `PPL+PPXblend`, `PPL+AllPPX`), submits two jobs:
@@ -43,7 +43,9 @@ proposal mask at a time (`yolo_detections_to_instance_map_by_score`).
 |-----|----------------|-----------------|
 | SAHI whole (all variants) | 32G | 00:20:00 |
 | Profile tune detector (`run_profile_tune_detector.sh`) | 32G | 00:10:00 |
-| Profile tune grid (`run_profile_tune_grid.sh`) | 32G | 48:00:00 |
+| Profile tune GT cache (`run_profile_tune_gt_cache.sh`) | 32G | 04:00:00 |
+| Profile tune candidate (`run_profile_tune_candidate.sh`) | 32G | 04:00:00 |
+| Profile tune finalize (`run_profile_tune_finalize.sh`) | 32G | 01:00:00 |
 | Patch test (`run_patch_test_eval.sh`) | 32G | 00:08:00 |
 
 `sbatch --mem` / `--time` on the command line override `#SBATCH` in the run script.
@@ -63,8 +65,11 @@ bash SLURM/yolo/submit_inference_profile_tune.sh
 uv run --directory src/yolo python -m yolo.promote_inference_profile \
   --winner-json "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<run_id>/grid/winner.json"
 
-# If the grid coordinator exited after all rows were appended but before winner.json:
-uv run --directory src/yolo python -m yolo.profile_tune_grid \
+# If finalize did not run but grid/rows/*.json or results.csv exist:
+uv run --directory src/yolo python -m yolo.profile_tune_finalize \
+  --output-dir "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<run_id>"
+# Or recompute winner only from results.csv:
+uv run --directory src/yolo python -m yolo.profile_tune_finalize \
   --output-dir "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<run_id>" \
   --recompute-winner-from-csv
 

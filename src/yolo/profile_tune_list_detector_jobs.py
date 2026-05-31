@@ -5,17 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from common.variants import all_variant_names
 from yolo.inference_profile_tune import iter_detector_jobs, load_tune_grid, tune_grid_path
-
-
-def _parse_variants(raw: str | None) -> tuple[str, ...]:
-    if raw is None:
-        return all_variant_names()
-    names = tuple(v.strip() for v in raw.split(",") if v.strip())
-    if not names:
-        raise ValueError("--variants must list at least one registry variant")
-    return names
+from yolo.profile_tune_cli import parse_profile_tune_variants
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -37,7 +28,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     spec = load_tune_grid(args.grid_config)
-    variants = _parse_variants(args.variants)
+    variants = parse_profile_tune_variants(args.variants)
     for variant, conf, mask_threshold in iter_detector_jobs(spec, variants):
         print(f"{variant}\t{conf}\t{mask_threshold}")
 

@@ -11,22 +11,28 @@ GRAINSEG_ROOT="$(grainseg_root)"
 RUN_ID="${RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
 OUTPUT_DIR="${OUTPUT_DIR:-$GRAINSEG_ROOT/runs/yolo_inference_profile_tune/$RUN_ID}"
 DRY_RUN=false
+SKIP_DETECTORS="${SKIP_DETECTORS:-0}"
 GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/configs/yolo_inference_profile_tune.yaml}"
 
 function usage {
     cat <<'EOF' >&2
-Usage: submit_inference_profile_tune.sh [--dry-run] [--output-dir PATH] [--run-id ID]
+Usage: submit_inference_profile_tune.sh [--dry-run] [--output-dir PATH] [--run-id ID] [--skip-detectors]
 
 Submit parallel YOLO inference profile tune (ADR 0005):
-  one GPU detector job per (variant, conf, mask_threshold), then one CPU grid job.
+  (1) GPU detector jobs per (variant, conf, mask_threshold) — skip with --skip-detectors
+  (2) CPU GT-cache job (after detectors, or immediately if detectors skipped)
+  (3) CPU array: one job per grid candidate (all tasks submitted; no % throttle)
+  (4) CPU finalize job (afterok on candidate array)
 
-Requires all registry variant weights under runs/yolo26-seg/{variant}/weights/best.pt.
+Requires all registry variant weights under runs/yolo26-seg/{variant}/weights/best.pt
+when running detectors. Salvage: reuse existing OUTPUT_DIR/_work/ and pass --skip-detectors.
 
 Environment:
-  OUTPUT_DIR   full run directory (default: .../yolo_inference_profile_tune/<run_id>)
-  RUN_ID       run folder name when OUTPUT_DIR unset
-  GRID_CONFIG  search grid YAML (default: configs/yolo_inference_profile_tune.yaml)
-  NO_RESUME    set to 1 to pass --no-resume to the grid coordinator
+  OUTPUT_DIR       full run directory (default: .../yolo_inference_profile_tune/<run_id>)
+  RUN_ID           run folder name when OUTPUT_DIR unset
+  GRID_CONFIG      search grid YAML (default: configs/yolo_inference_profile_tune.yaml)
+  SKIP_DETECTORS   set to 1 (or use --skip-detectors) when tiled-proposal caches already exist
+  NO_RESUME        set to 1 to clear grid/rows/*.json before candidate array and pass --no-resume
 EOF
     exit "${1:-1}"
 }
@@ -45,6 +51,10 @@ while [[ $# -gt 0 ]]; do
             RUN_ID="$2"
             shift 2
             ;;
+        --skip-detectors)
+            SKIP_DETECTORS=1
+            shift
+            ;;
         --help)
             usage 0
             ;;
@@ -60,51 +70,116 @@ if [ ! -f "$GRID_CONFIG" ]; then
     exit 1
 fi
 
-detector_job_ids=()
-while IFS=$'\t' read -r variant conf mask; do
-    export_vars="ALL,OUTPUT_DIR=${OUTPUT_DIR},VARIANT=${variant},CONF=${conf},MASK_THRESHOLD=${mask}"
-    cmd=(
-        sbatch
-        "--export=${export_vars}"
-        "$REPO_ROOT/SLURM/yolo/run_profile_tune_detector.sh"
-    )
-    if [ "$DRY_RUN" = true ]; then
-        printf '%q ' "${cmd[@]}"
-        echo
-    else
-        job_id="$("${cmd[@]}" | awk '{print $NF}')"
-        detector_job_ids+=("$job_id")
+candidate_count="$(
+    uv run --directory "$REPO_ROOT/src/yolo" python -m yolo.profile_tune_list_candidates \
+        --grid-config "$GRID_CONFIG" | wc -l
+)"
+candidate_count="${candidate_count//[[:space:]]/}"
+if [ "$candidate_count" -lt 1 ]; then
+    echo "No grid candidates in $GRID_CONFIG" >&2
+    exit 1
+fi
+
+RUN_ROOT="$GRAINSEG_ROOT/runs/yolo26-seg"
+for variant in "${MICROSCOPY_VARIANTS[@]}"; do
+    weights="$RUN_ROOT/$variant/weights/best.pt"
+    if [ ! -f "$weights" ]; then
+        echo "Missing YOLO weights (required for profile tune): $weights" >&2
+        exit 1
     fi
-done < <(
-    uv run --directory "$REPO_ROOT/src/yolo" python -m yolo.profile_tune_list_detector_jobs \
-        --grid-config "$GRID_CONFIG"
-)
+done
 
-dep=""
+detector_job_ids=()
+if [ "$SKIP_DETECTORS" != "1" ]; then
+    while IFS=$'\t' read -r variant conf mask; do
+        export_vars="ALL,OUTPUT_DIR=${OUTPUT_DIR},VARIANT=${variant},CONF=${conf},MASK_THRESHOLD=${mask}"
+        cmd=(
+            sbatch
+            "--export=${export_vars}"
+            "$REPO_ROOT/SLURM/yolo/run_profile_tune_detector.sh"
+        )
+        if [ "$DRY_RUN" = true ]; then
+            printf '%q ' "${cmd[@]}"
+            echo
+        else
+            job_id="$("${cmd[@]}" | awk '{print $NF}')"
+            detector_job_ids+=("$job_id")
+        fi
+    done < <(
+        uv run --directory "$REPO_ROOT/src/yolo" python -m yolo.profile_tune_list_detector_jobs \
+            --grid-config "$GRID_CONFIG"
+    )
+else
+    echo "Skipping detector jobs (SKIP_DETECTORS=1); reusing $OUTPUT_DIR/_work/"
+fi
+
+detector_dep=""
 if [ "$DRY_RUN" = false ] && [ "${#detector_job_ids[@]}" -gt 0 ]; then
-    dep=$(IFS=:; echo "${detector_job_ids[*]}")
+    detector_dep=$(IFS=:; echo "${detector_job_ids[*]}")
 fi
 
-grid_export="ALL,OUTPUT_DIR=${OUTPUT_DIR}"
-if [ -n "${NO_RESUME:-}" ]; then
-    grid_export="${grid_export},NO_RESUME=${NO_RESUME}"
+gt_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG}"
+gt_cmd=(sbatch "--export=${gt_export}")
+if [ -n "$detector_dep" ]; then
+    gt_cmd+=("--dependency=afterok:${detector_dep}")
 fi
-
-grid_cmd=(
-    sbatch
-    "--export=${grid_export}"
-)
-if [ -n "$dep" ]; then
-    grid_cmd+=("--dependency=afterok:${dep}")
-fi
-grid_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_grid.sh")
+gt_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_gt_cache.sh")
 
 if [ "$DRY_RUN" = true ]; then
-    printf '%q ' "${grid_cmd[@]}"
+    printf '%q ' "${gt_cmd[@]}"
     echo
 else
-    "${grid_cmd[@]}"
+    gt_job_id="$("${gt_cmd[@]}" | awk '{print $NF}')"
+fi
+
+if [ "${NO_RESUME:-0}" = "1" ] && [ "$DRY_RUN" = false ]; then
+    OUTPUT_DIR="$OUTPUT_DIR" uv run --directory "$REPO_ROOT/src/yolo" python - <<'PY'
+from pathlib import Path
+import os
+from yolo.inference_profile_tune import clear_profile_selection_rows
+
+clear_profile_selection_rows(Path(os.environ["OUTPUT_DIR"]) / "grid")
+PY
+fi
+
+cand_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG}"
+if [ -n "${NO_RESUME:-}" ]; then
+    cand_export="${cand_export},NO_RESUME=${NO_RESUME}"
+fi
+cand_cmd=(
+    sbatch
+    "--export=${cand_export}"
+    "--array=1-${candidate_count}"
+    "$REPO_ROOT/SLURM/yolo/run_profile_tune_candidate.sh"
+)
+if [ "$DRY_RUN" = false ]; then
+    cand_cmd+=("--dependency=afterok:${gt_job_id}")
+fi
+
+if [ "$DRY_RUN" = true ]; then
+    printf '%q ' "${cand_cmd[@]}"
+    echo
+else
+    cand_job_id="$("${cand_cmd[@]}" | awk '{print $NF}')"
+fi
+
+fin_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG}"
+fin_cmd=(sbatch "--export=${fin_export}")
+if [ "$DRY_RUN" = false ]; then
+    fin_cmd+=("--dependency=afterok:${cand_job_id}")
+fi
+fin_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_finalize.sh")
+
+if [ "$DRY_RUN" = true ]; then
+    printf '%q ' "${fin_cmd[@]}"
+    echo
+else
+    "${fin_cmd[@]}"
     echo "Submitted profile tune run → $OUTPUT_DIR"
-    echo "  ${#detector_job_ids[@]} detector GPU jobs + 1 grid coordinator (afterok)"
+    if [ "$SKIP_DETECTORS" = "1" ]; then
+        echo "  detectors skipped; GT cache + ${candidate_count} candidate tasks + finalize"
+    else
+        echo "  ${#detector_job_ids[@]} detector GPU jobs + GT cache + ${candidate_count} candidate tasks + finalize"
+    fi
     echo "Promote: uv run --directory $REPO_ROOT/src/yolo python -m yolo.promote_inference_profile --winner-json $OUTPUT_DIR/grid/winner.json"
 fi

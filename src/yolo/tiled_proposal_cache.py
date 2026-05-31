@@ -18,12 +18,16 @@ _PROPOSALS_NAME = "proposals.pkl"
 _META_NAME = "proposals.meta.json"
 
 
-def weights_sha256(weights_path: Path) -> str:
+def file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
-    with weights_path.open("rb") as handle:
+    with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def weights_sha256(weights_path: Path) -> str:
+    return file_sha256(weights_path)
 
 
 def recipe_whole_window_fingerprint(recipe: TestInferenceRecipe) -> str:

@@ -396,6 +396,75 @@ def load_grid_winner(path: Path) -> YoloInferenceProfileCandidate:
     return candidate_from_winner_json(payload)
 
 
+def profile_selection_row_path(grid_dir: Path, candidate_id: str) -> Path:
+    return grid_dir / "rows" / f"{candidate_id}.json"
+
+
+def write_profile_selection_row(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(row, indent=2), encoding="utf-8")
+
+
+def load_profile_selection_row(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def clear_profile_selection_rows(grid_dir: Path) -> None:
+    rows_dir = grid_dir / "rows"
+    if not rows_dir.is_dir():
+        return
+    for path in rows_dir.glob("*.json"):
+        path.unlink()
+
+
+def rows_to_grid_results(
+    rows: list[dict[str, Any]], *, variant_names: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """Normalize profile selection result rows for results.csv."""
+    normalized: list[dict[str, Any]] = []
+    for row in rows:
+        csv_row: dict[str, Any] = {
+            "candidate_id": row["candidate_id"],
+            "postprocess_type": row["postprocess_type"],
+            "match_metric": row["match_metric"],
+            "match_threshold": row["match_threshold"],
+            "conf": row["conf"],
+            "mask_threshold": row["mask_threshold"],
+            "mean_aji": row["mean_aji"],
+        }
+        for variant in variant_names:
+            csv_row[f"aji__{variant}"] = row[f"aji__{variant}"]
+        normalized.append(csv_row)
+    return normalized
+
+
+def recompute_winner_from_csv(
+    output_dir: Path, *, variant_names: tuple[str, ...] | None = None
+) -> YoloInferenceProfileCandidate:
+    """Recompute grid/winner.json from an existing grid/results.csv."""
+    from common.variants import all_variant_names
+
+    variants = variant_names or all_variant_names()
+    results_csv = output_dir / "grid" / "results.csv"
+    rows = load_grid_results_csv(results_csv)
+    if not rows:
+        raise ValueError(f"No rows in {results_csv}")
+    return finalize_grid_winner(output_dir / "grid", rows, variant_names=variants)
+
+
+def candidate_at_grid_index(
+    spec: TuneGridSpec, array_index: int
+) -> YoloInferenceProfileCandidate:
+    if array_index < 1:
+        raise ValueError(f"array index must be >= 1, got {array_index}")
+    candidates = list(iter_grid_candidates(spec))
+    if array_index > len(candidates):
+        raise ValueError(
+            f"array index {array_index} out of range for {len(candidates)} candidates"
+        )
+    return candidates[array_index - 1]
+
+
 def promote_profile_to_recipe(
     profile: YoloInferenceProfileCandidate,
     recipe_path: Path,

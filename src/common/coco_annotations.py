@@ -7,6 +7,7 @@ from shapely.geometry.multipolygon import MultiPolygon
 from shapely.geometry.polygon import orient
 
 from common.geometry import iter_polygon_parts
+from common.prediction_set import GRAIN_CLASS_ID
 
 
 def clip_polygon_to_hw(polygon: Polygon, height: int, width: int) -> list[Polygon]:
@@ -38,7 +39,7 @@ def build_gt_annotations(
     image_id: int,
     height: int,
     width: int,
-    category_id: int = 1,
+    category_id: int = GRAIN_CLASS_ID,
 ) -> list[dict[str, Any]]:
     anns: list[dict[str, Any]] = []
     ann_id = 1

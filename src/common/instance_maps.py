@@ -113,23 +113,26 @@ def score_merged_instance_map_from_sahi_predictions(
     width: int,
     mask_threshold: float,
 ) -> np.ndarray:
-    """Paint overlapping SAHI proposals by ascending score (no prediction-set RLE round-trip)."""
-    detections: list[dict[str, Any]] = []
-    for pred in predictions:
+    """Paint overlapping SAHI proposals by ascending score (no prediction-set RLE round-trip).
+
+    Decodes and paints one mask at a time so slice-merged full-section masks are not
+    all materialized in a list before painting (ADR 0007; avoids candidate OOM).
+    """
+    if not predictions:
+        return np.zeros((height, width), dtype=np.int32)
+    scores = np.asarray(
+        [_sahi_object_score(pred) for pred in predictions], dtype=np.float64
+    )
+    order = np.argsort(scores)
+    out = np.zeros((height, width), dtype=np.int32)
+    for det_index in order:
         binary = sahi_object_binary_mask(
-            pred, height=height, width=width, mask_threshold=mask_threshold
+            predictions[det_index],
+            height=height,
+            width=width,
+            mask_threshold=mask_threshold,
         )
         if binary is None or not binary.any():
             continue
-        detections.append(
-            {
-                "score": _sahi_object_score(pred),
-                "segmentation": binary,
-            }
-        )
-    return yolo_detections_to_instance_map_by_score(
-        detections,
-        height=height,
-        width=width,
-        decode_segmentation=lambda segmentation: np.asarray(segmentation, dtype=bool),
-    )
+        out[binary] = int(det_index) + 1
+    return out

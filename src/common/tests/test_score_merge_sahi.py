@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+import numpy as np
 import pytest
 
 from common.instance_maps import score_merged_instance_map_from_sahi_predictions
@@ -61,3 +64,26 @@ def test_score_merged_instance_map_direct_paint_matches_prediction_set_path(
     )
     assert_instance_map_partitions_equal(fast, legacy)
     assert compute_aji(gt, fast) == pytest.approx(compute_aji(gt, legacy), abs=1e-9)
+
+
+def test_score_merged_instance_map_paints_incrementally() -> None:
+    """ADR 0007: score-merge must not batch all decoded masks before painting."""
+    height, width = 16, 16
+    proposals = overlapping_sahi_proposals(height, width)
+
+    def fail_batch_path(*_args: object, **_kwargs: object) -> np.ndarray:
+        raise AssertionError(
+            "score_merged_instance_map_from_sahi_predictions must paint "
+            "one mask at a time, not via yolo_detections_to_instance_map_by_score"
+        )
+
+    with patch(
+        "common.instance_maps.yolo_detections_to_instance_map_by_score",
+        side_effect=fail_batch_path,
+    ):
+        score_merged_instance_map_from_sahi_predictions(
+            proposals,
+            height=height,
+            width=width,
+            mask_threshold=0.5,
+        )

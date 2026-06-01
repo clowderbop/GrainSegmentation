@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 Category: enhancement
 Labels: ready-for-agent, enhancement
 Depends-on: .scratch/profile-tune-opencv-gt-fast-scoring/issues/01-opencv-gpkg-painter-golden-fixture.md
@@ -14,13 +14,13 @@ Refactor the GT-cache CLI and SLURM job to rasterize via the OpenCV painter from
 
 ## Acceptance criteria
 
-- [ ] Cache layout is `_work/gt_cache/train/` (not per-variant trees)
-- [ ] Fingerprint excludes input variant; includes gpkg hash, sample id, width, height
-- [ ] GT-cache SLURM job uses OpenCV painter and `$TMPDIR` GPKG copy
-- [ ] Candidate / scoring loads shared GT cache with validation
-- [ ] **Profile selection result row** GT fingerprint shape updated; stale rows would not resume
-- [ ] Fixture-scale CLI test: build cache → load in scoring path
-- [ ] GT-cache logs include per-phase timings (copy, rasterize, write)
+- [x] Cache layout is `_work/gt_cache/train/` (not per-variant trees)
+- [x] Fingerprint excludes input variant; includes gpkg hash, sample id, width, height
+- [x] GT-cache SLURM job uses OpenCV painter and `$TMPDIR` GPKG copy
+- [x] Candidate / scoring loads shared GT cache with validation
+- [x] **Profile selection result row** GT fingerprint shape updated; stale rows would not resume
+- [x] Fixture-scale CLI test: build cache → load in scoring path
+- [x] GT-cache logs include per-phase timings (copy, rasterize, write)
 
 ## Blocked by
 

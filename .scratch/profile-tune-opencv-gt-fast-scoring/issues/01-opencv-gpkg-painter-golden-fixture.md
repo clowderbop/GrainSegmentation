@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 Category: enhancement
 Labels: ready-for-agent, enhancement
 Blocks: .scratch/profile-tune-opencv-gt-fast-scoring/issues/02-profile-selection-gt-cache-train-layout.md, .scratch/profile-tune-opencv-gt-fast-scoring/issues/03-gpkg-gt-evaluate-instances-unet-watershed.md
@@ -13,11 +13,11 @@ Lock behavior with a committed micro-GPKG under test fixtures, a golden compress
 
 ## Acceptance criteria
 
-- [ ] OpenCV GPKG → **merged instance view** helper lives in **common** and matches ADR 0006 topology rules
-- [ ] `opencv-python-headless` is a **common** dependency (not an optional extra)
-- [ ] Committed micro-GPKG fixture, golden `instance_map.npz`, and regen script exist
-- [ ] Tests fail on painter drift from the golden map
-- [ ] No production caller switched yet (evaluate_instances / tune GT cache follow in later slices)
+- [x] OpenCV GPKG → **merged instance view** helper lives in **common** and matches ADR 0006 topology rules
+- [x] `opencv-python-headless` is a **common** dependency (not an optional extra)
+- [x] Committed micro-GPKG fixture, golden `instance_map.npz`, and regen script exist
+- [x] Tests fail on painter drift from the golden map
+- [x] No production caller switched yet (evaluate_instances / tune GT cache follow in later slices)
 
 ## Blocked by
 

@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 Category: enhancement
 Labels: ready-for-agent, enhancement
 Depends-on: .scratch/profile-tune-opencv-gt-fast-scoring/issues/01-opencv-gpkg-painter-golden-fixture.md
@@ -11,11 +11,11 @@ Wire all production GPKG → **merged instance view** callers to the OpenCV pain
 
 ## Acceptance criteria
 
-- [ ] **evaluate_instances** uses OpenCV painter for GPKG **merged instance view**
-- [ ] U-Net watershed GPKG tuning uses the same canonical painter
-- [ ] No production GPKG GT path calls `gt_annotations_to_instance_map` on vector annotations
-- [ ] Existing / updated tests pass for eval and watershed GT loading
-- [ ] Prediction-mask decode still uses **pycocotools** where appropriate
+- [x] **evaluate_instances** uses OpenCV painter for GPKG **merged instance view**
+- [x] U-Net watershed GPKG tuning uses the same canonical painter
+- [x] No production GPKG GT path calls `gt_annotations_to_instance_map` on vector annotations
+- [x] Existing / updated tests pass for eval and watershed GT loading
+- [x] Prediction-mask decode still uses **pycocotools** where appropriate
 
 ## Blocked by
 

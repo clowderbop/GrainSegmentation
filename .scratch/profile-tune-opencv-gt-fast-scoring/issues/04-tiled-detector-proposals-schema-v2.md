@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 Category: enhancement
 Labels: ready-for-agent, enhancement
 Blocks: .scratch/profile-tune-opencv-gt-fast-scoring/issues/05-fast-profile-selection-scoring-parity.md

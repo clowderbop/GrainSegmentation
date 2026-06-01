@@ -275,4 +275,6 @@ bash SLURM/analysis/submit_build_report.sh
 
 See `SLURM/analysis/pipeline.md` for resources and optional `OUTPUT_DIR` / `REPORT_STRICT` env vars.
 
-Outputs under `$SCRATCH/GrainSeg/eval/reporting/` (`derived/`, `figures/`, `analysis_summary.json`). Headline charts use whole-section **AJI** and **F1@IoU50**; patch and Ultralytics val panels are labelled supporting only. Variant axis labels come from `display_name` in `config/variants.yaml` (thesis order: PPL → FullStack → PPL+XPLComp → FullComp).
+**Eval run discovery (v1):** `analysis.build_report` locates whole-section and patch test runs under the grainseg root using path conventions per **producer**, registry variant key, and **sample unit** (whole vs patch; for patch runs, the latest job directory under the expected tree). No catalog file in v1. Implementation: `src/analysis/discover.py`.
+
+Outputs under `$SCRATCH/GrainSeg/eval/reporting/` (`derived/`, `figures/`, `analysis_summary.json`). Headline charts: AJI/F1 heatmap and model×input-configuration bars, PPL-relative delta heatmap; one supporting YOLO patch-val panel. Patch and Ultralytics val panels are labelled supporting only. Variant axis labels come from `display_name` in `config/variants.yaml` (thesis order: PPL → FullStack → PPL+XPLComp → FullComp).

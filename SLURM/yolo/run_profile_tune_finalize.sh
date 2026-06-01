@@ -13,12 +13,14 @@ source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/configs/yolo_inference_profile_tune.yaml}"
 
 source "$SLURM_ROOT/prepare_env.sh"
+# shellcheck source=SLURM/utils/yolo_venv.sh
+source "$SLURM_ROOT/utils/yolo_venv.sh"
+yolo_venv_stage_local
 
 cd "$REPO_ROOT/src/yolo"
-uv sync
 
 echo "Finalize profile selection → $OUTPUT_DIR/grid/"
-uv run python -u -m yolo.profile_tune_finalize \
+uv run --no-sync python -u -m yolo.profile_tune_finalize \
     --output-dir "$OUTPUT_DIR" \
     --grid-config "$GRID_CONFIG"
 

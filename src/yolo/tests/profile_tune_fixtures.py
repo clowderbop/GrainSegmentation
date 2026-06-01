@@ -91,6 +91,19 @@ def collect_v2_records_with_mocked_slices(
         )
 
 
+def v2_records_from_overlapping_masks(height: int, width: int) -> list:
+    """v2 records for overlapping proposals (slice-merge mask union path)."""
+    from yolo.tiled_proposal_cache import tiled_proposal_record_from_binary_mask
+
+    return [
+        tiled_proposal_record_from_binary_mask(
+            np.asarray(pred.mask.bool_mask, dtype=bool),
+            score=float(pred.score.value),
+        )
+        for pred in overlapping_sahi_proposals(height, width)
+    ]
+
+
 def v2_records_from_disjoint_via_collector(
     height: int, width: int, *, mask_threshold: float
 ) -> list:

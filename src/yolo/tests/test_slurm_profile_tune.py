@@ -15,11 +15,14 @@ from yolo.slurm_profile_tune import (
     PROFILE_TUNE_GT_CACHE_OUTPUT_REL,
     PROFILE_TUNE_GT_CACHE_RESOURCES,
     PROFILE_TUNE_GT_CACHE_TRAIN_LABELS_GPKG,
+    PROFILE_TUNE_VENV_PREP_RESOURCES,
     SUBMIT_PROFILE_TUNE_USAGE_MARKERS,
     pipeline_md_path,
     run_profile_tune_candidate_script_path,
     run_profile_tune_detector_script_path,
+    run_profile_tune_finalize_script_path,
     run_profile_tune_gt_cache_script_path,
+    run_profile_tune_venv_prep_script_path,
     submit_inference_profile_tune_script_path,
 )
 
@@ -29,6 +32,7 @@ def test_profile_tune_candidate_slurm_requests_one_cpu() -> None:
     assert script.is_file(), f"Missing SLURM job script: {script}"
     text = script.read_text(encoding="utf-8")
     assert "yolo.profile_tune_candidate" in text
+    assert PROFILE_TUNE_CANDIDATE_RESOURCES["mem"] == "50G"
     for key in ("mem", "cpus-per-task", "time"):
         assert key in PROFILE_TUNE_CANDIDATE_RESOURCES
         assert f"#SBATCH --{key}={PROFILE_TUNE_CANDIDATE_RESOURCES[key]}" in text
@@ -42,6 +46,38 @@ def test_profile_tune_detector_slurm_uses_array_task_index() -> None:
     assert "SLURM_ARRAY_TASK_ID" in text
     assert "--array-index" in text
     assert f"#SBATCH --output={PROFILE_TUNE_DETECTOR_RESOURCES['output']}" in text
+
+
+def test_profile_tune_candidate_stages_shared_venv_without_sync() -> None:
+    text = run_profile_tune_candidate_script_path().read_text(encoding="utf-8")
+    assert "uv sync" not in text
+    assert "yolo_venv_stage_local" in text
+    assert "uv run --no-sync" in text
+
+
+def test_profile_tune_finalize_stages_shared_venv_without_sync() -> None:
+    text = run_profile_tune_finalize_script_path().read_text(encoding="utf-8")
+    assert "uv sync" not in text
+    assert "yolo_venv_stage_local" in text
+    assert "uv run --no-sync" in text
+
+
+def test_profile_tune_venv_prep_syncs_shared_yolo_env() -> None:
+    script = run_profile_tune_venv_prep_script_path()
+    assert script.is_file()
+    text = script.read_text(encoding="utf-8")
+    for key in ("mem", "cpus-per-task", "time"):
+        assert f"#SBATCH --{key}={PROFILE_TUNE_VENV_PREP_RESOURCES[key]}" in text
+    assert "yolo_venv_prepare_shared" in text
+
+
+def test_submit_profile_tune_includes_venv_prep_before_candidates() -> None:
+    text = submit_inference_profile_tune_script_path().read_text(encoding="utf-8")
+    assert "run_profile_tune_venv_prep.sh" in text
+    assert "SHARED_VENV_ROOT" in text
+    assert "venv_prep_job_id" in text
+    assert 'fin_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG},SHARED_VENV_ROOT=${SHARED_VENV_ROOT}"' in text
+    assert 'cand_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG},SHARED_VENV_ROOT=${SHARED_VENV_ROOT}"' in text
 
 
 def test_submit_profile_tune_submits_throttled_detector_array() -> None:

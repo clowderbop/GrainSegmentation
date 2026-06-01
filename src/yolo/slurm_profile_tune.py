@@ -16,13 +16,21 @@ PROFILE_TUNE_DETECTOR_RESOURCES: dict[str, str] = {
     "time": "00:10:00",
 }
 
-# ADR 0007: candidate scoring is single-threaded; 32G / 4h unchanged post-fix.
+# ADR 0007: candidate scoring is single-threaded; 50G interim after crop-local adapter fix.
 PROFILE_TUNE_CANDIDATE_RESOURCES: dict[str, str] = {
     "job-name": "yolo_prof_cand",
     "output": "logs/yolo_prof_cand-%a-%j.log",
-    "mem": "32G",
+    "mem": "50G",
     "cpus-per-task": "1",
     "time": "04:00:00",
+}
+
+PROFILE_TUNE_VENV_PREP_RESOURCES: dict[str, str] = {
+    "job-name": "yolo_prof_venv",
+    "output": "logs/yolo_prof_venv-%j.log",
+    "mem": "32G",
+    "cpus-per-task": "8",
+    "time": "00:30:00",
 }
 
 # ADR 0006: OpenCV GT rasterization; common-only sync (8 CPUs for rasterize — not candidate).
@@ -49,6 +57,9 @@ SUBMIT_PROFILE_TUNE_USAGE_MARKERS: tuple[str, ...] = (
     "schema_version 2",
     "--skip-detectors is only for re-submitting",
     "DETECTOR_MAX_PARALLEL",
+    "50G",
+    "run_profile_tune_venv_prep.sh",
+    "SHARED_VENV_ROOT",
 )
 
 PIPELINE_PROFILE_TUNE_DOC_MARKERS: tuple[str, ...] = (
@@ -58,7 +69,9 @@ PIPELINE_PROFILE_TUNE_DOC_MARKERS: tuple[str, ...] = (
     "`schema_version` 2",
     "_work/gt_cache/train/",
     "1 CPU",
+    "50G",
     "DETECTOR_MAX_PARALLEL",
+    "run_profile_tune_venv_prep.sh",
 )
 
 
@@ -72,6 +85,14 @@ def run_profile_tune_detector_script_path() -> Path:
 
 def run_profile_tune_gt_cache_script_path() -> Path:
     return repo_root() / "SLURM" / "yolo" / "run_profile_tune_gt_cache.sh"
+
+
+def run_profile_tune_venv_prep_script_path() -> Path:
+    return repo_root() / "SLURM" / "yolo" / "run_profile_tune_venv_prep.sh"
+
+
+def run_profile_tune_finalize_script_path() -> Path:
+    return repo_root() / "SLURM" / "yolo" / "run_profile_tune_finalize.sh"
 
 
 def submit_inference_profile_tune_script_path() -> Path:

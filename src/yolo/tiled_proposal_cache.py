@@ -15,7 +15,10 @@ from typing import Any, TypedDict
 import numpy as np
 
 from common.file_hash import file_sha256
-from common.prediction_set import binary_mask_to_segmentation, segmentation_to_binary_mask
+from common.prediction_set import (
+    binary_mask_to_segmentation,
+    segmentation_to_binary_mask as crop_segmentation_to_binary_mask,
+)
 from common.test_inference import TestInferenceRecipe, sahi_overlap_ratio
 
 TILED_PROPOSAL_CACHE_SCHEMA_VERSION = 2
@@ -301,11 +304,15 @@ def validate_tiled_proposal_records(
     return validated
 
 
-def full_binary_mask_from_tiled_proposal_record(
+def _full_binary_mask_from_tiled_proposal_record(
     record: TiledProposalRecord, *, height: int, width: int
 ) -> np.ndarray:
-    """Reconstruct a full-section boolean mask from crop-local RLE + offsets."""
-    crop = segmentation_to_binary_mask(record["segmentation"])
+    """Reconstruct one full-section mask from crop-local RLE + offsets.
+
+    Not for profile selection scoring load (ADR 0007): materializing many planes
+    OOMs candidate jobs. Use ``sahi_predictions_from_tiled_proposal_records`` instead.
+    """
+    crop = crop_segmentation_to_binary_mask(record["segmentation"])
     plane = np.zeros((height, width), dtype=bool)
     offset_y = record["offset_y"]
     offset_x = record["offset_x"]
@@ -317,6 +324,7 @@ def full_binary_mask_from_tiled_proposal_record(
 @dataclass(frozen=True)
 class _AdaptedCategory:
     id: int
+    name: str = "grain"
 
 
 @dataclass(frozen=True)
@@ -327,6 +335,9 @@ class _AdaptedScore:
 @dataclass(frozen=True)
 class _AdaptedMask:
     bool_mask: np.ndarray
+    segmentation: dict[str, Any]
+    full_shape: tuple[int, int]
+    shift_amount: tuple[int, int]
 
 
 @dataclass(frozen=True)
@@ -358,16 +369,29 @@ def sahi_predictions_from_tiled_proposal_records(
     height: int,
     width: int,
 ) -> list[Any]:
-    """Adapt v2 records to SAHI-shaped predictions for slice-merge (until ADR 0007 scoring)."""
+    """Adapt v2 records to SAHI-shaped predictions with crop-local masks (ADR 0007)."""
+    from sahi.annotation import Mask as SahiMask
+
+    section_shape = (int(height), int(width))
     predictions: list[Any] = []
     for record in records:
-        binary = full_binary_mask_from_tiled_proposal_record(
-            record, height=height, width=width
-        )
+        crop = crop_segmentation_to_binary_mask(record["segmentation"])
         x0, y0, x1, y1 = record["bbox"]
+        offset_x = int(record["offset_x"])
+        offset_y = int(record["offset_y"])
+        merge_mask = SahiMask.from_bool_mask(
+            crop,
+            full_shape=list(section_shape),
+            shift_amount=[offset_x, offset_y],
+        )
         predictions.append(
             _AdaptedSahiPrediction(
-                mask=_AdaptedMask(bool_mask=binary),
+                mask=_AdaptedMask(
+                    bool_mask=crop,
+                    segmentation=merge_mask.segmentation,
+                    full_shape=section_shape,
+                    shift_amount=(offset_x, offset_y),
+                ),
                 score=_AdaptedScore(value=record["score"]),
                 category=_AdaptedCategory(id=0),
                 bbox=_AdaptedBbox(
@@ -375,6 +399,7 @@ def sahi_predictions_from_tiled_proposal_records(
                     miny=float(y0),
                     maxx=float(x1),
                     maxy=float(y1),
+                    shift_amount=(offset_x, offset_y),
                 ),
             )
         )

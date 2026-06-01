@@ -21,8 +21,9 @@ Usage: submit_inference_profile_tune.sh [--dry-run] [--output-dir PATH] [--run-i
 Submit parallel YOLO inference profile selection (ADR 0005 orchestration; see ADRs below):
   (1) GPU detector array per (variant, conf, mask_threshold) — tiled detector proposals v2
   (2) CPU GT-cache job (after detectors, or immediately if detectors skipped)
-  (3) CPU array: one job per grid candidate (1 CPU, 32G, 4h per task)
-  (4) CPU finalize job (afterok on candidate array)
+  (3) CPU venv prep (once per submit; shared scratch venv for YOLO stack)
+  (4) CPU array: one job per grid candidate (1 CPU, 50G, 4h per task)
+  (5) CPU finalize job (afterok on candidate array)
 
 Requires all registry variant weights under runs/yolo26-seg/{variant}/weights/best.pt
 when running detectors.
@@ -47,6 +48,8 @@ Environment:
   SKIP_DETECTORS   set to 1 (or use --skip-detectors) only when v2 caches exist in this OUTPUT_DIR
   DETECTOR_MAX_PARALLEL  max concurrent detector array tasks (default: 6)
   NO_RESUME        set to 1 to clear grid/rows/*.json before candidate array and pass --no-resume
+  SHARED_VENV_ROOT   set by submit to $SCRATCH/.venvs/yolo-profile-tune/<uv.lock-sha256>/
+                     (SLURM/yolo/run_profile_tune_venv_prep.sh writes .ready; candidates copy to $TMPDIR/.venv)
 EOF
     exit "${1:-1}"
 }
@@ -170,7 +173,29 @@ clear_profile_selection_rows(Path(os.environ["OUTPUT_DIR"]) / "grid")
 PY
 fi
 
-cand_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG}"
+# shellcheck source=SLURM/utils/yolo_venv.sh
+source "$REPO_ROOT/SLURM/utils/yolo_venv.sh"
+SHARED_VENV_ROOT="$(yolo_venv_shared_root)"
+
+venv_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG},SHARED_VENV_ROOT=${SHARED_VENV_ROOT}"
+venv_cmd=(sbatch "--export=${venv_export}")
+if [ "$DRY_RUN" = false ]; then
+    venv_cmd+=("--dependency=afterok:${gt_job_id}")
+fi
+venv_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_venv_prep.sh")
+
+if [ "$DRY_RUN" = true ]; then
+    printf '%q ' "${venv_cmd[@]}"
+    echo
+else
+    venv_prep_job_id="$("${venv_cmd[@]}" | awk '{print $NF}')"
+    if [ -z "${venv_prep_job_id:-}" ]; then
+        echo "Venv prep sbatch did not return a job id" >&2
+        exit 1
+    fi
+fi
+
+cand_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG},SHARED_VENV_ROOT=${SHARED_VENV_ROOT}"
 if [ -n "${NO_RESUME:-}" ]; then
     cand_export="${cand_export},NO_RESUME=${NO_RESUME}"
 fi
@@ -181,7 +206,7 @@ cand_cmd=(
 )
 # sbatch requires all options before the script path (otherwise --dependency is ignored).
 if [ "$DRY_RUN" = false ]; then
-    cand_cmd+=("--dependency=afterok:${gt_job_id}")
+    cand_cmd+=("--dependency=afterok:${venv_prep_job_id}")
 fi
 cand_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_candidate.sh")
 
@@ -192,7 +217,7 @@ else
     cand_job_id="$("${cand_cmd[@]}" | awk '{print $NF}')"
 fi
 
-fin_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG}"
+fin_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG},SHARED_VENV_ROOT=${SHARED_VENV_ROOT}"
 fin_cmd=(sbatch "--export=${fin_export}")
 if [ "$DRY_RUN" = false ]; then
     fin_cmd+=("--dependency=afterok:${cand_job_id}")
@@ -206,9 +231,9 @@ else
     "${fin_cmd[@]}"
     echo "Submitted profile tune run → $OUTPUT_DIR"
     if [ "$SKIP_DETECTORS" = "1" ]; then
-        echo "  detectors skipped (same OUTPUT_DIR, post-ADR v2 _work/); GT cache + ${candidate_count} candidate tasks + finalize"
+        echo "  detectors skipped (same OUTPUT_DIR, post-ADR v2 _work/); GT cache + venv prep + ${candidate_count} candidate tasks + finalize"
     else
-        echo "  detector array (${detector_count} tasks, max ${detector_max_parallel} parallel) + GT cache + ${candidate_count} candidate tasks + finalize"
+        echo "  detector array (${detector_count} tasks, max ${detector_max_parallel} parallel) + GT cache + venv prep + ${candidate_count} candidate tasks + finalize"
     fi
     echo "Promote: uv run --directory $REPO_ROOT/src/yolo python -m yolo.promote_inference_profile --winner-json $OUTPUT_DIR/grid/winner.json"
 fi

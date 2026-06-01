@@ -720,9 +720,12 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     )
     from yolo.tests.test_profile_tune_scoring import _train_aji_via_evaluate_instances
     from yolo.tiled_proposal_cache import (
+        detector_cache_expected_record,
+        load_tiled_proposals,
         proposal_cache_dir,
         proposal_cache_record,
         recipe_whole_window_fingerprint,
+        sahi_predictions_from_tiled_proposal_records,
         weights_sha256,
         write_tiled_proposals,
     )
@@ -780,6 +783,22 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     image_path = tmp_path / "train.tif"
     image_path.write_bytes(b"\x00")
     pred_path = tmp_path / "prediction_sets" / "train.json"
+
+    cache_dir = proposal_cache_dir(
+        work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
+    )
+    expected = detector_cache_expected_record(
+        variant="PPL",
+        weights_path=weights,
+        conf=candidate.conf,
+        mask_threshold=candidate.mask_threshold,
+        sample_id="train",
+        recipe=recipe,
+    )
+    records, meta = load_tiled_proposals(cache_dir, expected=expected)
+    proposals = sahi_predictions_from_tiled_proposal_records(
+        records, height=int(meta["height"]), width=int(meta["width"])
+    )
 
     fast_aji = score_variant_train_aji_from_cache(
         variant="PPL",

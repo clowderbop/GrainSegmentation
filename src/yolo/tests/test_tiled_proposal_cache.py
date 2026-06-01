@@ -26,7 +26,9 @@ from yolo.tiled_proposal_cache import (
     proposal_cache_fingerprint,
     proposal_cache_record,
     recipe_whole_window_fingerprint,
+    sahi_predictions_from_tiled_proposal_records,
     tiled_proposal_record_from_binary_mask,
+    tiled_proposal_record_from_tile_mask,
     tiled_proposal_records_from_tile_predictions,
     validate_tiled_proposal_cache,
     weights_sha256,
@@ -332,6 +334,33 @@ def test_tiled_proposal_records_from_tile_predictions_crop_local() -> None:
     for record in records:
         assert record["segmentation"]["size"][0] < height
         assert record["segmentation"]["size"][1] < width
+
+
+def test_sahi_predictions_from_tiled_records_use_crop_local_masks() -> None:
+    """ADR 0007: scoring adapter must not materialize full-section bool_mask planes."""
+    section_h, section_w = 10_000, 52_000
+    crop = np.zeros((12, 12), dtype=bool)
+    crop[2:10, 2:10] = True
+    record = tiled_proposal_record_from_tile_mask(
+        crop, score=0.6, offset_y=100, offset_x=200
+    )
+    original_zeros = np.zeros
+
+    def guarded_zeros(shape, *args, **kwargs):
+        if len(shape) >= 2 and (int(shape[0]), int(shape[1])) == (section_h, section_w):
+            raise AssertionError("adapter must not allocate whole-section plane")
+        return original_zeros(shape, *args, **kwargs)
+
+    with patch("numpy.zeros", side_effect=guarded_zeros):
+        predictions = sahi_predictions_from_tiled_proposal_records(
+            [record], height=section_h, width=section_w
+        )
+
+    assert len(predictions) == 1
+    mask = predictions[0].mask.bool_mask
+    assert mask.shape == crop.shape
+    assert np.array_equal(mask, crop)
+    assert predictions[0].bbox.to_xyxy() == record["bbox"]
 
 
 def test_validate_tiled_proposal_cache_rejects_fingerprint_mismatch() -> None:

@@ -16,6 +16,7 @@ from yolo.tests.profile_tune_fixtures import (
     overlapping_sahi_proposals,
     tiny_train_gt_map,
     v2_records_from_disjoint_via_collector,
+    v2_records_from_overlapping_masks,
 )
 
 
@@ -114,11 +115,7 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
     tmp_path: Path,
     proposals_fn,
 ) -> None:
-    """ADR 0007 parity on on-disk v2 caches: direct paint AJI == legacy round-trip.
-
-    Overlapping masks are covered in ``test_score_merge_sahi`` (score-merge only);
-    adapted v2 records do not implement SAHI mask fusion APIs used by slice-merge.
-    """
+    """ADR 0007 parity on on-disk v2 caches: direct paint AJI == legacy round-trip."""
     from common.metrics import compute_aji
     from common.test_inference import load_test_inference_recipe
     from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
@@ -189,6 +186,87 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
         gt_map=gt_map,
     )
 
+    legacy_map = legacy_merged_instance_view_from_proposals(
+        proposals,
+        candidate=candidate,
+        height=height,
+        width=width,
+    )
+    legacy_aji = float(compute_aji(gt_map, legacy_map))
+    assert fast_aji == pytest.approx(legacy_aji, rel=0.0, abs=1e-9)
+
+
+def test_v2_overlapping_tiled_proposal_cache_scoring_aji_matches_legacy(
+    tmp_path: Path,
+) -> None:
+    """ADR 0007: overlapping v2 records exercise slice-merge mask union (crop-local adapter)."""
+    from common.metrics import compute_aji
+    from common.test_inference import load_test_inference_recipe
+    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.tests.profile_tune_legacy_scoring import legacy_merged_instance_view_from_proposals
+    from yolo.tiled_proposal_cache import (
+        detector_cache_expected_record,
+        load_tiled_proposals,
+        proposal_cache_dir,
+        proposal_cache_record,
+        recipe_whole_window_fingerprint,
+        sahi_predictions_from_tiled_proposal_records,
+        weights_sha256,
+        write_tiled_proposals,
+    )
+
+    height, width = 16, 16
+    gt_map = tiny_train_gt_map(height, width)
+    candidate = candidate_for_variant("PPL")
+    grainseg_root = tmp_path / "grainseg"
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    work_root = tmp_path / "_work"
+    recipe = load_test_inference_recipe()
+    v2_records = v2_records_from_overlapping_masks(height, width)
+    write_tiled_proposals(
+        proposal_cache_dir(
+            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
+        ),
+        v2_records,
+        proposal_cache_record(
+            variant="PPL",
+            weights_sha256=weights_sha256(weights),
+            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+            conf=candidate.conf,
+            mask_threshold=candidate.mask_threshold,
+            sample_id="train",
+            height=height,
+            width=width,
+        ),
+    )
+
+    fast_aji = score_variant_train_aji_from_cache(
+        variant="PPL",
+        candidate=candidate,
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        work_root=work_root,
+        gt_map=gt_map,
+    )
+
+    cache_dir = proposal_cache_dir(
+        work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
+    )
+    expected = detector_cache_expected_record(
+        variant="PPL",
+        weights_path=weights,
+        conf=candidate.conf,
+        mask_threshold=candidate.mask_threshold,
+        sample_id="train",
+        recipe=recipe,
+    )
+    records, meta = load_tiled_proposals(cache_dir, expected=expected)
+    proposals = sahi_predictions_from_tiled_proposal_records(
+        records, height=int(meta["height"]), width=int(meta["width"])
+    )
     legacy_map = legacy_merged_instance_view_from_proposals(
         proposals,
         candidate=candidate,

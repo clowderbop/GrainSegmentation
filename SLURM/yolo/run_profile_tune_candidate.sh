@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=yolo_prof_cand
 #SBATCH --output=logs/yolo_prof_cand-%a-%j.log
-#SBATCH --mem=32G
+#SBATCH --mem=50G
 #SBATCH --cpus-per-task=1
 #SBATCH --time=04:00:00
 
@@ -19,9 +19,11 @@ RUN_ROOT="$GRAINSEG_ROOT/runs/yolo26-seg"
 GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/configs/yolo_inference_profile_tune.yaml}"
 
 source "$SLURM_ROOT/prepare_env.sh"
+# shellcheck source=SLURM/utils/yolo_venv.sh
+source "$SLURM_ROOT/utils/yolo_venv.sh"
+yolo_venv_stage_local
 
 cd "$REPO_ROOT/src/yolo"
-uv sync
 export YOLO_DISABLE_TQDM=True
 
 candidate_args=(
@@ -37,4 +39,4 @@ if [ "${NO_RESUME:-0}" = "1" ]; then
 fi
 
 echo "Candidate array task ${SLURM_ARRAY_TASK_ID} → $OUTPUT_DIR"
-uv run python -u -m yolo.profile_tune_candidate "${candidate_args[@]}"
+uv run --no-sync python -u -m yolo.profile_tune_candidate "${candidate_args[@]}"

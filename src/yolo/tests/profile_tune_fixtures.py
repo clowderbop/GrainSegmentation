@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -12,6 +15,7 @@ from common.tests.profile_tune_fixtures import (  # noqa: F401
     FakeSahiPrediction,
     V1SahiPickleStub,
     disjoint_sahi_proposals,
+    disjoint_tile_local_proposals,
     overlapping_sahi_proposals,
     tiny_train_gt_map,
 )
@@ -50,6 +54,56 @@ def candidate_for_variant(variant: str) -> YoloInferenceProfileCandidate:
         ),
     }
     return by_variant[variant]
+
+
+def collect_v2_records_with_mocked_slices(
+    section_height: int,
+    section_width: int,
+    slice_yields: Sequence[tuple[int, int, int, int, list[Any]]],
+    *,
+    mask_threshold: float,
+    slice_height: int,
+    slice_width: int,
+) -> list:
+    """Run ``collect_tiled_detector_proposals`` with inference mocked; tile-local preds only."""
+    from yolo.tiled_proposal_cache import collect_tiled_detector_proposals
+
+    image = np.zeros((section_height, section_width, 3), dtype=np.uint8)
+
+    def fake_iter(
+        _image: np.ndarray, _model: object, *, full_shape: list[int] | None, **_kwargs: object
+    ) -> Iterator[tuple[int, int, int, int, list[Any]]]:
+        assert full_shape is None
+        yield from slice_yields
+
+    with patch(
+        "yolo.sliced_detection.iter_whole_slice_predictions",
+        side_effect=fake_iter,
+    ):
+        return collect_tiled_detector_proposals(
+            image,
+            MagicMock(),
+            slice_height=slice_height,
+            slice_width=slice_width,
+            overlap_height_ratio=0.0,
+            overlap_width_ratio=0.0,
+            mask_threshold=mask_threshold,
+        )
+
+
+def v2_records_from_disjoint_via_collector(
+    height: int, width: int, *, mask_threshold: float
+) -> list:
+    """Build v2 records via collector encode on tile-local fixture masks."""
+    preds = disjoint_tile_local_proposals(height, width)
+    return collect_v2_records_with_mocked_slices(
+        height,
+        width,
+        [(0, 0, width, height, preds)],
+        mask_threshold=mask_threshold,
+        slice_height=height,
+        slice_width=width,
+    )
 
 
 def write_on_disk_v1_proposal_cache(

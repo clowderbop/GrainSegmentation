@@ -17,15 +17,14 @@ from yolo.profile_tune_work import (
     sahi_window_kwargs,
     weights_path,
 )
-from yolo.sliced_detection import run_whole_sliced_detection
 from yolo.tiled_proposal_cache import (
+    collect_tiled_detector_proposals,
     detector_cache_expected_record,
     load_or_write_tiled_proposals,
     load_tiled_proposals,
     proposal_cache_dir,
     proposal_cache_record,
     recipe_whole_window_fingerprint,
-    tiled_proposal_records_from_sahi_predictions,
     weights_sha256,
 )
 from yolo.train import _parse_device
@@ -117,18 +116,13 @@ def write_detector_proposal_cache(
             image_size=recipe.whole.window,
         )
         window_kwargs = sahi_window_kwargs()
-        sahi_predictions = run_whole_sliced_detection(
+        return collect_tiled_detector_proposals(
             image,
             detection_model,
             slice_height=int(window_kwargs["slice_height"]),
             slice_width=int(window_kwargs["slice_width"]),
             overlap_height_ratio=float(window_kwargs["overlap_height_ratio"]),
             overlap_width_ratio=float(window_kwargs["overlap_width_ratio"]),
-        )
-        return tiled_proposal_records_from_sahi_predictions(
-            sahi_predictions,
-            height=height,
-            width=width,
             mask_threshold=mask_threshold,
         )
 

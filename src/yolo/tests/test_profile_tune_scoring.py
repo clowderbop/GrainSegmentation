@@ -15,6 +15,7 @@ from yolo.tests.profile_tune_fixtures import (
     disjoint_sahi_proposals,
     overlapping_sahi_proposals,
     tiny_train_gt_map,
+    v2_records_from_disjoint_via_collector,
 )
 
 
@@ -127,7 +128,6 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
         proposal_cache_record,
         recipe_whole_window_fingerprint,
         sahi_predictions_from_tiled_proposal_records,
-        tiled_proposal_records_from_sahi_predictions,
         weights_sha256,
         write_tiled_proposals,
         load_tiled_proposals,
@@ -137,7 +137,6 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
 
     height, width = 16, 16
     gt_map = tiny_train_gt_map(height, width)
-    raw_proposals = proposals_fn(height, width)
     candidate = candidate_for_variant("PPL")
     grainseg_root = tmp_path / "grainseg"
     run_root = grainseg_root / "runs" / "yolo26-seg"
@@ -146,11 +145,8 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
     weights.write_bytes(b"weights")
     work_root = tmp_path / "_work"
     recipe = load_test_inference_recipe()
-    v2_records = tiled_proposal_records_from_sahi_predictions(
-        raw_proposals,
-        height=height,
-        width=width,
-        mask_threshold=candidate.mask_threshold,
+    v2_records = v2_records_from_disjoint_via_collector(
+        height, width, mask_threshold=candidate.mask_threshold
     )
     write_tiled_proposals(
         proposal_cache_dir(

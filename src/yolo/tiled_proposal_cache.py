@@ -6,6 +6,7 @@ import hashlib
 import json
 import pickle
 import sys
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -115,7 +116,20 @@ def _sahi_object_score(pred: Any) -> float:
     return float(value)
 
 
-def _sahi_binary_mask(pred: Any, *, height: int, width: int, mask_threshold: float) -> np.ndarray | None:
+def _tight_crop_mask(binary: np.ndarray) -> tuple[np.ndarray, int, int]:
+    """Return tight crop and its origin (row, col) within the source plane."""
+    plane = np.asarray(binary, dtype=bool)
+    if not plane.any():
+        raise ValueError("Cannot tight-crop empty mask")
+    ys, xs = np.where(plane)
+    offset_y = int(ys.min())
+    offset_x = int(xs.min())
+    crop = plane[offset_y : int(ys.max()) + 1, offset_x : int(xs.max()) + 1]
+    return crop, offset_y, offset_x
+
+
+def _tile_binary_mask(pred: Any, *, mask_threshold: float) -> np.ndarray | None:
+    """Decode a tile-local SAHI mask without upsampling to whole-section extent."""
     from common.mask_ops import masks_hw_to_binary
 
     mask_obj = getattr(pred, "mask", None)
@@ -123,34 +137,24 @@ def _sahi_binary_mask(pred: Any, *, height: int, width: int, mask_threshold: flo
         return None
     float_mask = getattr(mask_obj, "float_mask", None)
     if float_mask is not None:
-        binary = masks_hw_to_binary(
+        return masks_hw_to_binary(
             np.asarray(float_mask, dtype=np.float32)[None, ...],
             threshold=mask_threshold,
         )[0]
-    else:
-        mask = getattr(mask_obj, "bool_mask", None)
-        if mask is None:
-            return None
-        binary = np.asarray(mask, dtype=bool)
-    if binary.shape != (height, width):
-        from common.mask_ops import resize_mask_nearest
-
-        binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(bool)
-    return binary
+    bool_mask = getattr(mask_obj, "bool_mask", None)
+    if bool_mask is None:
+        return None
+    return np.asarray(bool_mask, dtype=bool)
 
 
-def tiled_proposal_record_from_binary_mask(
-    mask: np.ndarray, *, score: float
+def tiled_proposal_record_from_tile_mask(
+    mask: np.ndarray, *, score: float, offset_y: int, offset_x: int
 ) -> TiledProposalRecord:
-    """Build one v2 record with crop-local RLE from a full-image boolean mask."""
+    """Build one v2 record from a tight tile-local crop and whole-image offsets."""
     binary = np.asarray(mask, dtype=bool)
     if not binary.any():
         raise ValueError("Cannot encode empty mask as tiled proposal record")
-    ys, xs = np.where(binary)
-    offset_y = int(ys.min())
-    offset_x = int(xs.min())
-    crop = binary[offset_y : int(ys.max()) + 1, offset_x : int(xs.max()) + 1]
-    crop_h, crop_w = crop.shape
+    crop_h, crop_w = binary.shape
     return TiledProposalRecord(
         score=float(score),
         bbox=[
@@ -159,30 +163,102 @@ def tiled_proposal_record_from_binary_mask(
             float(offset_x + crop_w),
             float(offset_y + crop_h),
         ],
-        segmentation=binary_mask_to_segmentation(crop, height=crop_h, width=crop_w),
-        offset_y=offset_y,
-        offset_x=offset_x,
+        segmentation=binary_mask_to_segmentation(binary, height=crop_h, width=crop_w),
+        offset_y=int(offset_y),
+        offset_x=int(offset_x),
     )
 
 
-def tiled_proposal_records_from_sahi_predictions(
+def tiled_proposal_record_from_binary_mask(
+    mask: np.ndarray, *, score: float
+) -> TiledProposalRecord:
+    """Build v2 record by tight-cropping any boolean plane (test/convenience helper)."""
+    crop, offset_y, offset_x = _tight_crop_mask(mask)
+    return tiled_proposal_record_from_tile_mask(
+        crop, score=score, offset_y=offset_y, offset_x=offset_x
+    )
+
+
+def tiled_proposal_records_from_tile_predictions(
     predictions: Sequence[Any],
     *,
-    height: int,
-    width: int,
+    tlx: int,
+    tly: int,
+    slice_height: int,
+    slice_width: int,
     mask_threshold: float,
 ) -> list[TiledProposalRecord]:
-    """Convert shifted SAHI object predictions to v2 neutral records (crop-local RLE)."""
+    """Encode tile-local SAHI predictions to v2 records (crop-local RLE + offsets)."""
     records: list[TiledProposalRecord] = []
     for pred in predictions:
-        binary = _sahi_binary_mask(
-            pred, height=height, width=width, mask_threshold=mask_threshold
-        )
+        if not pred:
+            continue
+        binary = _tile_binary_mask(pred, mask_threshold=mask_threshold)
         if binary is None or not binary.any():
             continue
+        mask_h, mask_w = binary.shape
+        if mask_h > slice_height or mask_w > slice_width:
+            raise ValueError(
+                f"tile mask shape ({mask_h}, {mask_w}) exceeds slice "
+                f"({slice_height}, {slice_width})"
+            )
+        crop, crop_y0, crop_x0 = _tight_crop_mask(binary)
         records.append(
-            tiled_proposal_record_from_binary_mask(binary, score=_sahi_object_score(pred))
+            tiled_proposal_record_from_tile_mask(
+                crop,
+                score=_sahi_object_score(pred),
+                offset_y=tly + crop_y0,
+                offset_x=tlx + crop_x0,
+            )
         )
+    return records
+
+
+def collect_tiled_detector_proposals(
+    image: np.ndarray,
+    detection_model: Any,
+    *,
+    slice_height: int,
+    slice_width: int,
+    overlap_height_ratio: float,
+    overlap_width_ratio: float,
+    mask_threshold: float,
+) -> list[TiledProposalRecord]:
+    """Profile-tune detector path: slice loop + tile-local v2 encode (ADR 0007)."""
+    from yolo.sliced_detection import iter_whole_slice_predictions
+
+    records: list[TiledProposalRecord] = []
+    slice_count = 0
+    encode_s = 0.0
+    for tlx, tly, brx, bry, predictions in iter_whole_slice_predictions(
+        image,
+        detection_model,
+        slice_height=slice_height,
+        slice_width=slice_width,
+        overlap_height_ratio=overlap_height_ratio,
+        overlap_width_ratio=overlap_width_ratio,
+        full_shape=None,
+    ):
+        slice_count += 1
+        tile_h, tile_w = bry - tly, brx - tlx
+        encode_start = time.perf_counter()
+        records.extend(
+            tiled_proposal_records_from_tile_predictions(
+                predictions,
+                tlx=tlx,
+                tly=tly,
+                slice_height=tile_h,
+                slice_width=tile_w,
+                mask_threshold=mask_threshold,
+            )
+        )
+        encode_s += time.perf_counter() - encode_start
+    print(
+        f"Detector proposals: slices={slice_count} proposals={len(records)} "
+        f"encode_s={encode_s:.1f}",
+        file=sys.stderr,
+        flush=True,
+    )
     return records
 
 

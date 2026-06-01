@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -13,8 +14,12 @@ from yolo.tests.profile_tune_fixtures import (
     disjoint_sahi_proposals,
     write_on_disk_v1_proposal_cache,
 )
+from common.tests.profile_tune_fixtures import FakeBbox, FakeSahiPrediction
+from common.tests.test_prediction_set_sahi import _FakeCategory, _FakeMask, _FakeScore
+from yolo.tests.profile_tune_fixtures import disjoint_tile_local_proposals
 from yolo.tiled_proposal_cache import (
     TILED_PROPOSAL_CACHE_SCHEMA_VERSION,
+    collect_tiled_detector_proposals,
     load_or_write_tiled_proposals,
     load_tiled_proposals,
     proposal_cache_dir,
@@ -22,7 +27,7 @@ from yolo.tiled_proposal_cache import (
     proposal_cache_record,
     recipe_whole_window_fingerprint,
     tiled_proposal_record_from_binary_mask,
-    tiled_proposal_records_from_sahi_predictions,
+    tiled_proposal_records_from_tile_predictions,
     validate_tiled_proposal_cache,
     weights_sha256,
     write_tiled_proposals,
@@ -236,11 +241,92 @@ def test_load_or_write_tiled_proposals_recomputes_on_fingerprint_mismatch(
     assert from_cache is False
 
 
-def test_tiled_proposal_records_from_sahi_round_trip_mask() -> None:
+def test_collect_tiled_detector_proposals_never_allocates_whole_section_plane() -> None:
+    """ADR 0007: encode must not materialize (H,W) masks per proposal."""
+    section_h, section_w = 10_000, 52_000
+    slice_h, slice_w = 64, 64
+    tile_mask = np.zeros((slice_h, slice_w), dtype=bool)
+    tile_mask[8:20, 8:20] = True
+    pred = FakeSahiPrediction(
+        mask=_FakeMask(bool_mask=tile_mask),
+        score=_FakeScore(value=0.5),
+        category=_FakeCategory(id=0),
+        bbox=FakeBbox(8.0, 8.0, 20.0, 20.0),
+    )
+    resize_calls: list[tuple[int, int]] = []
+    original_zeros = np.zeros
+
+    def guarded_zeros(shape, *args, **kwargs):
+        if len(shape) >= 2 and (int(shape[0]), int(shape[1])) == (section_h, section_w):
+            raise AssertionError("encode must not allocate whole-section plane")
+        return original_zeros(shape, *args, **kwargs)
+
+    def tracked_resize(mask, height, width):
+        resize_calls.append((int(height), int(width)))
+        if (height, width) == (section_h, section_w):
+            raise AssertionError("encode must not resize masks to whole-section shape")
+        from common.mask_ops import resize_mask_nearest
+
+        return resize_mask_nearest(mask, height, width)
+
+    image = np.zeros((section_h, section_w, 3), dtype=np.uint8)
+
+    def fake_iter(_image, _model, *, full_shape, **_kwargs):
+        assert full_shape is None
+        yield 0, 0, slice_w, slice_h, [pred]
+
+    with (
+        patch("yolo.sliced_detection.iter_whole_slice_predictions", side_effect=fake_iter),
+        patch("numpy.zeros", side_effect=guarded_zeros),
+        patch("common.mask_ops.resize_mask_nearest", side_effect=tracked_resize),
+    ):
+        records = collect_tiled_detector_proposals(
+            image,
+            MagicMock(),
+            slice_height=slice_h,
+            slice_width=slice_w,
+            overlap_height_ratio=0.25,
+            overlap_width_ratio=0.25,
+            mask_threshold=0.5,
+        )
+
+    assert len(records) == 1
+    crop_h, crop_w = records[0]["segmentation"]["size"]
+    assert crop_h < section_h and crop_w < section_w
+    assert not any(h == section_h and w == section_w for h, w in resize_calls)
+
+
+def test_tile_encode_rejects_whole_section_bool_mask() -> None:
+    section_h, section_w = 10_000, 52_000
+    slice_h, slice_w = 64, 64
+    huge = np.zeros((section_h, section_w), dtype=bool)
+    huge[0:4, 0:4] = True
+    pred = FakeSahiPrediction(
+        mask=_FakeMask(bool_mask=huge),
+        score=_FakeScore(value=0.5),
+        category=_FakeCategory(id=0),
+    )
+    with pytest.raises(ValueError, match="exceeds slice"):
+        tiled_proposal_records_from_tile_predictions(
+            [pred],
+            tlx=0,
+            tly=0,
+            slice_height=slice_h,
+            slice_width=slice_w,
+            mask_threshold=0.5,
+        )
+
+
+def test_tiled_proposal_records_from_tile_predictions_crop_local() -> None:
     height, width = 16, 16
-    sahi_preds = disjoint_sahi_proposals(height, width)
-    records = tiled_proposal_records_from_sahi_predictions(
-        sahi_preds, height=height, width=width, mask_threshold=0.5
+    sahi_preds = disjoint_tile_local_proposals(height, width)
+    records = tiled_proposal_records_from_tile_predictions(
+        sahi_preds,
+        tlx=0,
+        tly=0,
+        slice_height=height,
+        slice_width=width,
+        mask_threshold=0.5,
     )
     assert len(records) == 2
     for record in records:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -52,7 +53,7 @@ def perform_ultralytics_inference_preserve_channels(
     detection_model._original_shape = image.shape
 
 
-def run_whole_sliced_detection(
+def iter_whole_slice_predictions(
     image: np.ndarray,
     detection_model: Any,
     *,
@@ -60,8 +61,9 @@ def run_whole_sliced_detection(
     slice_width: int,
     overlap_height_ratio: float,
     overlap_width_ratio: float,
-) -> list[Any]:
-    """Run per-slice detector inference; return shifted **tiled detector proposals** (pre slice-merge)."""
+    full_shape: list[int] | None,
+) -> Iterator[tuple[int, int, int, int, list[Any]]]:
+    """Yield per-slice SAHI predictions (tile-local when ``full_shape`` is None)."""
     from sahi.predict import filter_predictions
     from sahi.slicing import get_slice_bboxes
 
@@ -76,19 +78,42 @@ def run_whole_sliced_detection(
         overlap_width_ratio=overlap_width_ratio,
     )
 
-    object_prediction_list: list[Any] = []
     for tlx, tly, brx, bry in slice_bboxes:
         image_slice = image[tly:bry, tlx:brx]
         perform_ultralytics_inference_preserve_channels(detection_model, image_slice)
         detection_model.convert_original_predictions(
             shift_amount=[tlx, tly],
-            full_shape=[height, width],
+            full_shape=full_shape,
         )
         predictions = filter_predictions(
             detection_model.object_prediction_list,
             exclude_classes_by_name=None,
             exclude_classes_by_id=None,
         )
+        yield tlx, tly, brx, bry, predictions
+
+
+def run_whole_sliced_detection(
+    image: np.ndarray,
+    detection_model: Any,
+    *,
+    slice_height: int,
+    slice_width: int,
+    overlap_height_ratio: float,
+    overlap_width_ratio: float,
+) -> list[Any]:
+    """Run per-slice detector inference; return shifted **tiled detector proposals** (pre slice-merge)."""
+    height, width = image.shape[:2]
+    object_prediction_list: list[Any] = []
+    for _tlx, _tly, _brx, _bry, predictions in iter_whole_slice_predictions(
+        image,
+        detection_model,
+        slice_height=slice_height,
+        slice_width=slice_width,
+        overlap_height_ratio=overlap_height_ratio,
+        overlap_width_ratio=overlap_width_ratio,
+        full_shape=[height, width],
+    ):
         for object_prediction in predictions:
             if object_prediction:
                 object_prediction_list.append(

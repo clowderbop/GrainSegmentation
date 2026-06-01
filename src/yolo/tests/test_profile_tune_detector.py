@@ -11,7 +11,7 @@ import pytest
 
 from common.test_inference import load_test_inference_recipe
 from yolo.profile_tune_detector import write_detector_proposal_cache
-from yolo.tests.profile_tune_fixtures import disjoint_sahi_proposals
+from yolo.tests.profile_tune_fixtures import disjoint_tile_local_proposals
 from yolo.tiled_proposal_cache import (
     detector_cache_expected_record,
     load_tiled_proposals,
@@ -106,7 +106,7 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
             return_value=[(Path("/fake/train.tif"), "train")],
         ),
         patch(
-            "yolo.profile_tune_detector.run_whole_sliced_detection",
+            "yolo.profile_tune_detector.collect_tiled_detector_proposals",
             side_effect=fake_sliced_detection,
         ),
     ):
@@ -123,7 +123,11 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
     conf, mask_threshold = 0.2, 0.45
     height, width = 64, 64
     image = np.zeros((height, width, 3), dtype=np.uint8)
-    sahi_preds = disjoint_sahi_proposals(height, width)
+    tile_preds = disjoint_tile_local_proposals(height, width)
+
+    def fake_iter(_img, _model, *, full_shape, **_kwargs):
+        assert full_shape is None
+        yield 0, 0, width, height, tile_preds
 
     common_kwargs = dict(
         variant=layout["variant"],
@@ -157,8 +161,8 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
             return_value=MagicMock(),
         ),
         patch(
-            "yolo.profile_tune_detector.run_whole_sliced_detection",
-            return_value=sahi_preds,
+            "yolo.sliced_detection.iter_whole_slice_predictions",
+            side_effect=fake_iter,
         ),
     ):
         cache_dir = write_detector_proposal_cache(**common_kwargs)

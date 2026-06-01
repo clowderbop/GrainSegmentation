@@ -74,9 +74,9 @@ def overlapping_sahi_proposals(
     ]
 
 
-def disjoint_sahi_proposals(height: int, width: int) -> list[FakeSahiPrediction]:
-    """Two non-overlapping proposals — slice-merge without pair-wise mask fusion."""
-    masks = np.zeros((2, height, width), dtype=bool)
+def disjoint_tile_local_proposals(slice_h: int, slice_w: int) -> list[FakeSahiPrediction]:
+    """Two non-overlapping tile-local masks (slice_h × slice_w, not whole-mosaic planes)."""
+    masks = np.zeros((2, slice_h, slice_w), dtype=bool)
     masks[0, 2:8, 2:8] = True
     masks[1, 10:14, 10:14] = True
     return [
@@ -93,3 +93,8 @@ def disjoint_sahi_proposals(height: int, width: int) -> list[FakeSahiPrediction]
             bbox=FakeBbox(10.0, 10.0, 14.0, 14.0),
         ),
     ]
+
+
+def disjoint_sahi_proposals(height: int, width: int) -> list[FakeSahiPrediction]:
+    """Two non-overlapping proposals — slice-merge without pair-wise mask fusion."""
+    return disjoint_tile_local_proposals(height, width)

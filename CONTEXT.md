@@ -20,7 +20,7 @@ A detected grain mask and **score** from the YOLO instance segmentation model be
 _Avoid:_ detection, prediction row (too generic), canonical YOLO output (use **instance prediction set**)
 
 **Tiled detector proposals**:
-The full set of **detector proposals** from every **sliding window** slice, each shifted to whole-image coordinates, before SAHI slice-merge postprocess (the merge knobs in **YOLO inference profile** selection). Overlapping; not the canonical **instance prediction set**. **Profile selection** may reuse them across grid candidates that share the same weights, train sample, window recipe, minimum **score**, and **mask threshold** so only slice-merge and **score merge** need to rerun.
+The full set of **detector proposals** from every **sliding window** slice, each in whole-image coordinates, before SAHI slice-merge postprocess (the merge knobs in **YOLO inference profile** selection). Overlapping; not the canonical **instance prediction set**. On disk for **profile selection**, each proposal is a compact record (**score**, bounding box, mask geometry)—not a live SAHI object graph. **Profile selection** may reuse them across grid candidates that share the same weights, train sample, window recipe, minimum **score**, and **mask threshold** so only slice-merge and **score merge** need to rerun.
 _Avoid:_ pre-merge cache, SAHI pickle (implementation paths)
 
 **Extracted grain**:
@@ -56,7 +56,7 @@ The single object category for instance segmentation in this project (identifier
 _Avoid:_ category, label id (ambiguous with instance ids)
 
 **Merged instance view**:
-A single raster where each pixel has one instance id (or background). For YOLO, equivalent to rasterizing the canonical **instance prediction set** after **score merge**; for U-Net, rasterizing **extracted grains**. Built transiently for instance-level metrics when a label map is required.
+A single raster where each pixel has one instance id (or background). For YOLO, equivalent to rasterizing the canonical **instance prediction set** after **score merge**; for U-Net, rasterizing **extracted grains**. Vector ground truth from GeoPackage is painted into this form with OpenCV (see **Profile selection ground truth cache**). Built transiently for instance-level metrics when a label map is required.
 _Avoid:_ pred map, prediction raster (too vague)
 
 **Prediction overlay**:
@@ -128,12 +128,12 @@ One grid candidate’s audit record: the five profile knobs, per-variant train *
 _Avoid:_ results.csv row (file format), candidate.json (implementation filename), skipping on file presence alone after labels or weights change
 
 **Profile selection scoring**:
-Computing train **AJI** for one grid point and variant from **tiled detector proposals** through slice-merge and **score merge** to a **merged instance view**, without necessarily writing `prediction_sets/{sample_id}.json` for that point. Automated parity with canonical eval is **AJI-only** on fixed fixtures (tight float tolerance, at least one grid point per registry variant); held-out test still uses full predict + **instance prediction set** paths.
-_Avoid:_ fast path (implementation label only), skipping **score merge**, requiring full prediction-set JSON equality on every grid point
+Computing train **AJI** for one grid point and variant from **tiled detector proposals** through slice-merge and **score merge** to an in-memory **merged instance view**, without writing `prediction_sets/{sample_id}.json` for that point. A candidate task loads the shared **profile selection ground truth cache** once and reuses it for every registry variant. Logs record phase timings (load proposals, merge, score merge, AJI) for cluster operability. Automated parity is **AJI-only** on fixed fixtures (tight tolerance): new scoring must match legacy tune scoring on identical GT before the legacy path is removed; OpenCV ground-truth goldens are a separate gate (ADR 0006). Held-out test still uses full predict + **instance prediction set** paths.
+_Avoid:_ fast path (implementation label only), skipping **score merge**, requiring full prediction-set JSON equality on every grid point, reloading the same train ground-truth **merged instance view** once per variant in one candidate task
 
 **Profile selection ground truth cache**:
-Per-variant train **merged instance view** for ground truth, rasterized once per tune run from `train_labels.gpkg` and reused by all candidate tasks. Fingerprinted so stale caches are rejected when labels change. On the cluster, built in a dedicated job after detector jobs finish and before the per-candidate scoring array starts (orchestration order; GT does not read **tiled detector proposals**).
-_Avoid:_ gt_map.npy (filename), per-candidate gpkg read (redundant work)
+One canonical train **merged instance view** for ground truth per tune run (from `train_labels.gpkg` in whole-image coordinates), rasterized once with OpenCV and reused by all **profile selection scoring** tasks for every input variant. Fingerprinted on label geometry (`train_labels.gpkg`, **sample id**, width, height), not on input channels. On the cluster, built in a dedicated job after detector jobs finish and before the per-candidate scoring array starts (orchestration order; GT does not read **tiled detector proposals**). Correctness is locked by a committed micro-GPKG fixture and golden **instance label map** in tests.
+_Avoid:_ gt_map.npy (filename), per-candidate gpkg read (redundant work), one raster pass per input variant when label geometry is shared, per-variant `gt_cache/{variant}/` trees when label geometry is shared, treating preprocessing semantic TIFFs as the profile-selection GT source
 
 **Profile promotion**:
 Copying the **profile selection** grid winner into the **test inference recipe** (`configs/test_inference.yaml`) for git commit and held-out test (all five profile knobs).

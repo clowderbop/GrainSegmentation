@@ -37,6 +37,7 @@ from yolo.tiled_proposal_cache import (
     detector_cache_expected_record,
     load_tiled_proposals,
     proposal_cache_dir,
+    sahi_predictions_from_tiled_proposal_records,
 )
 
 
@@ -154,7 +155,12 @@ def score_variant_train_aji_from_cache(
         mask_threshold=candidate.mask_threshold,
         sample_id="train",
     )
-    proposals, _meta = load_tiled_proposals(cache_dir, expected=expected_proposals)
+    records, meta = load_tiled_proposals(cache_dir, expected=expected_proposals)
+    cache_height = int(meta["height"])
+    cache_width = int(meta["width"])
+    proposals = sahi_predictions_from_tiled_proposal_records(
+        records, height=cache_height, width=cache_width
+    )
     labels_gpkg = train_labels_gpkg_path(grainseg_root)
     expected_gt = build_gt_fingerprint(
         variant=variant,

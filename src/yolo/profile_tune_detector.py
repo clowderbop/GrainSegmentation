@@ -21,7 +21,12 @@ from yolo.sliced_detection import run_whole_sliced_detection
 from yolo.tiled_proposal_cache import (
     detector_cache_expected_record,
     load_or_write_tiled_proposals,
+    load_tiled_proposals,
     proposal_cache_dir,
+    proposal_cache_record,
+    recipe_whole_window_fingerprint,
+    tiled_proposal_records_from_sahi_predictions,
+    weights_sha256,
 )
 from yolo.train import _parse_device
 
@@ -73,17 +78,35 @@ def write_detector_proposal_cache(
         )
     image_path, sample_id = pairs[0]
     cache_dir = proposal_cache_dir(work_root / variant, conf=conf, mask_threshold=mask_threshold)
-    record = detector_cache_expected_record(
+    recipe = load_test_inference_recipe()
+    expected = detector_cache_expected_record(
         variant=variant,
         weights_path=weights,
         conf=conf,
         mask_threshold=mask_threshold,
         sample_id=sample_id,
+        recipe=recipe,
+    )
+    try:
+        load_tiled_proposals(cache_dir, expected=expected)
+        return cache_dir
+    except (FileNotFoundError, ValueError):
+        pass
+
+    image = load_image_for_yolo(image_path)
+    height, width = int(image.shape[0]), int(image.shape[1])
+    record = proposal_cache_record(
+        variant=variant,
+        weights_sha256=weights_sha256(weights),
+        recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+        conf=conf,
+        mask_threshold=mask_threshold,
+        sample_id=sample_id,
+        height=height,
+        width=width,
     )
 
-    def compute_proposals() -> list:
-        image = load_image_for_yolo(image_path)
-        recipe = load_test_inference_recipe()
+    def compute_proposals():
         sahi_device = device_for_sahi(_parse_device(device))
         detection_model = AutoDetectionModel.from_pretrained(
             model_type="ultralytics",
@@ -94,7 +117,7 @@ def write_detector_proposal_cache(
             image_size=recipe.whole.window,
         )
         window_kwargs = sahi_window_kwargs()
-        return run_whole_sliced_detection(
+        sahi_predictions = run_whole_sliced_detection(
             image,
             detection_model,
             slice_height=int(window_kwargs["slice_height"]),
@@ -102,8 +125,19 @@ def write_detector_proposal_cache(
             overlap_height_ratio=float(window_kwargs["overlap_height_ratio"]),
             overlap_width_ratio=float(window_kwargs["overlap_width_ratio"]),
         )
+        return tiled_proposal_records_from_sahi_predictions(
+            sahi_predictions,
+            height=height,
+            width=width,
+            mask_threshold=mask_threshold,
+        )
 
-    load_or_write_tiled_proposals(cache_dir, expected=record, compute_fn=compute_proposals)
+    load_or_write_tiled_proposals(
+        cache_dir,
+        expected=expected,
+        meta=record,
+        compute_fn=compute_proposals,
+    )
     return cache_dir
 
 

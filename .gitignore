@@ -5,6 +5,8 @@ notes.md
 .vscode/
 logs/
 *.gpkg
+!src/common/tests/fixtures/
+!src/common/tests/fixtures/**/*.gpkg
 __pycache__/
 *.egg-info/
 .worktrees/

@@ -693,15 +693,13 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
         gt_cache_dir,
         write_gt_instance_map_cache,
     )
-    from yolo.tests.test_profile_tune_scoring import (
-        _disjoint_proposals,
-        _tiny_gt_map,
-        _train_aji_via_evaluate_instances,
-    )
+    from yolo.tests.profile_tune_fixtures import disjoint_sahi_proposals, tiny_train_gt_map
+    from yolo.tests.test_profile_tune_scoring import _train_aji_via_evaluate_instances
     from yolo.tiled_proposal_cache import (
         proposal_cache_dir,
         proposal_cache_record,
         recipe_whole_window_fingerprint,
+        tiled_proposal_records_from_sahi_predictions,
         weights_sha256,
         write_tiled_proposals,
     )
@@ -721,10 +719,16 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     weights.write_bytes(b"weights")
     work_root = tmp_path / "_work"
     recipe = load_test_inference_recipe()
-    proposals = _disjoint_proposals(height, width)
+    proposals = disjoint_sahi_proposals(height, width)
+    v2_records = tiled_proposal_records_from_sahi_predictions(
+        proposals,
+        height=height,
+        width=width,
+        mask_threshold=candidate.mask_threshold,
+    )
     write_tiled_proposals(
         proposal_cache_dir(work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold),
-        proposals,
+        v2_records,
         proposal_cache_record(
             variant="PPL",
             weights_sha256=weights_sha256(weights),
@@ -732,9 +736,11 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
             conf=candidate.conf,
             mask_threshold=candidate.mask_threshold,
             sample_id="train",
+            height=height,
+            width=width,
         ),
     )
-    gt_map = _tiny_gt_map(height, width)
+    gt_map = tiny_train_gt_map(height, width)
     labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
     labels_gpkg.parent.mkdir(parents=True)
     labels_gpkg.write_bytes(b"labels")
@@ -772,10 +778,13 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
 def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
     from common.test_inference import load_test_inference_recipe
     from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    import numpy as np
+
     from yolo.tiled_proposal_cache import (
         proposal_cache_dir,
         proposal_cache_record,
         recipe_whole_window_fingerprint,
+        tiled_proposal_record_from_binary_mask,
         weights_sha256,
         write_tiled_proposals,
     )
@@ -787,9 +796,12 @@ def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
     weights.write_bytes(b"weights")
     work_root = tmp_path / "_work"
     recipe = load_test_inference_recipe()
+    height, width = 16, 16
+    mask = np.zeros((height, width), dtype=bool)
+    mask[0:4, 0:4] = True
     write_tiled_proposals(
         proposal_cache_dir(work_root / "PPL", conf=0.2, mask_threshold=0.45),
-        [{"id": 1}],
+        [tiled_proposal_record_from_binary_mask(mask, score=0.5)],
         proposal_cache_record(
             variant="PPL",
             weights_sha256=weights_sha256(weights),
@@ -797,6 +809,8 @@ def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
             conf=0.2,
             mask_threshold=0.45,
             sample_id="train",
+            height=height,
+            width=width,
         ),
     )
     candidate = YoloInferenceProfileCandidate(

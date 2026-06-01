@@ -18,20 +18,33 @@ function usage {
     cat <<'EOF' >&2
 Usage: submit_inference_profile_tune.sh [--dry-run] [--output-dir PATH] [--run-id ID] [--skip-detectors]
 
-Submit parallel YOLO inference profile tune (ADR 0005):
-  (1) GPU detector jobs per (variant, conf, mask_threshold) — skip with --skip-detectors
+Submit parallel YOLO inference profile selection (ADR 0005 orchestration; see ADRs below):
+  (1) GPU detector jobs per (variant, conf, mask_threshold) — tiled detector proposals v2
   (2) CPU GT-cache job (after detectors, or immediately if detectors skipped)
-  (3) CPU array: one job per grid candidate (all tasks submitted; no % throttle)
+  (3) CPU array: one job per grid candidate (1 CPU, 32G, 4h per task)
   (4) CPU finalize job (afterok on candidate array)
 
 Requires all registry variant weights under runs/yolo26-seg/{variant}/weights/best.pt
-when running detectors. Salvage: reuse existing OUTPUT_DIR/_work/ and pass --skip-detectors.
+when running detectors.
+
+ADR consequences (read before salvaging a failed run):
+  docs/adr/0006-gpkg-ground-truth-rasterization.md — OpenCV GT cache at _work/gt_cache/train/
+  docs/adr/0007-profile-selection-proposal-cache-and-scoring.md — proposal cache schema_version 2
+
+Salvage after ADR 0006/0007 (or any in-flight pre-fix run):
+  Delete the entire runs/yolo_inference_profile_tune/<run_id>/ directory on scratch.
+  Submit a new RUN_ID and run the full pipeline (detector → GT cache → candidate → finalize).
+  Do not pass --skip-detectors to reuse _work/ from a pre-fix or partial run (v1 proposal caches
+  and old GT layouts are rejected). Grid winners from pre-ADR runs are not comparable to reruns.
+
+--skip-detectors is only for re-submitting candidate/finalize when _work/ was produced by the
+current ADR stack in the same OUTPUT_DIR (e.g. detectors already finished successfully).
 
 Environment:
   OUTPUT_DIR       full run directory (default: .../yolo_inference_profile_tune/<run_id>)
   RUN_ID           run folder name when OUTPUT_DIR unset
   GRID_CONFIG      search grid YAML (default: configs/yolo_inference_profile_tune.yaml)
-  SKIP_DETECTORS   set to 1 (or use --skip-detectors) when tiled-proposal caches already exist
+  SKIP_DETECTORS   set to 1 (or use --skip-detectors) only when v2 caches exist in this OUTPUT_DIR
   NO_RESUME        set to 1 to clear grid/rows/*.json before candidate array and pass --no-resume
 EOF
     exit "${1:-1}"
@@ -110,7 +123,7 @@ if [ "$SKIP_DETECTORS" != "1" ]; then
             --grid-config "$GRID_CONFIG"
     )
 else
-    echo "Skipping detector jobs (SKIP_DETECTORS=1); reusing $OUTPUT_DIR/_work/"
+    echo "Skipping detector jobs (SKIP_DETECTORS=1); using existing v2 _work/ in $OUTPUT_DIR"
 fi
 
 detector_dep=""
@@ -182,7 +195,7 @@ else
     "${fin_cmd[@]}"
     echo "Submitted profile tune run → $OUTPUT_DIR"
     if [ "$SKIP_DETECTORS" = "1" ]; then
-        echo "  detectors skipped; GT cache + ${candidate_count} candidate tasks + finalize"
+        echo "  detectors skipped (same OUTPUT_DIR, post-ADR v2 _work/); GT cache + ${candidate_count} candidate tasks + finalize"
     else
         echo "  ${#detector_job_ids[@]} detector GPU jobs + GT cache + ${candidate_count} candidate tasks + finalize"
     fi

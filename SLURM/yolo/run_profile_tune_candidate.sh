@@ -2,7 +2,7 @@
 #SBATCH --job-name=yolo_prof_cand
 #SBATCH --output=logs/yolo_prof_cand-%a-%j.log
 #SBATCH --mem=32G
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=1
 #SBATCH --time=04:00:00
 
 set -euo pipefail

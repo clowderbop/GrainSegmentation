@@ -16,7 +16,9 @@ Jobs stage patch manifests (and listed images/labels) into `$TMPDIR` for train a
    - Writes `runs/yolo26-seg/{variant}/weights/best.pt` (and run artifacts under that project dir).
 
 2. **`submit_inference_profile_tune.sh`** → detector GPU jobs + GT cache + candidate array + finalize
-   **Profile selection** on the **train** whole section after **all registry** variant weights exist and **score merge** at predict is in use. Submit assigns `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/` before jobs start. Workflow: (1) **`run_profile_tune_detector.sh`** (×36, 32G GPU) writes **tiled detector proposals** under `_work/{variant}/tiled_proposals/c{conf}_t{mask}/`; (2) **`run_profile_tune_gt_cache.sh`** (32G CPU, `afterok` detectors) rasterizes train GT to `_work/gt_cache/train/`; (3) **`run_profile_tune_candidate.sh`** array (32G, 1 CPU, 4h, one task per grid candidate, `afterok` GT cache) scores in-process and writes `grid/rows/{candidate_id}.json`; (4) **`run_profile_tune_finalize.sh`** (`afterok` array) writes `grid/results.csv` and `grid/winner.json`. After ADR 0006/0007, do not reuse `_work/` from prior runs: delete `runs/yolo_inference_profile_tune/<run_id>/` and submit a new `RUN_ID` with the full detector → GT cache → candidate → finalize pipeline. Promote via `yolo.promote_inference_profile` → commit `configs/test_inference.yaml`.
+   **Profile selection** on the **train** whole section after **all registry** variant weights exist and **score merge** at predict is in use. Submit assigns `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/` before jobs start. Workflow: (1) **`run_profile_tune_detector.sh`** (×36, 32G GPU) writes **tiled detector proposals** (`schema_version` 2) under `_work/{variant}/tiled_proposals/c{conf}_t{mask}/`; (2) **`run_profile_tune_gt_cache.sh`** (32G CPU, `src/common` only — see [ADR 0006](../../docs/adr/0006-gpkg-ground-truth-rasterization.md), `afterok` detectors) rasterizes train GT to `_work/gt_cache/train/`; (3) **`run_profile_tune_candidate.sh`** array (32G, **1 CPU**, 4h, one task per grid candidate, `afterok` GT cache — see [ADR 0007](../../docs/adr/0007-profile-selection-proposal-cache-and-scoring.md)) scores in-process and writes `grid/rows/{candidate_id}.json`; (4) **`run_profile_tune_finalize.sh`** (`afterok` array) writes `grid/results.csv` and `grid/winner.json`. Promote via `yolo.promote_inference_profile` → commit `configs/test_inference.yaml`.
+
+   **Salvage (ADR 0006 + ADR 0007):** `bash SLURM/yolo/submit_inference_profile_tune.sh --help` — delete the run directory, new `RUN_ID`, full pipeline; do not `--skip-detectors` from pre-fix `_work/`.
 
 3. **`submit_test_evaluations.sh`** → **`run_patch_test_eval.sh`** + **`run_sahi_test_eval.sh`**
    For each registry variant (`PPL`, `PPLPPXblend`, `PPL+PPXblend`, `PPL+AllPPX`), submits two jobs:
@@ -44,7 +46,7 @@ proposal mask at a time (`yolo_detections_to_instance_map_by_score`).
 | SAHI whole (all variants) | 32G | 00:20:00 |
 | Profile tune detector (`run_profile_tune_detector.sh`) | 32G | 00:10:00 |
 | Profile tune GT cache (`run_profile_tune_gt_cache.sh`) | 32G | 04:00:00 |
-| Profile tune candidate (`run_profile_tune_candidate.sh`) | 32G | 04:00:00 |
+| Profile tune candidate (`run_profile_tune_candidate.sh`) | 32G, 1 CPU | 04:00:00 |
 | Profile tune finalize (`run_profile_tune_finalize.sh`) | 32G | 01:00:00 |
 | Patch test (`run_patch_test_eval.sh`) | 32G | 00:08:00 |
 

@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 Category: enhancement
 Labels: ready-for-agent, enhancement
 Depends-on: .scratch/profile-tune-opencv-gt-fast-scoring/issues/05-fast-profile-selection-scoring-parity.md
@@ -12,10 +12,10 @@ Align SLURM with ADR 0007 post-fix expectations: **profile tune candidate** jobs
 
 ## Acceptance criteria
 
-- [ ] `run_profile_tune_candidate.sh` uses `#SBATCH --cpus-per-task=1` (4h, 32G unchanged unless justified)
-- [ ] Pipeline docs describe fresh `RUN_ID` salvage and v1 cache invalidation
-- [ ] Submit script / docs cross-link ADR 0006 and 0007 consequences
-- [ ] GT-cache SLURM script consistent with slice 02 (common-only, train layout)
+- [x] `run_profile_tune_candidate.sh` uses `#SBATCH --cpus-per-task=1` (4h, 32G unchanged unless justified)
+- [x] Pipeline docs describe fresh `RUN_ID` salvage and v1 cache invalidation
+- [x] Submit script / docs cross-link ADR 0006 and 0007 consequences
+- [x] GT-cache SLURM script consistent with slice 02 (common-only, train layout)
 
 ## Blocked by
 

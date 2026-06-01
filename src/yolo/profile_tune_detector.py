@@ -17,6 +17,13 @@ from yolo.profile_tune_work import (
     sahi_window_kwargs,
     weights_path,
 )
+from yolo.inference_profile_tune import (
+    TuneGridSpec,
+    detector_job_at_index,
+    load_tune_grid,
+    tune_grid_path,
+)
+from yolo.profile_tune_cli import parse_profile_tune_variants
 from yolo.tiled_proposal_cache import (
     collect_tiled_detector_proposals,
     detector_cache_expected_record,
@@ -33,9 +40,26 @@ from yolo.train import _parse_device
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--variant", required=True)
-    parser.add_argument("--conf", type=float, required=True)
-    parser.add_argument("--mask-threshold", type=float, required=True)
+    parser.add_argument("--variant", default=None)
+    parser.add_argument("--conf", type=float, default=None)
+    parser.add_argument("--mask-threshold", type=float, default=None)
+    parser.add_argument(
+        "--grid-config",
+        type=Path,
+        default=None,
+        help=f"Search grid YAML (default: {tune_grid_path()}).",
+    )
+    parser.add_argument(
+        "--array-index",
+        type=int,
+        default=None,
+        help="SLURM array task id (1-based) selecting variant/conf/mask_threshold.",
+    )
+    parser.add_argument(
+        "--variants",
+        default=None,
+        help="Comma-separated registry variants (default: all).",
+    )
     parser.add_argument("--grainseg-root", type=Path, default=None)
     parser.add_argument("--run-root", type=Path, default=None)
     parser.add_argument("--device", default="0")
@@ -46,6 +70,29 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Profile tune work directory (default: output-dir/_work).",
     )
     return parser.parse_args(argv)
+
+
+def resolve_detector_job(
+    *,
+    spec: TuneGridSpec,
+    variants: tuple[str, ...],
+    variant: str | None,
+    conf: float | None,
+    mask_threshold: float | None,
+    array_index: int | None,
+) -> tuple[str, float, float]:
+    explicit = (variant, conf, mask_threshold)
+    if array_index is not None and any(v is not None for v in explicit):
+        raise ValueError(
+            "Specify either --array-index or --variant/--conf/--mask-threshold, not both"
+        )
+    if array_index is not None:
+        return detector_job_at_index(spec, variants, array_index)
+    if None in explicit:
+        raise ValueError(
+            "One of --array-index or all of --variant, --conf, --mask-threshold is required"
+        )
+    return variant, conf, mask_threshold
 
 
 def write_detector_proposal_cache(
@@ -138,14 +185,29 @@ def write_detector_proposal_cache(
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     repo = repo_root()
+    variants = parse_profile_tune_variants(args.variants)
+    spec = load_tune_grid(args.grid_config)
+    variant, conf, mask_threshold = resolve_detector_job(
+        spec=spec,
+        variants=variants,
+        variant=args.variant,
+        conf=args.conf,
+        mask_threshold=args.mask_threshold,
+        array_index=args.array_index,
+    )
     grainseg_root, run_root = default_grainseg_and_run_roots(
         args.grainseg_root, args.run_root
     )
     work_root = args.work_root or (args.output_dir / "_work")
+    if args.array_index is not None:
+        print(
+            f"Detector array task {args.array_index}: "
+            f"variant={variant} conf={conf:g} mask_threshold={mask_threshold:g}"
+        )
     cache_dir = write_detector_proposal_cache(
-        variant=args.variant,
-        conf=args.conf,
-        mask_threshold=args.mask_threshold,
+        variant=variant,
+        conf=conf,
+        mask_threshold=mask_threshold,
         output_dir=args.output_dir,
         grainseg_root=grainseg_root,
         run_root=run_root,

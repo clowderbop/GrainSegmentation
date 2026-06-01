@@ -187,3 +187,56 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
         on_disk = pickle.load(handle)
     assert all(isinstance(entry, dict) for entry in on_disk)
     assert not any(isinstance(entry, np.ndarray) for entry in on_disk)
+
+
+def test_profile_tune_detector_main_resolves_array_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import yaml
+
+    from yolo.profile_tune_detector import main
+
+    grid_path = tmp_path / "grid.yaml"
+    grid_path.write_text(
+        yaml.safe_dump(
+            {
+                "grid": {
+                    "postprocess_type": ["GREEDYNMM"],
+                    "match_metric": ["IOS"],
+                    "match_threshold": [0.5],
+                    "conf": [0.2, 0.3],
+                    "mask_threshold": [0.45, 0.55],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_dir = tmp_path / "run"
+    captured: dict[str, object] = {}
+
+    def fake_write(**kwargs: object) -> Path:
+        captured.update(kwargs)
+        return output_dir / "_work" / "PPL" / "cache"
+
+    monkeypatch.setattr("yolo.profile_tune_detector.write_detector_proposal_cache", fake_write)
+
+    main(
+        [
+            "--output-dir",
+            str(output_dir),
+            "--grid-config",
+            str(grid_path),
+            "--array-index",
+            "2",
+            "--variants",
+            "PPL",
+            "--grainseg-root",
+            str(tmp_path / "grainseg"),
+            "--run-root",
+            str(tmp_path / "runs"),
+        ]
+    )
+
+    assert captured["variant"] == "PPL"
+    assert captured["conf"] == pytest.approx(0.2)
+    assert captured["mask_threshold"] == pytest.approx(0.55)

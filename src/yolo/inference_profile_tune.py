@@ -81,6 +81,19 @@ def iter_detector_jobs(
             yield variant, conf, mask_threshold
 
 
+def detector_job_at_index(
+    spec: TuneGridSpec, variants: tuple[str, ...], array_index: int
+) -> tuple[str, float, float]:
+    if array_index < 1:
+        raise ValueError(f"array index must be >= 1, got {array_index}")
+    jobs = list(iter_detector_jobs(spec, variants))
+    if array_index > len(jobs):
+        raise ValueError(
+            f"array index {array_index} out of range for {len(jobs)} detector jobs"
+        )
+    return jobs[array_index - 1]
+
+
 def iter_grid_candidates(spec: TuneGridSpec) -> Iterable[YoloInferenceProfileCandidate]:
     grid = spec.grid
     for (

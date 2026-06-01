@@ -19,6 +19,7 @@ from common.test_inference import (
 from yolo.inference_profile_tune import (
     GridResumeContext,
     append_grid_result_row,
+    detector_job_at_index,
     extract_mean_aji_from_report,
     iter_detector_jobs,
     iter_grid_candidates,
@@ -73,6 +74,25 @@ def test_iter_detector_jobs_one_per_variant_and_detector_key(tmp_path: Path) -> 
     spec = load_tune_grid(tmp_path / "grid.yaml")
     jobs = list(iter_detector_jobs(spec, ("PPL", "PPL+AllPPX")))
     assert len(jobs) == 2 * 2 * 2  # variants × conf × mask_threshold
+
+
+def test_detector_job_at_index_matches_iter_detector_jobs_order(tmp_path: Path) -> None:
+    _write_grid(tmp_path / "grid.yaml")
+    spec = load_tune_grid(tmp_path / "grid.yaml")
+    variants = ("PPL", "PPL+AllPPX")
+    jobs = list(iter_detector_jobs(spec, variants))
+    assert detector_job_at_index(spec, variants, 1) == jobs[0]
+    assert detector_job_at_index(spec, variants, len(jobs)) == jobs[-1]
+
+
+def test_detector_job_at_index_rejects_out_of_range(tmp_path: Path) -> None:
+    _write_grid(tmp_path / "grid.yaml")
+    spec = load_tune_grid(tmp_path / "grid.yaml")
+    variants = ("PPL",)
+    with pytest.raises(ValueError, match="must be >= 1"):
+        detector_job_at_index(spec, variants, 0)
+    with pytest.raises(ValueError, match="out of range"):
+        detector_job_at_index(spec, variants, 999)
 
 
 def test_iter_grid_candidates_full_factorial_product(tmp_path: Path) -> None:

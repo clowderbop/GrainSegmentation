@@ -6,6 +6,16 @@ from pathlib import Path
 
 from common.variants import repo_root
 
+# ADR 0007: detector jobs run as a throttled SLURM array (default max 6 concurrent).
+PROFILE_TUNE_DETECTOR_MAX_PARALLEL_DEFAULT = "6"
+PROFILE_TUNE_DETECTOR_RESOURCES: dict[str, str] = {
+    "job-name": "yolo_prof_det",
+    "output": "logs/yolo_prof_det-%a-%j.log",
+    "mem": "32G",
+    "cpus-per-task": "8",
+    "time": "00:10:00",
+}
+
 # ADR 0007: candidate scoring is single-threaded; 32G / 4h unchanged post-fix.
 PROFILE_TUNE_CANDIDATE_RESOURCES: dict[str, str] = {
     "job-name": "yolo_prof_cand",
@@ -38,6 +48,7 @@ SUBMIT_PROFILE_TUNE_USAGE_MARKERS: tuple[str, ...] = (
     "Do not pass --skip-detectors to reuse _work/ from a pre-fix",
     "schema_version 2",
     "--skip-detectors is only for re-submitting",
+    "DETECTOR_MAX_PARALLEL",
 )
 
 PIPELINE_PROFILE_TUNE_DOC_MARKERS: tuple[str, ...] = (
@@ -47,11 +58,16 @@ PIPELINE_PROFILE_TUNE_DOC_MARKERS: tuple[str, ...] = (
     "`schema_version` 2",
     "_work/gt_cache/train/",
     "1 CPU",
+    "DETECTOR_MAX_PARALLEL",
 )
 
 
 def run_profile_tune_candidate_script_path() -> Path:
     return repo_root() / "SLURM" / "yolo" / "run_profile_tune_candidate.sh"
+
+
+def run_profile_tune_detector_script_path() -> Path:
+    return repo_root() / "SLURM" / "yolo" / "run_profile_tune_detector.sh"
 
 
 def run_profile_tune_gt_cache_script_path() -> Path:

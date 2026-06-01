@@ -8,6 +8,8 @@ from common.variants import repo_root
 from yolo.slurm_profile_tune import (
     PIPELINE_PROFILE_TUNE_DOC_MARKERS,
     PROFILE_TUNE_CANDIDATE_RESOURCES,
+    PROFILE_TUNE_DETECTOR_MAX_PARALLEL_DEFAULT,
+    PROFILE_TUNE_DETECTOR_RESOURCES,
     PROFILE_TUNE_GT_CACHE_COMMON_CD,
     PROFILE_TUNE_GT_CACHE_MODULE,
     PROFILE_TUNE_GT_CACHE_OUTPUT_REL,
@@ -16,6 +18,7 @@ from yolo.slurm_profile_tune import (
     SUBMIT_PROFILE_TUNE_USAGE_MARKERS,
     pipeline_md_path,
     run_profile_tune_candidate_script_path,
+    run_profile_tune_detector_script_path,
     run_profile_tune_gt_cache_script_path,
     submit_inference_profile_tune_script_path,
 )
@@ -30,6 +33,24 @@ def test_profile_tune_candidate_slurm_requests_one_cpu() -> None:
         assert key in PROFILE_TUNE_CANDIDATE_RESOURCES
         assert f"#SBATCH --{key}={PROFILE_TUNE_CANDIDATE_RESOURCES[key]}" in text
     assert PROFILE_TUNE_CANDIDATE_RESOURCES["cpus-per-task"] == "1"
+
+
+def test_profile_tune_detector_slurm_uses_array_task_index() -> None:
+    script = run_profile_tune_detector_script_path()
+    text = script.read_text(encoding="utf-8")
+    assert "yolo.profile_tune_detector" in text
+    assert "SLURM_ARRAY_TASK_ID" in text
+    assert "--array-index" in text
+    assert f"#SBATCH --output={PROFILE_TUNE_DETECTOR_RESOURCES['output']}" in text
+
+
+def test_submit_profile_tune_submits_throttled_detector_array() -> None:
+    text = submit_inference_profile_tune_script_path().read_text(encoding="utf-8")
+    assert "run_profile_tune_detector.sh" in text
+    assert '--array=1-${detector_count}%${detector_max_parallel}' in text
+    assert "DETECTOR_MAX_PARALLEL" in text
+    assert f'="${{DETECTOR_MAX_PARALLEL:-{PROFILE_TUNE_DETECTOR_MAX_PARALLEL_DEFAULT}}}"' in text
+    assert "detector_job_ids" not in text
 
 
 def test_profile_tune_gt_cache_slurm_matches_adr_0006_contract() -> None:

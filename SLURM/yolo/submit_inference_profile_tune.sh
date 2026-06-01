@@ -19,7 +19,7 @@ function usage {
 Usage: submit_inference_profile_tune.sh [--dry-run] [--output-dir PATH] [--run-id ID] [--skip-detectors]
 
 Submit parallel YOLO inference profile selection (ADR 0005 orchestration; see ADRs below):
-  (1) GPU detector jobs per (variant, conf, mask_threshold) — tiled detector proposals v2
+  (1) GPU detector array per (variant, conf, mask_threshold) — tiled detector proposals v2
   (2) CPU GT-cache job (after detectors, or immediately if detectors skipped)
   (3) CPU array: one job per grid candidate (1 CPU, 32G, 4h per task)
   (4) CPU finalize job (afterok on candidate array)
@@ -45,6 +45,7 @@ Environment:
   RUN_ID           run folder name when OUTPUT_DIR unset
   GRID_CONFIG      search grid YAML (default: configs/yolo_inference_profile_tune.yaml)
   SKIP_DETECTORS   set to 1 (or use --skip-detectors) only when v2 caches exist in this OUTPUT_DIR
+  DETECTOR_MAX_PARALLEL  max concurrent detector array tasks (default: 6)
   NO_RESUME        set to 1 to clear grid/rows/*.json before candidate array and pass --no-resume
 EOF
     exit "${1:-1}"
@@ -102,33 +103,43 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
     fi
 done
 
-detector_job_ids=()
+detector_job_id=""
+detector_max_parallel="${DETECTOR_MAX_PARALLEL:-6}"
 if [ "$SKIP_DETECTORS" != "1" ]; then
-    while IFS=$'\t' read -r variant conf mask; do
-        export_vars="ALL,OUTPUT_DIR=${OUTPUT_DIR},VARIANT=${variant},CONF=${conf},MASK_THRESHOLD=${mask}"
-        cmd=(
-            sbatch
-            "--export=${export_vars}"
-            "$REPO_ROOT/SLURM/yolo/run_profile_tune_detector.sh"
-        )
-        if [ "$DRY_RUN" = true ]; then
-            printf '%q ' "${cmd[@]}"
-            echo
-        else
-            job_id="$("${cmd[@]}" | awk '{print $NF}')"
-            detector_job_ids+=("$job_id")
-        fi
-    done < <(
+    detector_count="$(
         uv run --directory "$REPO_ROOT/src/yolo" python -m yolo.profile_tune_list_detector_jobs \
-            --grid-config "$GRID_CONFIG"
+            --grid-config "$GRID_CONFIG" | wc -l
+    )"
+    detector_count="${detector_count//[[:space:]]/}"
+    if [ "$detector_count" -lt 1 ]; then
+        echo "No detector jobs in $GRID_CONFIG" >&2
+        exit 1
+    fi
+
+    det_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG}"
+    det_cmd=(
+        sbatch
+        "--export=${det_export}"
+        "--array=1-${detector_count}%${detector_max_parallel}"
+        "$REPO_ROOT/SLURM/yolo/run_profile_tune_detector.sh"
     )
+    if [ "$DRY_RUN" = true ]; then
+        printf '%q ' "${det_cmd[@]}"
+        echo
+    else
+        detector_job_id="$("${det_cmd[@]}" | awk '{print $NF}')"
+        if [ -z "${detector_job_id:-}" ]; then
+            echo "Detector array sbatch did not return a job id" >&2
+            exit 1
+        fi
+    fi
 else
     echo "Skipping detector jobs (SKIP_DETECTORS=1); using existing v2 _work/ in $OUTPUT_DIR"
 fi
 
 detector_dep=""
-if [ "$DRY_RUN" = false ] && [ "${#detector_job_ids[@]}" -gt 0 ]; then
-    detector_dep=$(IFS=:; echo "${detector_job_ids[*]}")
+if [ "$DRY_RUN" = false ] && [ -n "$detector_job_id" ]; then
+    detector_dep="$detector_job_id"
 fi
 
 gt_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG}"
@@ -197,7 +208,7 @@ else
     if [ "$SKIP_DETECTORS" = "1" ]; then
         echo "  detectors skipped (same OUTPUT_DIR, post-ADR v2 _work/); GT cache + ${candidate_count} candidate tasks + finalize"
     else
-        echo "  ${#detector_job_ids[@]} detector GPU jobs + GT cache + ${candidate_count} candidate tasks + finalize"
+        echo "  detector array (${detector_count} tasks, max ${detector_max_parallel} parallel) + GT cache + ${candidate_count} candidate tasks + finalize"
     fi
     echo "Promote: uv run --directory $REPO_ROOT/src/yolo python -m yolo.promote_inference_profile --winner-json $OUTPUT_DIR/grid/winner.json"
 fi

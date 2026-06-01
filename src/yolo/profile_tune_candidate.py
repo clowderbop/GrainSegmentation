@@ -38,6 +38,7 @@ from yolo.profile_tune_work import (
     weights_path,
 )
 from yolo.tiled_proposal_cache import (
+    TILED_PROPOSAL_CACHE_SCHEMA_VERSION,
     detector_cache_expected_record,
     load_tiled_proposals,
     proposal_cache_dir,
@@ -120,6 +121,7 @@ def candidate_row_fingerprint(
             "proposal_cache_key": (
                 f"c{candidate.conf:g}_t{candidate.mask_threshold:g}"
             ),
+            "proposal_schema_version": TILED_PROPOSAL_CACHE_SCHEMA_VERSION,
         }
     return {
         "candidate_id": candidate.candidate_id(),
@@ -151,11 +153,14 @@ def load_shared_train_gt_map(
         height=img_height,
     )
     gt_cache_path = gt_cache_dir(work_root)
+    t0 = time.perf_counter()
     gt_map, _gt_meta = load_gt_instance_map_cache(gt_cache_path, expected=expected_gt)
+    load_gt_s = time.perf_counter() - t0
     gt_n = count_instances(gt_map)
     height, width = int(gt_map.shape[0]), int(gt_map.shape[1])
     _log(
-        f"Loaded train GT {width}×{height} ({gt_n} instances) from {gt_cache_path}/"
+        f"load GT {load_gt_s:.1f}s — {width}×{height} ({gt_n} instances) "
+        f"from {gt_cache_path}/"
     )
     return gt_map
 
@@ -188,17 +193,20 @@ def score_variant_train_aji_from_cache(
         mask_threshold=candidate.mask_threshold,
         sample_id="train",
     )
+    t_load = time.perf_counter()
     records, meta = load_tiled_proposals(cache_dir, expected=expected_proposals)
     cache_height = int(meta["height"])
     cache_width = int(meta["width"])
     proposals = sahi_predictions_from_tiled_proposal_records(
         records, height=cache_height, width=cache_width
     )
+    load_proposals_s = time.perf_counter() - t_load
     height, width = int(gt_map.shape[0]), int(gt_map.shape[1])
     gt_n = count_instances(gt_map)
     _log(
-        f"{prefix}  loaded {len(proposals)} proposals, GT {height}×{width} "
-        f"({gt_n} instances)"
+        f"{prefix}  load proposals {load_proposals_s:.1f}s "
+        f"({len(proposals)} from v{TILED_PROPOSAL_CACHE_SCHEMA_VERSION} cache), "
+        f"GT {height}×{width} ({gt_n} instances)"
     )
     aji = compute_train_aji(
         gt_map,
@@ -206,6 +214,7 @@ def score_variant_train_aji_from_cache(
         candidate=candidate,
         height=height,
         width=width,
+        log_timings=True,
     )
     elapsed = time.perf_counter() - t0
     _log(f"{prefix}  {variant}: train AJI={aji:.6f} ({elapsed:.1f}s)")

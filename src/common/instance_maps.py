@@ -69,3 +69,67 @@ def yolo_detections_to_instance_map_by_score(
         binary = decode_segmentation(detections[det_index]["segmentation"])
         out[binary] = int(det_index) + 1
     return out
+
+
+def _sahi_object_score(pred: Any) -> float:
+    score_obj = getattr(pred, "score", None)
+    if score_obj is None:
+        raise ValueError("SAHI object prediction missing score")
+    value = getattr(score_obj, "value", None)
+    if value is None:
+        raise ValueError("SAHI object prediction score has no value")
+    return float(value)
+
+
+def sahi_object_binary_mask(
+    pred: Any, *, height: int, width: int, mask_threshold: float
+) -> np.ndarray | None:
+    """Decode one SAHI object prediction to a full-section boolean mask."""
+    from common.mask_ops import masks_hw_to_binary, resize_mask_nearest
+
+    mask_obj = getattr(pred, "mask", None)
+    if mask_obj is None:
+        return None
+    float_mask = getattr(mask_obj, "float_mask", None)
+    if float_mask is not None:
+        binary = masks_hw_to_binary(
+            np.asarray(float_mask, dtype=np.float32)[None, ...],
+            threshold=mask_threshold,
+        )[0]
+    else:
+        mask = getattr(mask_obj, "bool_mask", None)
+        if mask is None:
+            return None
+        binary = np.asarray(mask, dtype=bool)
+    if binary.shape != (height, width):
+        binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(bool)
+    return binary
+
+
+def score_merged_instance_map_from_sahi_predictions(
+    predictions: Sequence[Any],
+    *,
+    height: int,
+    width: int,
+    mask_threshold: float,
+) -> np.ndarray:
+    """Paint overlapping SAHI proposals by ascending score (no prediction-set RLE round-trip)."""
+    detections: list[dict[str, Any]] = []
+    for pred in predictions:
+        binary = sahi_object_binary_mask(
+            pred, height=height, width=width, mask_threshold=mask_threshold
+        )
+        if binary is None or not binary.any():
+            continue
+        detections.append(
+            {
+                "score": _sahi_object_score(pred),
+                "segmentation": binary,
+            }
+        )
+    return yolo_detections_to_instance_map_by_score(
+        detections,
+        height=height,
+        width=width,
+        decode_segmentation=lambda segmentation: np.asarray(segmentation, dtype=bool),
+    )

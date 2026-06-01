@@ -193,6 +193,46 @@ def test_score_profile_selection_candidate_loads_gt_once(tmp_path: Path) -> None
     assert gt_loads == [1]
 
 
+def test_candidate_row_fingerprint_includes_proposal_schema_v2(
+    tmp_path: Path,
+) -> None:
+    import tifffile
+
+    from yolo.profile_tune_candidate import candidate_row_fingerprint
+    from yolo.tiled_proposal_cache import TILED_PROPOSAL_CACHE_SCHEMA_VERSION
+
+    candidate = YoloInferenceProfileCandidate(
+        postprocess_type="GREEDYNMM",
+        match_metric="IOS",
+        match_threshold=0.5,
+        conf=0.25,
+        mask_threshold=0.5,
+    )
+    grainseg_root = tmp_path / "grainseg"
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
+    labels_gpkg.parent.mkdir(parents=True)
+    labels_gpkg.write_bytes(b"labels")
+    anchor = grainseg_root / "dataset" / "train" / "train_PPL.tif"
+    tifffile.imwrite(anchor, np.zeros((16, 16, 3), dtype=np.uint8))
+
+    fingerprint = candidate_row_fingerprint(
+        candidate=candidate,
+        variants=("PPL",),
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        work_root=tmp_path / "work",
+        grid_config=None,
+    )
+    assert (
+        fingerprint["variants"]["PPL"]["proposal_schema_version"]
+        == TILED_PROPOSAL_CACHE_SCHEMA_VERSION
+    )
+
+
 def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> None:
     import numpy as np
     import tifffile

@@ -108,6 +108,101 @@ def test_profile_selection_scoring_aji_matches_evaluate_instances(
     assert pred_path.is_file()
 
 
+@pytest.mark.parametrize("proposals_fn", [disjoint_sahi_proposals])
+def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
+    tmp_path: Path,
+    proposals_fn,
+) -> None:
+    """ADR 0007 parity on on-disk v2 caches: direct paint AJI == legacy round-trip.
+
+    Overlapping masks are covered in ``test_score_merge_sahi`` (score-merge only);
+    adapted v2 records do not implement SAHI mask fusion APIs used by slice-merge.
+    """
+    from common.metrics import compute_aji
+    from common.test_inference import load_test_inference_recipe
+    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.tests.profile_tune_legacy_scoring import legacy_merged_instance_view_from_proposals
+    from yolo.tiled_proposal_cache import (
+        proposal_cache_dir,
+        proposal_cache_record,
+        recipe_whole_window_fingerprint,
+        sahi_predictions_from_tiled_proposal_records,
+        tiled_proposal_records_from_sahi_predictions,
+        weights_sha256,
+        write_tiled_proposals,
+        load_tiled_proposals,
+        detector_cache_expected_record,
+    )
+    from yolo.profile_tune_work import weights_path
+
+    height, width = 16, 16
+    gt_map = tiny_train_gt_map(height, width)
+    raw_proposals = proposals_fn(height, width)
+    candidate = candidate_for_variant("PPL")
+    grainseg_root = tmp_path / "grainseg"
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    work_root = tmp_path / "_work"
+    recipe = load_test_inference_recipe()
+    v2_records = tiled_proposal_records_from_sahi_predictions(
+        raw_proposals,
+        height=height,
+        width=width,
+        mask_threshold=candidate.mask_threshold,
+    )
+    write_tiled_proposals(
+        proposal_cache_dir(
+            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
+        ),
+        v2_records,
+        proposal_cache_record(
+            variant="PPL",
+            weights_sha256=weights_sha256(weights),
+            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+            conf=candidate.conf,
+            mask_threshold=candidate.mask_threshold,
+            sample_id="train",
+            height=height,
+            width=width,
+        ),
+    )
+    expected = detector_cache_expected_record(
+        variant="PPL",
+        weights_path=weights,
+        conf=candidate.conf,
+        mask_threshold=candidate.mask_threshold,
+        sample_id="train",
+        recipe=recipe,
+    )
+    cache_dir = proposal_cache_dir(
+        work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
+    )
+    records, meta = load_tiled_proposals(cache_dir, expected=expected)
+    proposals = sahi_predictions_from_tiled_proposal_records(
+        records, height=int(meta["height"]), width=int(meta["width"])
+    )
+
+    fast_aji = score_variant_train_aji_from_cache(
+        variant="PPL",
+        candidate=candidate,
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        work_root=work_root,
+        gt_map=gt_map,
+    )
+
+    legacy_map = legacy_merged_instance_view_from_proposals(
+        proposals,
+        candidate=candidate,
+        height=height,
+        width=width,
+    )
+    legacy_aji = float(compute_aji(gt_map, legacy_map))
+    assert fast_aji == pytest.approx(legacy_aji, rel=0.0, abs=1e-9)
+
+
 @pytest.mark.parametrize("variant", all_variant_names())
 def test_overlapping_score_merge_aji_matches_evaluate_instances(
     tmp_path: Path, variant: str

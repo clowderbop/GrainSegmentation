@@ -1,4 +1,4 @@
-Status: ready-for-agent
+Status: done
 Category: enhancement
 Labels: ready-for-agent, enhancement
 Depends-on: .scratch/profile-tune-opencv-gt-fast-scoring/issues/02-profile-selection-gt-cache-train-layout.md, .scratch/profile-tune-opencv-gt-fast-scoring/issues/04-tiled-detector-proposals-schema-v2.md
@@ -16,14 +16,14 @@ Add an automated parity gate: v2 scoring **AJI** must match legacy v1 scoring **
 
 ## Acceptance criteria
 
-- [ ] **Profile selection scoring** uses v2 caches and direct paint **score merge** (no per-grid prediction-set RLE round-trip)
-- [ ] SAHI slice-merge still used via adapter (not reimplemented)
-- [ ] Parity test: v2 AJI == legacy v1 AJI on fixture(s) with fixed GT
-- [ ] Legacy v1 scoring path removed after parity gate
-- [ ] **Profile selection result row** fingerprints include proposal schema v2
-- [ ] Fixture test: v2 cache + GT cache → `compute_train_aji` returns finite AJI in seconds, not hours
-- [ ] One GT load per candidate task; logs show a single GT load line then four variant scores
-- [ ] Scoring logs report per-phase timings (merge, score merge, AJI) with ≥0.1s resolution
+- [x] **Profile selection scoring** uses v2 caches and direct paint **score merge** (no per-grid prediction-set RLE round-trip)
+- [x] SAHI slice-merge still used via adapter (not reimplemented)
+- [x] Parity test: v2 AJI == legacy v1 AJI on fixture(s) with fixed GT
+- [x] Legacy v1 scoring path removed after parity gate (hot path; legacy in `yolo/tests/profile_tune_legacy_scoring.py` for gate only)
+- [x] **Profile selection result row** fingerprints include proposal schema v2
+- [x] Fixture test: v2 cache + GT cache → `compute_train_aji` returns finite AJI in seconds, not hours
+- [x] One GT load per candidate task; logs show a single GT load line then four variant scores
+- [x] Scoring logs report per-phase timings (load GT, load proposals, slice-merge, score merge, AJI) with ≥0.1s resolution
 
 ## Blocked by
 

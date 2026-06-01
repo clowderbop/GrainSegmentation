@@ -899,6 +899,118 @@ def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None
     assert 0.0 <= aji <= 1.0
 
 
+def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
+    tmp_path: Path,
+) -> None:
+    """ADR 0006 + 0007: load both caches from disk and score in sub-minute walltime."""
+    import os
+    import shutil
+    import subprocess
+    import time
+    import tifffile
+
+    from yolo.profile_tune_candidate import (
+        load_shared_train_gt_map,
+        score_variant_train_aji_from_cache,
+    )
+    from yolo.tiled_proposal_cache import (
+        proposal_cache_dir,
+        proposal_cache_record,
+        recipe_whole_window_fingerprint,
+        tiled_proposal_record_from_binary_mask,
+        weights_sha256,
+        write_tiled_proposals,
+    )
+
+    fixtures = (
+        Path(__file__).resolve().parents[2]
+        / "common"
+        / "tests"
+        / "fixtures"
+        / "gpkg_merged_instance_map"
+    )
+    height, width = 48, 64
+    grainseg_root = tmp_path / "GrainSeg"
+    labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
+    labels_gpkg.parent.mkdir(parents=True)
+    shutil.copy2(fixtures / "micro_labels.gpkg", labels_gpkg)
+    anchor = grainseg_root / "dataset" / "train" / "train_PPL.tif"
+    tifffile.imwrite(anchor, np.zeros((height, width, 3), dtype=np.uint8))
+
+    output_dir = tmp_path / "run"
+    work_root = output_dir / "_work"
+    common_src = Path(__file__).resolve().parents[2] / "common"
+    tmpdir = tmp_path / "tmpdir"
+    tmpdir.mkdir(parents=True)
+    env = os.environ.copy()
+    env["TMPDIR"] = str(tmpdir)
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "python",
+            "-u",
+            "-m",
+            "common.profile_tune_gt_cache",
+            "--output-dir",
+            str(output_dir),
+            "--grainseg-root",
+            str(grainseg_root),
+        ],
+        cwd=common_src,
+        check=True,
+        env=env,
+    )
+
+    candidate = YoloInferenceProfileCandidate(
+        postprocess_type="GREEDYNMM",
+        match_metric="IOS",
+        match_threshold=0.4,
+        conf=0.2,
+        mask_threshold=0.45,
+    )
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    recipe = load_test_inference_recipe()
+    mask = np.zeros((height, width), dtype=bool)
+    mask[10:20, 10:20] = True
+    write_tiled_proposals(
+        proposal_cache_dir(
+            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
+        ),
+        [tiled_proposal_record_from_binary_mask(mask, score=0.5)],
+        proposal_cache_record(
+            variant="PPL",
+            weights_sha256=weights_sha256(weights),
+            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+            conf=candidate.conf,
+            mask_threshold=candidate.mask_threshold,
+            sample_id="train",
+            height=height,
+            width=width,
+        ),
+    )
+
+    t0 = time.perf_counter()
+    gt_map = load_shared_train_gt_map(work_root=work_root, grainseg_root=grainseg_root)
+    aji = score_variant_train_aji_from_cache(
+        variant="PPL",
+        candidate=candidate,
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        work_root=work_root,
+        gt_map=gt_map,
+    )
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 60.0, (
+        f"on-disk GT + v2 proposal cache scoring took {elapsed:.1f}s "
+        "(expected sub-minute, not hours)"
+    )
+    assert 0.0 <= aji <= 1.0
+
+
 def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
     from common.test_inference import load_test_inference_recipe
     from yolo.profile_tune_candidate import score_variant_train_aji_from_cache

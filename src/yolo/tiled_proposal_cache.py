@@ -259,6 +259,7 @@ class _AdaptedBbox:
     miny: float
     maxx: float
     maxy: float
+    shift_amount: tuple[int, int] = (0, 0)
 
     def to_xyxy(self) -> list[float]:
         return [self.minx, self.miny, self.maxx, self.maxy]

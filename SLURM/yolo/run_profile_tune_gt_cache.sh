@@ -14,22 +14,20 @@ source "$SLURM_ROOT/utils/assertions.sh"
 : "${OUTPUT_DIR:?OUTPUT_DIR must be set by submit script}"
 
 GRAINSEG_ROOT="$(grainseg_root)"
-RUN_ROOT="$GRAINSEG_ROOT/runs/yolo26-seg"
 
 train_gpkg="$GRAINSEG_ROOT/dataset/train/train_labels.gpkg"
 require_file "$train_gpkg" "Train labels GeoPackage not found"
 
 source "$SLURM_ROOT/prepare_env.sh"
 
-cd "$REPO_ROOT/src/yolo"
-echo "[$(date -Is)] uv sync …"
+cd "$REPO_ROOT/src/common"
+echo "[$(date -Is)] uv sync (common only) …"
 uv sync
 echo "[$(date -Is)] uv sync done"
 
-echo "GT cache → $OUTPUT_DIR/_work/gt_cache/"
+echo "GT cache → $OUTPUT_DIR/_work/gt_cache/train/"
 echo "  train_labels: $train_gpkg"
 echo "  grainseg_root: $GRAINSEG_ROOT"
-uv run python -u -m yolo.profile_tune_gt_cache \
+uv run python -u -m common.profile_tune_gt_cache \
     --output-dir "$OUTPUT_DIR" \
-    --grainseg-root "$GRAINSEG_ROOT" \
-    --run-root "$RUN_ROOT"
+    --grainseg-root "$GRAINSEG_ROOT"

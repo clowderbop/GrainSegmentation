@@ -10,6 +10,7 @@ import tifffile
 from common.evaluate_instances import InstanceEvalSample, evaluate_instance_samples
 from common.prediction_set import prediction_set_path, save_prediction_set
 from common.tests.prediction_set_fixtures import yolo_prediction_set_from_masks
+from common.yolo_seg_labels import yolo_seg_labels_to_instance_map
 
 
 def _write_blank_image(path: Path, width: int, height: int) -> None:
@@ -23,16 +24,6 @@ def test_patch_eval_report_includes_grainy_aggregates(tmp_path: Path) -> None:
     for index in (1, 2):
         image_path = tmp_path / f"patch{index}_PPL.tif"
         _write_blank_image(image_path, width, height)
-        gt_map = np.zeros((height, width), dtype=np.int32)
-        gt_map[4:20, 4:20] = 1
-        ps = yolo_prediction_set_from_masks(
-            masks_hw=gt_map.astype(np.float32)[None, ...],
-            scores=np.array([0.99], dtype=np.float32),
-            height=height,
-            width=width,
-        )
-        pred_path = prediction_set_path(tmp_path, f"patch{index}")
-        save_prediction_set(pred_path, ps)
         gt_txt = tmp_path / f"patch{index}.txt"
         gt_txt.write_text(
             "0 "
@@ -52,6 +43,17 @@ def test_patch_eval_report_includes_grainy_aggregates(tmp_path: Path) -> None:
             + "\n",
             encoding="utf-8",
         )
+        gt_map = yolo_seg_labels_to_instance_map(
+            gt_txt, image_width=width, image_height=height
+        )
+        ps = yolo_prediction_set_from_masks(
+            masks_hw=gt_map.astype(np.float32)[None, ...],
+            scores=np.array([0.99], dtype=np.float32),
+            height=height,
+            width=width,
+        )
+        pred_path = prediction_set_path(tmp_path, f"patch{index}")
+        save_prediction_set(pred_path, ps)
         samples.append(
             InstanceEvalSample(
                 sample_id=f"patch{index}",

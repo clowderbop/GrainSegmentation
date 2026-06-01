@@ -7,6 +7,7 @@ from math import prod
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pytest
 import yaml
 
@@ -687,12 +688,12 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
 ) -> None:
     """Disk tiled-proposal cache + GT cache → in-process AJI matches evaluate_instances."""
     from common.test_inference import load_test_inference_recipe
-    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
-    from yolo.profile_tune_gt_cache import (
+    from common.profile_tune_gt_cache import (
         build_gt_fingerprint,
         gt_cache_dir,
         write_gt_instance_map_cache,
     )
+    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
     from yolo.tests.profile_tune_fixtures import disjoint_sahi_proposals, tiny_train_gt_map
     from yolo.tests.test_profile_tune_scoring import _train_aji_via_evaluate_instances
     from yolo.tiled_proposal_cache import (
@@ -744,11 +745,18 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
     labels_gpkg.parent.mkdir(parents=True)
     labels_gpkg.write_bytes(b"labels")
+    anchor = grainseg_root / "dataset" / "train" / "train_PPL.tif"
+    import tifffile
+
+    tifffile.imwrite(anchor, np.zeros((height, width, 3), dtype=np.uint8))
     write_gt_instance_map_cache(
-        gt_cache_dir(work_root, "PPL"),
+        gt_cache_dir(work_root),
         gt_map,
         fingerprint=build_gt_fingerprint(
-            variant="PPL", sample_id="train", labels_gpkg=labels_gpkg
+            sample_id="train",
+            labels_gpkg=labels_gpkg,
+            width=width,
+            height=height,
         ),
     )
     image_path = tmp_path / "train.tif"
@@ -761,6 +769,7 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
         grainseg_root=grainseg_root,
         run_root=run_root,
         work_root=work_root,
+        gt_map=gt_map,
     )
     canonical_aji = _train_aji_via_evaluate_instances(
         gt_map,
@@ -773,6 +782,121 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
         prediction_set_path=pred_path,
     )
     assert fast_aji == pytest.approx(canonical_aji, rel=0.0, abs=1e-9)
+
+
+def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None:
+    """Micro GPKG fixture: CLI cache build → shared GT load in scoring path."""
+    import os
+    import shutil
+    import subprocess
+    import tifffile
+
+    from common.profile_tune_gt_cache import (
+        build_gt_fingerprint,
+        gt_cache_dir,
+        load_gt_instance_map_cache,
+        train_labels_gpkg_path,
+    )
+    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.tiled_proposal_cache import (
+        proposal_cache_dir,
+        proposal_cache_record,
+        recipe_whole_window_fingerprint,
+        tiled_proposal_record_from_binary_mask,
+        weights_sha256,
+        write_tiled_proposals,
+    )
+
+    fixtures = (
+        Path(__file__).resolve().parents[2]
+        / "common"
+        / "tests"
+        / "fixtures"
+        / "gpkg_merged_instance_map"
+    )
+    height, width = 48, 64
+    grainseg_root = tmp_path / "GrainSeg"
+    labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
+    labels_gpkg.parent.mkdir(parents=True)
+    shutil.copy2(fixtures / "micro_labels.gpkg", labels_gpkg)
+    anchor = grainseg_root / "dataset" / "train" / "train_PPL.tif"
+    tifffile.imwrite(anchor, np.zeros((height, width, 3), dtype=np.uint8))
+
+    output_dir = tmp_path / "run"
+    work_root = output_dir / "_work"
+    common_src = Path(__file__).resolve().parents[2] / "common"
+    tmpdir = tmp_path / "tmpdir"
+    tmpdir.mkdir(parents=True)
+    env = os.environ.copy()
+    env["TMPDIR"] = str(tmpdir)
+    subprocess.run(
+        [
+            "uv",
+            "run",
+            "python",
+            "-u",
+            "-m",
+            "common.profile_tune_gt_cache",
+            "--output-dir",
+            str(output_dir),
+            "--grainseg-root",
+            str(grainseg_root),
+        ],
+        cwd=common_src,
+        check=True,
+        env=env,
+    )
+
+    candidate = YoloInferenceProfileCandidate(
+        postprocess_type="GREEDYNMM",
+        match_metric="IOS",
+        match_threshold=0.4,
+        conf=0.2,
+        mask_threshold=0.45,
+    )
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = run_root / "PPL" / "weights" / "best.pt"
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    recipe = load_test_inference_recipe()
+    mask = np.zeros((height, width), dtype=bool)
+    mask[10:20, 10:20] = True
+    write_tiled_proposals(
+        proposal_cache_dir(
+            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
+        ),
+        [tiled_proposal_record_from_binary_mask(mask, score=0.5)],
+        proposal_cache_record(
+            variant="PPL",
+            weights_sha256=weights_sha256(weights),
+            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+            conf=candidate.conf,
+            mask_threshold=candidate.mask_threshold,
+            sample_id="train",
+            height=height,
+            width=width,
+        ),
+    )
+
+    labels = train_labels_gpkg_path(grainseg_root)
+    gt_map, _ = load_gt_instance_map_cache(
+        gt_cache_dir(work_root),
+        expected=build_gt_fingerprint(
+            sample_id="train",
+            labels_gpkg=labels,
+            width=width,
+            height=height,
+        ),
+    )
+    aji = score_variant_train_aji_from_cache(
+        variant="PPL",
+        candidate=candidate,
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        work_root=work_root,
+        gt_map=gt_map,
+    )
+    assert 0.0 <= aji <= 1.0
 
 
 def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
@@ -827,4 +951,5 @@ def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
             grainseg_root=grainseg_root,
             run_root=run_root,
             work_root=work_root,
+            gt_map=np.zeros((height, width), dtype=np.int32),
         )

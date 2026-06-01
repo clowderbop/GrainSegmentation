@@ -1,58 +1,58 @@
-"""Profile selection ground truth cache — rasterized train GT per variant (ADR 0005)."""
+"""Profile selection ground truth cache — train merged instance view (ADR 0006)."""
 
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import time
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from common.evaluate_instances import (
-    InstanceEvalSample,
-    image_dimensions,
-    load_gt_instance_map,
-)
-from common.manifest_io import collect_manifest_image_paths
+from common.evaluate_instances import image_dimensions
+from common.file_hash import file_sha256
+from common.gpkg_instance_map import gpkg_to_merged_instance_map
 from common.reporting import count_instances
-from common.variants import get_variant, repo_root
-from yolo.profile_tune_cli import parse_profile_tune_variants
-from yolo.profile_tune_work import (
-    default_grainseg_and_run_roots,
-    ensure_staged_train_manifest,
-)
-from yolo.tiled_proposal_cache import file_sha256
+from common.variants import default_grainseg_root, get_variant
 
-GT_CACHE_SCHEMA_VERSION = 1
+GT_CACHE_SCHEMA_VERSION = 2
 _INSTANCE_MAP_NAME = "instance_map.npz"
 _FINGERPRINT_NAME = "fingerprint.json"
+_TRAIN_SAMPLE_ID = "train"
 
 
 def _log(*parts: object) -> None:
     print(*parts, flush=True)
 
 
-def gt_cache_dir(work_root: Path, variant: str) -> Path:
-    return work_root / "gt_cache" / variant
+def gt_cache_dir(work_root: Path, *, sample_id: str = _TRAIN_SAMPLE_ID) -> Path:
+    return work_root / "gt_cache" / sample_id
 
 
 def train_labels_gpkg_path(grainseg_root: Path) -> Path:
     return grainseg_root / get_variant("PPL").paths.train_labels_gpkg
 
 
+def train_anchor_image_path(grainseg_root: Path) -> Path:
+    return grainseg_root / get_variant("PPL").paths.train_mosaic_stacked
+
+
 def build_gt_fingerprint(
     *,
-    variant: str,
     sample_id: str,
     labels_gpkg: Path,
+    width: int,
+    height: int,
 ) -> dict[str, Any]:
     if not labels_gpkg.is_file():
         raise FileNotFoundError(f"Train labels GeoPackage not found: {labels_gpkg}")
     return {
         "schema_version": GT_CACHE_SCHEMA_VERSION,
-        "variant": variant,
         "sample_id": sample_id,
+        "width": int(width),
+        "height": int(height),
         "train_labels_gpkg_sha256": file_sha256(labels_gpkg),
     }
 
@@ -104,71 +104,58 @@ def load_gt_instance_map_cache(
     return instance_map, meta
 
 
-def rasterize_train_gt_instance_map(
-    *,
-    variant: str,
-    grainseg_root: Path,
-    staged_manifest: Path,
-) -> tuple[np.ndarray, str]:
-    pairs = collect_manifest_image_paths(staged_manifest)
-    if len(pairs) != 1:
-        raise ValueError(
-            f"Profile tune GT cache expects one train whole sample, got {len(pairs)}"
-        )
-    image_path, sample_id = pairs[0]
-    _log(f"  train image: {image_path} (sample_id={sample_id})")
-    height, width = image_dimensions(image_path)
-    _log(f"  image size: {width}×{height} px")
-    labels_gpkg = train_labels_gpkg_path(grainseg_root)
-    _log(
-        f"  labels gpkg: {labels_gpkg} "
-        f"(sha256={file_sha256(labels_gpkg)[:12]}…)"
-    )
-    sample = InstanceEvalSample(
-        sample_id=sample_id,
-        image_path=image_path,
-        instance_prediction_set=image_path,
-        gt_gpkg=labels_gpkg,
-        gt_origin="whole_image",
-    )
-    _log("  rasterizing whole-image GT instance map …")
+def copy_gpkg_to_tmpdir(gpkg_path: Path, *, tmp_dir: Path | None = None) -> tuple[Path, float]:
+    """Copy GPKG to a local temp directory; return (local path, seconds)."""
+    tmp_root = tmp_dir or Path(os.environ.get("TMPDIR", "/tmp"))
+    tmp_root.mkdir(parents=True, exist_ok=True)
+    local = tmp_root / f"profile_tune_gt_{gpkg_path.name}"
     t0 = time.monotonic()
-    gt_map = load_gt_instance_map(sample, image_width=width, image_height=height)
+    shutil.copy2(gpkg_path, local)
+    return local, time.monotonic() - t0
+
+
+def rasterize_train_gt_instance_map(
+    gpkg_path: Path,
+    *,
+    height: int,
+    width: int,
+) -> np.ndarray:
+    _log(f"  rasterizing GPKG → merged instance view ({width}×{height}) …")
+    t0 = time.monotonic()
+    gt_map = gpkg_to_merged_instance_map(gpkg_path, height=height, width=width)
     gt_map = np.asarray(gt_map, dtype=np.int32)
     elapsed = time.monotonic() - t0
     _log(
         f"  rasterized in {elapsed:.1f}s — "
         f"{count_instances(gt_map)} instances, dtype={gt_map.dtype}"
     )
-    return gt_map, sample_id
+    return gt_map
 
 
-def write_train_gt_cache_for_variant(
+def write_train_gt_cache(
     *,
-    variant: str,
     work_root: Path,
     grainseg_root: Path,
-    repo: Path,
+    sample_id: str = _TRAIN_SAMPLE_ID,
+    tmp_dir: Path | None = None,
 ) -> Path:
-    cache_dir = gt_cache_dir(work_root, variant)
+    cache_dir = gt_cache_dir(work_root, sample_id=sample_id)
     labels_gpkg = train_labels_gpkg_path(grainseg_root)
-    staged_manifest = ensure_staged_train_manifest(
-        grainseg_root=grainseg_root,
-        variant=variant,
-        work_root=work_root,
-        repo=repo,
+    anchor_image = train_anchor_image_path(grainseg_root)
+    if not anchor_image.is_file():
+        raise FileNotFoundError(f"Train anchor image not found: {anchor_image}")
+    height, width = image_dimensions(anchor_image)
+    _log(f"  train anchor: {anchor_image} (sample_id={sample_id})")
+    _log(f"  image size: {width}×{height} px")
+    _log(
+        f"  labels gpkg: {labels_gpkg} "
+        f"(sha256={file_sha256(labels_gpkg)[:12]}…)"
     )
-    _log(f"  staged manifest: {staged_manifest}")
-    pairs = collect_manifest_image_paths(staged_manifest)
-    if len(pairs) != 1:
-        raise ValueError(
-            f"Profile tune GT cache expects one train whole sample, got {len(pairs)}"
-        )
-    _sample_image, sample_id = pairs[0]
     fingerprint = build_gt_fingerprint(
-        variant=variant,
         sample_id=sample_id,
         labels_gpkg=labels_gpkg,
+        width=width,
+        height=height,
     )
     try:
         cached_map, _meta = load_gt_instance_map_cache(cache_dir, expected=fingerprint)
@@ -181,21 +168,27 @@ def write_train_gt_cache_for_variant(
         )
         return cache_dir
 
-    gt_map, sample_id = rasterize_train_gt_instance_map(
-        variant=variant,
-        grainseg_root=grainseg_root,
-        staged_manifest=staged_manifest,
-    )
-    assert sample_id == fingerprint["sample_id"]
+    _log("  copying GPKG to local temp …")
+    local_gpkg, copy_s = copy_gpkg_to_tmpdir(labels_gpkg, tmp_dir=tmp_dir)
+    _log(f"  copied GPKG in {copy_s:.1f}s → {local_gpkg}")
+
+    t_raster = time.monotonic()
+    gt_map = rasterize_train_gt_instance_map(local_gpkg, height=height, width=width)
+    raster_s = time.monotonic() - t_raster
 
     _log(f"  writing cache → {cache_dir}")
-    t0 = time.monotonic()
+    t_write = time.monotonic()
     write_gt_instance_map_cache(cache_dir, gt_map, fingerprint=fingerprint)
     map_path = cache_dir / _INSTANCE_MAP_NAME
     map_bytes = map_path.stat().st_size if map_path.is_file() else 0
+    write_s = time.monotonic() - t_write
     _log(
         f"  wrote {map_path.name} ({map_bytes / 1e6:.1f} MB) "
-        f"and {_FINGERPRINT_NAME} in {time.monotonic() - t0:.1f}s"
+        f"and {_FINGERPRINT_NAME} in {write_s:.1f}s"
+    )
+    _log(
+        f"  phase timings: copy={copy_s:.1f}s rasterize={raster_s:.1f}s "
+        f"write={write_s:.1f}s"
     )
     return cache_dir
 
@@ -206,40 +199,26 @@ def _parse_args(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--grainseg-root", type=Path, default=None)
-    parser.add_argument("--run-root", type=Path, default=None)
-    parser.add_argument("--variants", default=None)
     parser.add_argument("--work-root", type=Path, default=None)
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
-    variants = parse_profile_tune_variants(args.variants)
-    grainseg_root, run_root = default_grainseg_and_run_roots(
-        args.grainseg_root, args.run_root
-    )
+    grainseg_root = args.grainseg_root or default_grainseg_root()
     work_root = args.work_root or (args.output_dir / "_work")
-    repo = repo_root()
     labels_gpkg = train_labels_gpkg_path(grainseg_root)
     _log("Profile selection ground truth cache")
     _log(f"  output_dir={args.output_dir}")
     _log(f"  work_root={work_root}")
     _log(f"  grainseg_root={grainseg_root}")
-    _log(f"  run_root={run_root}")
     _log(f"  train_labels_gpkg={labels_gpkg}")
-    _log(f"  variants ({len(variants)}): {', '.join(variants)}")
     t_run = time.monotonic()
-    for index, variant in enumerate(variants, start=1):
-        _log(f"[{index}/{len(variants)}] {variant}")
-        t_variant = time.monotonic()
-        cache_dir = write_train_gt_cache_for_variant(
-            variant=variant,
-            work_root=work_root,
-            grainseg_root=grainseg_root,
-            repo=repo,
-        )
-        _log(f"  done in {time.monotonic() - t_variant:.1f}s → {cache_dir}")
-    _log(f"GT cache complete in {time.monotonic() - t_run:.1f}s")
+    cache_dir = write_train_gt_cache(
+        work_root=work_root,
+        grainseg_root=grainseg_root,
+    )
+    _log(f"GT cache complete in {time.monotonic() - t_run:.1f}s → {cache_dir}")
 
 
 if __name__ == "__main__":

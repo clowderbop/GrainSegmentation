@@ -8,6 +8,16 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
+from common.evaluate_instances import image_dimensions
+from common.profile_tune_gt_cache import (
+    build_gt_fingerprint,
+    gt_cache_dir,
+    load_gt_instance_map_cache,
+    train_anchor_image_path,
+    train_labels_gpkg_path,
+)
 from common.reporting import count_instances
 from common.test_inference import YoloInferenceProfileCandidate
 from common.variants import repo_root
@@ -22,12 +32,6 @@ from yolo.inference_profile_tune import (
     write_profile_selection_row,
 )
 from yolo.profile_tune_cli import parse_profile_tune_variants
-from yolo.profile_tune_gt_cache import (
-    build_gt_fingerprint,
-    gt_cache_dir,
-    load_gt_instance_map_cache,
-    train_labels_gpkg_path,
-)
 from yolo.profile_tune_scoring import compute_train_aji
 from yolo.profile_tune_work import (
     default_grainseg_and_run_roots,
@@ -98,19 +102,21 @@ def candidate_row_fingerprint(
     grid_config: Path | None,
 ) -> dict[str, Any]:
     labels_gpkg = train_labels_gpkg_path(grainseg_root)
+    anchor_image = train_anchor_image_path(grainseg_root)
+    height, width = image_dimensions(anchor_image)
+    gt_fp = build_gt_fingerprint(
+        sample_id="train",
+        labels_gpkg=labels_gpkg,
+        width=width,
+        height=height,
+    )
     per_variant: dict[str, Any] = {}
     for variant in variants:
         weights = weights_path(grainseg_root, variant, run_root)
         from yolo.tiled_proposal_cache import weights_sha256
 
-        gt_fp = build_gt_fingerprint(
-            variant=variant,
-            sample_id="train",
-            labels_gpkg=labels_gpkg,
-        )
         per_variant[variant] = {
             "weights_sha256": weights_sha256(weights),
-            "gt_cache_fingerprint": gt_fp,
             "proposal_cache_key": (
                 f"c{candidate.conf:g}_t{candidate.mask_threshold:g}"
             ),
@@ -118,6 +124,7 @@ def candidate_row_fingerprint(
     return {
         "candidate_id": candidate.candidate_id(),
         "tune_grid_fingerprint": tune_grid_fingerprint(grid_config),
+        "gt_cache_fingerprint": gt_fp,
         "variants": per_variant,
     }
 
@@ -128,6 +135,31 @@ def row_fingerprint_matches(
     return stored == expected
 
 
+def load_shared_train_gt_map(
+    *,
+    work_root: Path,
+    grainseg_root: Path,
+) -> np.ndarray:
+    """Load the shared train GT cache once per candidate task (ADR 0007)."""
+    labels_gpkg = train_labels_gpkg_path(grainseg_root)
+    anchor_image = train_anchor_image_path(grainseg_root)
+    img_height, img_width = image_dimensions(anchor_image)
+    expected_gt = build_gt_fingerprint(
+        sample_id="train",
+        labels_gpkg=labels_gpkg,
+        width=img_width,
+        height=img_height,
+    )
+    gt_cache_path = gt_cache_dir(work_root)
+    gt_map, _gt_meta = load_gt_instance_map_cache(gt_cache_path, expected=expected_gt)
+    gt_n = count_instances(gt_map)
+    height, width = int(gt_map.shape[0]), int(gt_map.shape[1])
+    _log(
+        f"Loaded train GT {width}×{height} ({gt_n} instances) from {gt_cache_path}/"
+    )
+    return gt_map
+
+
 def score_variant_train_aji_from_cache(
     *,
     variant: str,
@@ -135,6 +167,7 @@ def score_variant_train_aji_from_cache(
     grainseg_root: Path,
     run_root: Path,
     work_root: Path,
+    gt_map: np.ndarray,
     variant_index: int | None = None,
     variant_count: int | None = None,
 ) -> float:
@@ -161,19 +194,11 @@ def score_variant_train_aji_from_cache(
     proposals = sahi_predictions_from_tiled_proposal_records(
         records, height=cache_height, width=cache_width
     )
-    labels_gpkg = train_labels_gpkg_path(grainseg_root)
-    expected_gt = build_gt_fingerprint(
-        variant=variant,
-        sample_id="train",
-        labels_gpkg=labels_gpkg,
-    )
-    gt_cache_path = gt_cache_dir(work_root, variant)
-    gt_map, _gt_meta = load_gt_instance_map_cache(gt_cache_path, expected=expected_gt)
     height, width = int(gt_map.shape[0]), int(gt_map.shape[1])
     gt_n = count_instances(gt_map)
     _log(
         f"{prefix}  loaded {len(proposals)} proposals, GT {height}×{width} "
-        f"({gt_n} instances) from {gt_cache_path.name}/"
+        f"({gt_n} instances)"
     )
     aji = compute_train_aji(
         gt_map,
@@ -248,6 +273,7 @@ def score_profile_selection_candidate(
         f"mask_threshold={candidate.mask_threshold:g}"
     )
     t_all = time.perf_counter()
+    gt_map = load_shared_train_gt_map(work_root=work_root, grainseg_root=grainseg_root)
     per_variant_aji: dict[str, float] = {}
     n_variants = len(variants)
     for idx, variant in enumerate(variants, start=1):
@@ -257,6 +283,7 @@ def score_profile_selection_candidate(
             grainseg_root=grainseg_root,
             run_root=run_root,
             work_root=work_root,
+            gt_map=gt_map,
             variant_index=idx,
             variant_count=n_variants,
         )

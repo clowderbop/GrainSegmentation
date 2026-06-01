@@ -13,6 +13,7 @@ from typing import Any, TypedDict
 
 import numpy as np
 
+from common.file_hash import file_sha256
 from common.prediction_set import binary_mask_to_segmentation, segmentation_to_binary_mask
 from common.test_inference import TestInferenceRecipe, sahi_overlap_ratio
 
@@ -28,14 +29,6 @@ class TiledProposalRecord(TypedDict):
     segmentation: dict[str, Any]
     offset_y: int
     offset_x: int
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def weights_sha256(weights_path: Path) -> str:

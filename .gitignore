@@ -13,3 +13,13 @@ __pycache__/
 *.pt
 .cursor/
 .understand-anything/
+.scratch/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+runs/
+.env
+.env.*
+.DS_Store

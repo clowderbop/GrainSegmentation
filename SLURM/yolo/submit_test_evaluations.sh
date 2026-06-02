@@ -11,7 +11,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     cat <<'EOF'
 Submit YOLO patch + whole-section (SAHI) test eval for every registry variant.
 
-SAHI and patch jobs use 32G / 20m and 32G / 8m (see SLURM/yolo/pipeline.md).
+SAHI and patch jobs use 32G / 20m and 32G / 8m (see docs/runbooks/yolo.md#test-job-resources).
 sbatch --mem or --time on the command line override #SBATCH in the run scripts.
 
 Manual one-off:

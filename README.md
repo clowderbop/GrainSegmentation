@@ -48,4 +48,4 @@ Metrics and thesis ranking policy: [`docs/metrics.md`](docs/metrics.md) and [`CO
 | **Dataset background** | [`docs/dataset.md`](docs/dataset.md) |
 | **Staging on nodes** | [`docs/reference/staging.md`](docs/reference/staging.md) |
 
-SLURM submit scripts remain under `SLURM/<area>/`; each `SLURM/<area>/pipeline.md` points at the matching runbook.
+SLURM submit scripts live under `SLURM/<area>/` and point at [`docs/runbooks/`](docs/runbooks/) in `--help` or header comments.

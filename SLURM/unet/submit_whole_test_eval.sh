@@ -1,4 +1,5 @@
 #!/bin/bash
+# Submit U-Net whole-section test eval. Ops: docs/runbooks/unet.md#whole-test-eval
 
 set -euo pipefail
 # shellcheck source=SLURM/utils/repo_root.sh

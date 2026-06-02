@@ -18,6 +18,8 @@ function usage {
 Usage: submit_watershed_tuning.sh [--dry-run]
 
 Submit watershed hyperparameter tuning for all registry U-Net variants.
+Cluster workflow: docs/runbooks/unet.md#watershed-tuning
+
 Requires train whole manifests and finetuned models under models/unet/.
 EOF
     exit "${1:-1}"

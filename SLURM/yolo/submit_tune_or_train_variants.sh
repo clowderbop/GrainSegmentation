@@ -6,7 +6,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/repo_root.sh"
 cd "$REPO_ROOT"
 
 function usage {
-    exit 1
+    local status="${1:-1}"
+    cat <<'EOF' >&2
+Usage: submit_tune_or_train_variants.sh --ppl|--ppl-ppx-composite|--ppl-plus-ppx-composite|--all-ppx|--all [--tune] [--resume] [--verbose]
+
+Cluster workflow and training memory: docs/runbooks/yolo.md#tune-and-train-variants
+EOF
+    exit "$status"
 }
 
 run_ppl=false
@@ -100,8 +106,8 @@ while [[ $# -gt 0 ]]; do
             verbose_args=(--verbose)
             shift
             ;;
-        --help)
-            usage
+        --help|-h)
+            usage 0
             ;;
         *)
             echo "Unknown option: $1" >&2

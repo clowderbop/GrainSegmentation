@@ -21,7 +21,7 @@
 | U-Net | [`runbooks/unet.md`](runbooks/unet.md) |
 | Post-eval reporting | [`runbooks/analysis.md`](runbooks/analysis.md) |
 
-Submit scripts and `#SBATCH` defaults live under `SLURM/<area>/`. Each `SLURM/<area>/pipeline.md` is a short pointer to the matching runbook until stub removal (issue 03).
+Submit scripts and `#SBATCH` defaults live under `SLURM/<area>/`. Operational steps belong in the runbooks above—not in script `--help` beyond flags and one-line pointers.
 
 ## Quick links
 

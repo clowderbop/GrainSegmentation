@@ -8,6 +8,7 @@ cd "$REPO_ROOT"
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     cat <<'EOF'
 Submit post-eval reporting (tables + thesis figures) after test eval jobs finish.
+Cluster workflow: docs/runbooks/analysis.md#build-report
 
 Outputs: $SCRATCH/GrainSeg/eval/reporting/ (override with OUTPUT_DIR).
 

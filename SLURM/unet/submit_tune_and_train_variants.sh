@@ -15,6 +15,8 @@ function usage {
 Usage: $(basename "$0") [options]
 
 Submit U-Net tune+train jobs for one or more input variants.
+Cluster workflow: docs/runbooks/unet.md#tune-and-train-variants
+
 Requires train whole manifests and rasterized labels:
   $TRAIN_LABELS_RASTER
 

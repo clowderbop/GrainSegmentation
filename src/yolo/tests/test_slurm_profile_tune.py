@@ -6,7 +6,6 @@ import subprocess
 
 from common.variants import repo_root
 from yolo.slurm_profile_tune import (
-    PIPELINE_PROFILE_TUNE_DOC_MARKERS,
     PROFILE_TUNE_CANDIDATE_RESOURCES,
     PROFILE_TUNE_DETECTOR_MAX_PARALLEL_DEFAULT,
     PROFILE_TUNE_DETECTOR_RESOURCES,
@@ -15,9 +14,9 @@ from yolo.slurm_profile_tune import (
     PROFILE_TUNE_GT_CACHE_OUTPUT_REL,
     PROFILE_TUNE_GT_CACHE_RESOURCES,
     PROFILE_TUNE_GT_CACHE_TRAIN_LABELS_GPKG,
+    PROFILE_TUNE_RUNBOOK_REL,
     PROFILE_TUNE_VENV_PREP_RESOURCES,
-    SUBMIT_PROFILE_TUNE_USAGE_MARKERS,
-    pipeline_md_path,
+    profile_tune_runbook_path,
     run_profile_tune_candidate_script_path,
     run_profile_tune_detector_script_path,
     run_profile_tune_finalize_script_path,
@@ -104,7 +103,7 @@ def test_profile_tune_gt_cache_slurm_matches_adr_0006_contract() -> None:
     assert "yolo.profile_tune_gt_cache" not in text
 
 
-def test_submit_profile_tune_usage_documents_adr_salvage() -> None:
+def test_submit_profile_tune_usage_points_at_runbook() -> None:
     result = subprocess.run(
         ["bash", str(submit_inference_profile_tune_script_path()), "--help"],
         cwd=repo_root(),
@@ -114,11 +113,28 @@ def test_submit_profile_tune_usage_documents_adr_salvage() -> None:
     )
     assert result.returncode == 0, result.stderr
     usage = result.stderr
-    for marker in SUBMIT_PROFILE_TUNE_USAGE_MARKERS:
-        assert marker in usage, f"missing submit usage marker: {marker!r}"
+    assert str(PROFILE_TUNE_RUNBOOK_REL) in usage
+    assert "profile-selection" in usage
+    assert "Salvage" not in usage
+    assert "pre-fix" not in usage
 
 
-def test_pipeline_md_points_at_submit_help_for_salvage() -> None:
-    text = pipeline_md_path().read_text(encoding="utf-8")
-    for marker in PIPELINE_PROFILE_TUNE_DOC_MARKERS:
-        assert marker in text, f"missing pipeline.md marker: {marker!r}"
+def test_submit_profile_tune_usage_documents_skip_detectors() -> None:
+    result = subprocess.run(
+        ["bash", str(submit_inference_profile_tune_script_path()), "--help"],
+        cwd=repo_root(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    usage = result.stderr
+    assert "--skip-detectors" in usage
+    assert "SKIP_DETECTORS" in usage
+
+
+def test_profile_tune_runbook_exists() -> None:
+    path = profile_tune_runbook_path()
+    assert path.is_file(), f"missing runbook: {path}"
+    text = path.read_text(encoding="utf-8")
+    assert "## Profile selection" in text
+    assert "submit_inference_profile_tune.sh" in text

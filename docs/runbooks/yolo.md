@@ -132,6 +132,10 @@ uv run --directory src/yolo python -m yolo.promote_inference_profile \
 
 Commit `configs/test_inference.yaml` after promotion.
 
+### Rerun without detectors
+
+`--skip-detectors` (or `SKIP_DETECTORS=1`) skips the detector array when this `OUTPUT_DIR` already has valid v2 tiled proposals under `_work/`. Submit still runs GT cache, venv prep, the candidate array, and finalize. Use when detectors already finished in the same run directory—not to reuse caches from an incompatible older run (see ADRs 0006/0007).
+
 ### Finalize recovery
 
 If finalize did not run but `grid/rows/*.json` or `results.csv` exist:

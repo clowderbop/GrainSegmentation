@@ -1,5 +1,6 @@
 #!/bin/bash
 # Compare connected-components vs tuned watershed on the train section.
+# Ops: docs/runbooks/unet.md#cc-vs-watershed-train-section
 
 set -euo pipefail
 # shellcheck source=SLURM/utils/repo_root.sh

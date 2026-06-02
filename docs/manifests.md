@@ -82,7 +82,7 @@ Replace `{variant}` with the registry key literally (including `+`).
 
 ## Generating manifests
 
-From the repo root after preprocessing (see `SLURM/preprocessing/pipeline.md`):
+From the repo root after preprocessing (see [`docs/runbooks/preprocessing.md`](runbooks/preprocessing.md#regenerate-manifests-only)):
 
 ```bash
 GRAINSEG_ROOT="${SCRATCH:-/scratch/$USER}/GrainSeg"

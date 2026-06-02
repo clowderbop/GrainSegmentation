@@ -11,6 +11,7 @@ cd "$REPO_ROOT"
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "Usage: $(basename "$0")"
     echo "Submits one SLURM job per VARIANT (PPL, PPLPPXblend, PPL+PPXblend, PPL+AllPPX)."
+    echo "Cluster workflow: docs/runbooks/unet.md#patch-test-eval"
     exit 0
 fi
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Write U-Net whole-section manifests under dataset/{train,test}/manifests/.
 
-Run once against an existing scratch tree after preprocessing (steps 4–7 in
-``SLURM/preprocessing/pipeline.md``), especially after ``create_multichannel_input_tiffs.sh``
+Run once against an existing scratch tree after preprocessing (see
+``docs/runbooks/preprocessing.md``), especially after ``create_multichannel_input_tiffs.sh``
 so stacked YOLO TIFFs exist on disk but are **not** referenced by these manifests.
 
 Example (from repo root)::

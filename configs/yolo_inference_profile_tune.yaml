@@ -1,19 +1,50 @@
+# First round:
+# grid:
+#   postprocess_type:
+#     - GREEDYNMM
+#     - NMM
+#   match_metric:
+#     - IOS
+#     - IOU
+#   match_threshold:
+#     - 0.4
+#     - 0.5
+#     - 0.6
+#   conf:
+#     - 0.15
+#     - 0.25
+#     - 0.35
+#   mask_threshold:
+#     - 0.4
+#     - 0.5
+#     - 0.6
+#
+# Winner:
+# postprocess_type=GREEDYNMM, match_metric=IOU, match_threshold=0.6, conf=0.15, mask_threshold=0.4
+#
+# Observed patterns:
+# conf: Monotonic: 0.15 → 0.25 → 0.35 gives 0.176 → 0.174 → 0.166 (best at lowest grid value)
+# match_threshold: Monotonic: 0.4 → 0.5 → 0.6 gives 0.094 → 0.148 → 0.176 (best at highest grid value)
+# mask_threshold: Flat at 0.4 / 0.5 / 0.6 for the winning merge path (~0.176)
+# match_metric: IOU ≫ IOS (~0.18 vs ~0.02–0.03 at the same conf/mask) 
+# postprocess_type: GREEDYNMM beats NMM at the same IOU / 0.6 / 0.15 / 0.4 (~+0.034)
+
+
+# Refinement round (active grid). Override path on submit: GRID_CONFIG=...
+# Candidate count = product of list lengths below (currently 27).
+
 grid:
   postprocess_type:
     - GREEDYNMM
-    - NMM
   match_metric:
-    - IOS
     - IOU
   match_threshold:
-    - 0.4
-    - 0.5
     - 0.6
+    - 0.7
+    - 0.8
   conf:
+    - 0.05
+    - 0.10
     - 0.15
-    - 0.25
-    - 0.35
   mask_threshold:
     - 0.4
-    - 0.5
-    - 0.6

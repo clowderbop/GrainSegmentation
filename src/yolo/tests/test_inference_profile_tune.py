@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from math import prod
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +18,8 @@ from common.test_inference import (
 from yolo.inference_profile_tune import (
     GridResumeContext,
     append_grid_result_row,
+    count_detector_jobs,
+    count_grid_candidates,
     detector_job_at_index,
     extract_mean_aji_from_report,
     iter_detector_jobs,
@@ -33,6 +34,7 @@ from yolo.inference_profile_tune import (
     score_candidate_across_variants,
     select_best_candidate,
     should_skip_variant_eval,
+    tune_grid_path,
     variant_eval_fingerprint,
     write_grid_winner_json,
     write_variant_eval_resume_meta,
@@ -99,7 +101,7 @@ def test_iter_grid_candidates_full_factorial_product(tmp_path: Path) -> None:
     _write_grid(tmp_path / "grid.yaml")
     spec = load_tune_grid(tmp_path / "grid.yaml")
     candidates = list(iter_grid_candidates(spec))
-    assert len(candidates) == 2 * 1 * 2 * 2 * 2
+    assert len(candidates) == count_grid_candidates(spec)
     assert candidates[0] == YoloInferenceProfileCandidate(
         postprocess_type="GREEDYNMM",
         match_metric="IOS",
@@ -330,23 +332,27 @@ unet:
     assert recipe_path.read_text(encoding="utf-8") == original
 
 
-def test_committed_tune_grid_matches_yaml_factorial() -> None:
-    from common.variants import repo_root
-
-    spec = load_tune_grid(repo_root() / "configs" / "yolo_inference_profile_tune.yaml")
+def test_committed_tune_grid_is_well_formed_factorial() -> None:
+    """Default configs/yolo_inference_profile_tune.yaml must be a valid non-empty grid."""
+    spec = load_tune_grid(tune_grid_path())
     grid = spec.grid
-    expected = prod(
-        (
-            len(grid.postprocess_type),
-            len(grid.match_metric),
-            len(grid.match_threshold),
-            len(grid.conf),
-            len(grid.mask_threshold),
-        )
-    )
+    for axis_name, values in (
+        ("postprocess_type", grid.postprocess_type),
+        ("match_metric", grid.match_metric),
+        ("match_threshold", grid.match_threshold),
+        ("conf", grid.conf),
+        ("mask_threshold", grid.mask_threshold),
+    ):
+        assert len(values) >= 1, f"grid.{axis_name} must list at least one value"
+
     candidates = list(iter_grid_candidates(spec))
-    assert len(candidates) == expected
-    assert grid.match_metric == ("IOS", "IOU")
+    assert len(candidates) == count_grid_candidates(spec)
+    assert len({c.candidate_id() for c in candidates}) == len(candidates)
+
+    variants = ("PPL", "PPL+AllPPX")
+    assert len(list(iter_detector_jobs(spec, variants))) == count_detector_jobs(
+        spec, len(variants)
+    )
 
 
 def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:

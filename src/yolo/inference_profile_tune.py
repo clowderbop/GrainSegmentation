@@ -1,4 +1,4 @@
-"""YOLO inference profile train selection (full factorial grid, ADR 0005)."""
+"""YOLO inference profile train selection (factorial grid from YAML, ADR 0005)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import itertools
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import prod
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -70,6 +71,26 @@ def load_tune_grid(path: Path | None = None) -> TuneGridSpec:
             ),
         ),
     )
+
+
+def count_grid_candidates(spec: TuneGridSpec) -> int:
+    """Number of profile points in the Cartesian product of grid axes."""
+    grid = spec.grid
+    return prod(
+        (
+            len(grid.postprocess_type),
+            len(grid.match_metric),
+            len(grid.match_threshold),
+            len(grid.conf),
+            len(grid.mask_threshold),
+        )
+    )
+
+
+def count_detector_jobs(spec: TuneGridSpec, variant_count: int) -> int:
+    """GPU detector jobs: one per (variant, conf, mask_threshold)."""
+    grid = spec.grid
+    return variant_count * len(grid.conf) * len(grid.mask_threshold)
 
 
 def iter_detector_jobs(

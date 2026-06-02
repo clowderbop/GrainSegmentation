@@ -1,6 +1,8 @@
-"""Mask resize and score-merge helpers for instance prediction sets."""
+"""Mask resize, rasterize, and score-merge helpers."""
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 import numpy as np
 from skimage.transform import resize as sk_resize
@@ -32,6 +34,50 @@ def resize_masks_hw(masks_hw: np.ndarray, height: int, width: int) -> np.ndarray
     )
 
 
+def rasterize_polygon_rings(
+    canvas: np.ndarray,
+    rings_xy: Sequence[np.ndarray],
+    *,
+    fill_value: int = 1,
+) -> None:
+    """Fill closed rings on a uint8/bool canvas (image or bbox-local coordinates)."""
+    if not rings_xy:
+        return
+    import cv2
+
+    cv2.fillPoly(canvas, list(rings_xy), fill_value)
+
+
+def rasterize_coco_polygons_in_box(
+    segmentation: list | list[list],
+    *,
+    y1: int,
+    x1: int,
+    y2: int,
+    x2: int,
+) -> np.ndarray:
+    """Rasterize COCO polygon lists into a bbox-sized boolean plane."""
+    box_h = y2 - y1
+    box_w = x2 - x1
+    if box_h <= 0 or box_w <= 0:
+        return np.zeros((0, 0), dtype=bool)
+    if not segmentation:
+        return np.zeros((box_h, box_w), dtype=bool)
+    polys = [segmentation] if isinstance(segmentation[0], (int, float)) else segmentation
+    rings: list[np.ndarray] = []
+    for poly in polys:
+        if not poly:
+            continue
+        local = np.asarray(poly, dtype=np.float64).reshape(-1, 2)
+        local = local.copy()
+        local[:, 0] -= x1
+        local[:, 1] -= y1
+        rings.append(np.rint(local).astype(np.int32))
+    canvas = np.zeros((box_h, box_w), dtype=np.uint8)
+    rasterize_polygon_rings(canvas, rings, fill_value=1)
+    return canvas.astype(bool)
+
+
 def masks_hw_to_binary(masks_hw: np.ndarray, *, threshold: float = 0.5) -> np.ndarray:
     if masks_hw.dtype in (np.float32, np.float64):
         return masks_hw > threshold
@@ -57,6 +103,8 @@ def instance_map_from_masks(
 __all__ = [
     "instance_map_from_masks",
     "masks_hw_to_binary",
+    "rasterize_coco_polygons_in_box",
+    "rasterize_polygon_rings",
     "resize_mask_nearest",
     "resize_masks_hw",
 ]

@@ -22,7 +22,7 @@ Submit parallel YOLO inference profile selection (ADR 0005 orchestration; see AD
   (1) GPU detector array per (variant, conf, mask_threshold) — tiled detector proposals v2
   (2) CPU GT-cache job (after detectors, or immediately if detectors skipped)
   (3) CPU venv prep (once per submit; shared scratch venv for YOLO stack)
-  (4) CPU array: one job per grid candidate (1 CPU, 50G, 4h per task)
+  (4) CPU array: one job per grid candidate (1 CPU, 50G, 8h per task)
   (5) CPU finalize job (afterok on candidate array)
 
 Requires all registry variant weights under runs/yolo26-seg/{variant}/weights/best.pt

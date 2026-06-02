@@ -11,7 +11,10 @@ from typing import Any, Literal, overload
 import numpy as np
 from pycocotools import mask as mask_utils
 
-from common.instance_maps import yolo_detections_to_instance_map_by_score
+from common.instance_maps import (
+    sahi_object_section_binary_mask,
+    yolo_detections_to_instance_map_by_score,
+)
 from common.mask_ops import masks_hw_to_binary, resize_mask_nearest
 
 PREDICTION_SETS_SUBDIR = "prediction_sets"
@@ -219,25 +222,11 @@ def build_yolo_prediction_set_from_sahi_predictions(
     """Encode SAHI object predictions one mask at a time (no dense ``(N, H, W)`` stack)."""
     detections: list[dict[str, Any]] = []
     for pred in predictions:
-        mask_obj = getattr(pred, "mask", None)
-        if mask_obj is None:
+        binary = sahi_object_section_binary_mask(
+            pred, height=height, width=width, mask_threshold=mask_threshold
+        )
+        if binary is None:
             continue
-        float_mask = getattr(mask_obj, "float_mask", None)
-        if float_mask is not None:
-            binary = masks_hw_to_binary(
-                np.asarray(float_mask, dtype=np.float32)[None, ...],
-                threshold=mask_threshold,
-            )[0]
-        else:
-            mask = getattr(mask_obj, "bool_mask", None)
-            if mask is None:
-                continue
-            # bool_mask is already binarized upstream; score is pred.score (conf), not mask_threshold.
-            binary = np.asarray(mask, dtype=bool)
-            if binary.shape != (height, width):
-                binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(
-                    bool
-                )
         score = _sahi_object_score(pred)
         _append_yolo_detection(detections, binary, score, height=height, width=width)
     return PredictionSet(

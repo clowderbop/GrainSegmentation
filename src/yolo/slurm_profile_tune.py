@@ -22,7 +22,7 @@ PROFILE_TUNE_CANDIDATE_RESOURCES: dict[str, str] = {
     "output": "logs/yolo_prof_cand-%a-%j.log",
     "mem": "50G",
     "cpus-per-task": "1",
-    "time": "04:00:00",
+    "time": "08:00:00",
 }
 
 PROFILE_TUNE_VENV_PREP_RESOURCES: dict[str, str] = {

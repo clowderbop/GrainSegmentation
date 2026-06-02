@@ -3,7 +3,7 @@
 #SBATCH --output=logs/yolo_prof_cand-%a-%j.log
 #SBATCH --mem=50G
 #SBATCH --cpus-per-task=1
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 
 set -euo pipefail
 # shellcheck source=SLURM/utils/enter_job.sh

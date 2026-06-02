@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from common.prediction_set import (
     build_yolo_prediction_set_from_sahi_predictions,
     merge_yolo_proposals_by_score,
@@ -20,7 +22,7 @@ def legacy_merged_instance_view_from_proposals(
     height: int,
     width: int,
 ) -> np.ndarray:
-    """Slice-merge → prediction-set encode → score merge → rasterize (removed from hot path)."""
+    """Slice-merge → prediction-set encode → score merge → rasterize (parity reference)."""
     merged_predictions = slice_merge_proposals(proposals, candidate=candidate)
     pred_set = build_yolo_prediction_set_from_sahi_predictions(
         merged_predictions,

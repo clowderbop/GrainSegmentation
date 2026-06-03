@@ -60,7 +60,7 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 
 **Submit:** `bash SLURM/unet/submit_watershed_tuning.sh`
 
-Grid search on **train** section (sliding-window predictions vs `train_labels.gpkg`). One job per variant; needs finetuned model.
+Grid search on **train** section (sliding-window predictions vs `train_labels.gpkg`). One job per variant; needs finetuned model. Select the watershed settings by train whole-section **PQ** and record the full instance metric bundle for audit.
 
 | Output | Path |
 |--------|------|
@@ -83,7 +83,7 @@ Two jobs compare connected components vs tuned watershed on **train** using `who
 | CC | `eval/instance_val_cc/` |
 | Watershed | `eval/instance_val_watershed/` |
 
-**Manual step:** Use train-section AJI and overlays to choose CC or watershed for test eval.
+**Manual step:** Use train-section whole-section **PQ** and the required diagnostics to choose CC or tuned watershed for test eval. Overlays are supporting evidence for explaining failure modes, not the primary selection criterion.
 
 ## Whole test eval
 

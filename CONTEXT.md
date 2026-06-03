@@ -70,7 +70,7 @@ One entry in a U-Net instance prediction set: a grain region produced by instanc
 _Avoid:_ watershed instance, CC label (method names)
 
 **U-Net extraction profile**:
-Per-model watershed (or other) settings used after semantic prediction to produce **extracted grains** at test time. Selected from tune JSON or CLI defaults per checkpoint, not from the **test inference recipe**.
+Per-model watershed (or other) settings used after semantic prediction to produce **extracted grains** at test time. Selected on train by **whole-section PQ** and recorded in tune JSON per checkpoint, not from the **test inference recipe**.
 _Avoid:_ global watershed in test recipe, extraction recipe (ambiguous with instance prediction set)
 
 ### Models & input configurations
@@ -106,8 +106,8 @@ A dataset manifest augmented after inference with paths to predictions and groun
 _Avoid:_ eval_manifest.json as a domain term (filename only)
 
 **Staging**:
-Copying every file a dataset manifest references into a local work directory and rewriting the manifest so paths are local. Downstream jobs should not depend on scratch or ephemeral paths once staged (ADR 0002).
-_Avoid:_ partial staging (images only)
+Mirroring data between persistent storage and a node-local work directory around a cluster job: pull what the job needs at start, compute against the local tree, push durable outputs at end. Staged inputs are not read from persistent storage during the job. Outputs that other tasks must see before the job or that should persist despite a job failure or timeout may be written to persistent storage directly instead of write-back (e.g. resume or parallel work).
+_Avoid:_ partial staging (only some inputs listed for the job), pulling more than the job reads, staging the entire persistent tree when a subset suffices
 
 **Run provenance**:
 Inference and post-processing parameters for a model run (e.g. **test inference recipe**, **YOLO inference profile**, **U-Net extraction profile**, **score merge**), stored once per run output directory alongside **prediction set directory** (ADR 0001).
@@ -115,25 +115,45 @@ _Avoid:_ metadata, .extract_meta (legacy filename)
 
 ### Test evaluation policy
 
+**Individual grain instance recovery**:
+The primary scientific evaluation target: recovering each annotated grain as a separate predicted instance on the whole section, balancing object detection and mask quality rather than only grain-area coverage.
+_Avoid:_ treating area coverage alone as sufficient, optimizing profiles that improve overlap while producing many duplicate or split grain instances
+
+**Whole-section PQ**:
+The headline held-out test metric for **individual grain instance recovery**: Panoptic Quality on the whole-section **merged instance view**, combining detection quality and segmentation quality for one-to-one matched grains using the standard IoU > 0.5 match convention.
+_Avoid:_ area-only overlap headlines, patch-level PQ as the primary rank
+
+**PQ diagnostics**:
+Required companion metrics for PQ on the evaluated sample unit: detection quality (**DQ**), segmentation quality (**SQ**), precision/recall/F1 at IoU50 and IoU75, mean F1 over IoU50:95, predicted instance count, ground-truth instance count, predicted/ground-truth instance ratio, and **AJI+**. Thresholded matching diagnostics use the same strict IoU > threshold convention as PQ.
+_Avoid:_ reporting PQ without explaining whether failures come from missed/duplicate grains, poor mask boundaries, or object-count inflation
+
+**Instance metric bundle**:
+The standard metric set computed for every instance evaluation whenever the producer artifacts support it: PQ on the evaluated sample unit, **PQ diagnostics**, and supporting overlap/count metrics. **Whole-section PQ** is reserved for headline/ranking/profile-selection contexts; patch evaluations compute patch-level PQ as diagnostics. AP/mAP metrics are outside this bundle.
+_Avoid:_ maintaining separate metric subsets for train/test, patch/whole-section, or YOLO/U-Net unless a metric is impossible for that artifact
+
+**AJI+**:
+Supporting microscopy-style instance overlap metric using unique instance pairing. Useful as an overlap diagnostic but not the headline for **individual grain instance recovery**.
+_Avoid:_ treating AJI+ as sufficient evidence that individual grains were recovered one-for-one
+
 **Variant test ranking**:
-The primary ordering of **input configuration**s on held-out test: whole-section sliding-window inference, ranked by instance **AJI** with **F1@IoU50** reported alongside. **Supporting test metrics** are not the headline rank.
-_Avoid:_ test mAP, patch mean AJI as headline (training-crop or detector-native, not deployment unit)
+The primary ordering of **input configuration**s on held-out test: whole-section sliding-window inference, ranked by **whole-section PQ** with **PQ diagnostics** reported alongside. **Supporting test metrics** are not the headline rank.
+_Avoid:_ AJI as the headline, test mAP, patch mean metrics as headline (training-crop or detector-native, not deployment unit)
 
 **Model test comparison**:
-Comparing **producer** families (YOLO vs U-Net) on the same input variant and test mosaic: same headline as **variant test ranking** — whole-section instance **AJI** (and **F1@IoU50**) under the shared **test inference recipe**; both use non-overlapping grain lists (U-Net via extraction after semantic prediction, YOLO via **score merge** at predict time).
-_Avoid:_ comparing models on patch mAP alone, YOLO-only **Mask AP** as the cross-model headline
+Comparing **producer** families (YOLO vs U-Net) on the same input variant and test mosaic: same headline as **variant test ranking** — **whole-section PQ** and **PQ diagnostics** under the shared **test inference recipe**; both use non-overlapping grain lists (U-Net via extraction after semantic prediction, YOLO via **score merge** at predict time).
+_Avoid:_ comparing models on AP/mAP, YOLO-only metrics as cross-model evidence
 
 **Supporting test metrics**:
-Diagnostics bundled with default YOLO test jobs but not used for **variant test ranking**: patch-level instance AJI/F1 and patch detector mAP; whole-section **Mask AP** on the canonical YOLO **instance prediction set**.
-_Avoid:_ patch metrics as headline rank, optional val on patch jobs (default bundle always includes val)
+Diagnostics bundled with eval jobs but not used for **variant test ranking**: patch-level **instance metric bundle** for diagnosing whether **sliding window** inference changes performance, and patch AP/mAP from Ultralytics val where available.
+_Avoid:_ whole-section Mask AP, AP/mAP outside Ultralytics patch val, patch metrics as headline rank, using patch metrics to guide locked grid designs or profile selection
 
 **Patch metric aggregate**:
 Summary of patch-level instance metrics across the test split: (1) **unweighted mean** over patches that have at least one grain in ground truth, with empty-GT tiles excluded and counted separately; (2) **grain-weighted mean** over the same grain-bearing patches, weighting each patch by its GT instance count.
 _Avoid:_ mean over all patches (includes empty tiles), simple average (ambiguous which rule)
 
-**Mask AP**:
-Instance mask average precision on the canonical YOLO **instance prediction set** against vector ground truth on whole-section test samples. Measures the full YOLO system including **score merge**, not raw **detector proposals**. Not used for U-Net or patch samples in default pipelines.
-_Avoid:_ mask AP as cross-model headline, mask AP on overlapping proposals
+**Patch AP/mAP**:
+YOLO-only detector diagnostics computed by Ultralytics val on patch data. AP/mAP metrics are optional YOLO patch diagnostic reporting only: they are not part of the **instance metric bundle**, not shown in main result figures, not computed on whole-section **instance prediction set**s, and not used for **variant test ranking** or **model test comparison**.
+_Avoid:_ whole-section Mask AP, AP/mAP as cross-model evidence, AP/mAP beside headline metrics in main figures
 
 **Test inference recipe**:
 The single shared held-out test configuration for every **input configuration** and both **producer** families: whole-section **sliding window** geometry, patch crop size and batching, the frozen **YOLO inference profile**, and supporting YOLO val settings. Enables fair **variant test ranking** and **model test comparison**. U-Net instance extraction stays per **U-Net extraction profile**. Recorded in **run provenance** (ADR 0003).
@@ -146,15 +166,15 @@ The five train-selected YOLO inference knobs beyond shared **sliding window** ge
 _Avoid:_ per-variant profiles (confounds **variant test ranking**), tuning on overlapping **detector proposals** as the primary objective
 
 **Profile selection**:
-Train-side search for the shared **YOLO inference profile** on the whole **train** section, maximizing mean **AJI** (after **score merge**) averaged across input variants. Winner feeds **profile promotion**; audit trail on scratch (ADR 0005).
+Train-side search for the shared **YOLO inference profile** on the whole **train** section, maximizing mean **whole-section PQ** averaged across input variants. Winner feeds **profile promotion**; audit trail on scratch records the **PQ diagnostics** for each candidate (ADR 0005).
 _Avoid:_ tuning on overlapping **detector proposals** as the headline objective
 
 **Profile selection result row**:
-One grid candidate’s audit record: profile knob values, per-variant and mean train **AJI**, and what inputs the score depended on. Rows assemble into the tune-run audit table (ADR 0005).
+One grid candidate’s audit record: profile knob values, per-variant and mean train **whole-section PQ**, **PQ diagnostics**, and what inputs the score depended on. Rows assemble into the tune-run audit table (ADR 0005).
 _Avoid:_ treating a stale row as valid after labels or weights change
 
 **Profile selection scoring**:
-Computing train **AJI** for one grid point from **tiled detector proposals** through slice-merge and **score merge** to a **merged instance view**, without persisting a full **instance prediction set** for that point. Held-out test still uses full predict and canonical prediction artifacts (ADR 0007).
+Computing train **whole-section PQ** and **PQ diagnostics** for one grid point from **tiled detector proposals** through slice-merge and **score merge** to a **merged instance view**, without persisting a full **instance prediction set** for that point. Held-out test still uses full predict and canonical prediction artifacts (ADR 0007).
 _Avoid:_ skipping **score merge**, requiring prediction-set JSON equality on every grid point
 
 **Profile selection ground truth cache**:
@@ -168,7 +188,7 @@ _Avoid:_ partial promotion (only merge or only score/mask without the full profi
 ### Post-eval reporting
 
 **Post-eval reporting**:
-Aggregating finished test eval artifacts into comparison tables and thesis figures after cluster test jobs complete. Not part of inference or per-job metric computation. Headline charts use whole-section **AJI** and **F1@IoU50**; **supporting test metrics** appear in separately labelled panels.
+Aggregating finished test eval artifacts into comparison tables and thesis figures after cluster test jobs complete. Not part of inference or per-job metric computation. Headline charts use **whole-section PQ**; **PQ diagnostics** and **supporting test metrics** appear in separately labelled panels.
 _Avoid:_ eval pipeline, in-job plotting, quality index (legacy composite)
 
 **Eval run discovery**:

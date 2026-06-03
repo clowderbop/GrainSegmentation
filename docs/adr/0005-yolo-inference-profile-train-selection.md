@@ -10,7 +10,7 @@ YOLO whole-section inference uses sliding windows plus per-slice Ultralytics det
 
 We select one shared **YOLO inference profile** on the whole train section. A factorial grid from `configs/yolo_inference_profile_tune.yaml` is scored by mean whole-section train PQ across all registry variants. Pre-merge proposal counts, patch metrics, and other diagnostics are audit information only. The winner is promoted into `configs/test_inference.yaml` and committed before held-out test.
 
-The profile is shared across variants. Per-variant profiles are rejected because they would confound **variant test ranking** with inference settings. Re-run profile selection when train labels or YOLO weights change materially, not after every single-variant training job. **Slice-boundary duplicate** behavior is not expected to be solved by this profile; it remains a known YOLO limitation.
+The profile is shared across variants. Per-variant profiles are rejected because they would confound **variant test ranking** with inference settings. Re-run profile selection when train labels or YOLO weights change materially, not after every single-variant training job.
 
 Profile tuning uses two caches that are internal to tune runs:
 
@@ -33,6 +33,7 @@ Profile selection depends on score-merged YOLO predictions as the deployed syste
 
 - Canonical prediction output: [ADR 0001](0001-instance-prediction-set.md)
 - Evaluation policy: [ADR 0003](0003-test-evaluation-policy.md)
-- YOLO runbook: [`docs/runbooks/yolo.md`](../runbooks/yolo.md#profile-selection)
-- Glossary: [`CONTEXT.md`](../../CONTEXT.md)
-- Profile grid: [`configs/yolo_inference_profile_tune.yaml`](../../configs/yolo_inference_profile_tune.yaml)
+- YOLO runbook: `[docs/runbooks/yolo.md](../runbooks/yolo.md#profile-selection)`
+- Glossary: `[CONTEXT.md](../../CONTEXT.md)`
+- Profile grid: `[configs/yolo_inference_profile_tune.yaml](../../configs/yolo_inference_profile_tune.yaml)`
+

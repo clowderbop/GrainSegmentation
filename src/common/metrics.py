@@ -1,6 +1,8 @@
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 IOU_THRESHOLDS_50_95 = tuple(np.arange(0.50, 1.0, 0.05))
+PQ_MATCH_IOU = 0.5
 
 
 def _index_for_reported_threshold(threshold: float) -> int:
@@ -45,27 +47,38 @@ def build_instance_iou_matrix(
     return mat, true_ids, pred_ids
 
 
-def greedy_one_to_one_tp_count(iou_matrix: np.ndarray, iou_threshold: float) -> int:
+def _strict_iou_exceeds(value: float, iou_threshold: float) -> bool:
+    return value > iou_threshold
+
+
+def greedy_one_to_one_matches(
+    iou_matrix: np.ndarray, iou_threshold: float
+) -> list[tuple[int, int]]:
+    """Greedy one-to-one matches with strict IoU > threshold (ADR 0003)."""
     if iou_matrix.size == 0:
-        return 0
+        return []
     nt, np_ = iou_matrix.shape
     candidates: list[tuple[float, int, int]] = []
     for i in range(nt):
         for j in range(np_):
             v = float(iou_matrix[i, j])
-            if v >= iou_threshold:
+            if _strict_iou_exceeds(v, iou_threshold):
                 candidates.append((v, i, j))
     candidates.sort(key=lambda x: -x[0])
     used_row: set[int] = set()
     used_col: set[int] = set()
-    tp = 0
+    matched: list[tuple[int, int]] = []
     for _, i, j in candidates:
         if i in used_row or j in used_col:
             continue
         used_row.add(i)
         used_col.add(j)
-        tp += 1
-    return tp
+        matched.append((i, j))
+    return matched
+
+
+def greedy_one_to_one_tp_count(iou_matrix: np.ndarray, iou_threshold: float) -> int:
+    return len(greedy_one_to_one_matches(iou_matrix, iou_threshold))
 
 
 def precision_recall_f1_from_iou_matrix(
@@ -220,3 +233,56 @@ def compute_aji(true_instances: np.ndarray, pred_instances: np.ndarray):
         overall_union += pred_areas[pred_id]
 
     return float(overall_intersection / overall_union)
+
+
+def compute_aji_plus(true_instances: np.ndarray, pred_instances: np.ndarray) -> float:
+    """AJI+ with maximal unique GT/pred pairing (HoVer-Net-style)."""
+    true_ids = _instance_ids(true_instances)
+    pred_ids = _instance_ids(pred_instances)
+    if not true_ids and not pred_ids:
+        return 1.0
+    if not true_ids or not pred_ids:
+        return 0.0
+
+    iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
+    nt, np_ = iou_matrix.shape
+    if nt == 0 or np_ == 0:
+        return 0.0
+
+    max_true = int(true_instances.max())
+    max_pred = int(pred_instances.max())
+    intersection_matrix = np.histogram2d(
+        true_instances.flatten(),
+        pred_instances.flatten(),
+        bins=(max_true + 1, max_pred + 1),
+        range=((0, max_true + 1), (0, max_pred + 1)),
+    )[0]
+
+    paired_true, paired_pred = linear_sum_assignment(-iou_matrix)
+    paired_iou = iou_matrix[paired_true, paired_pred]
+    keep = paired_iou > 0.0
+    paired_true = paired_true[keep]
+    paired_pred = paired_pred[keep]
+
+    overall_inter = 0.0
+    overall_union = 0.0
+    for i, j in zip(paired_true, paired_pred, strict=True):
+        tid, pid = true_ids[i], pred_ids[j]
+        inter = float(intersection_matrix[tid, pid])
+        true_area = float((true_instances == tid).sum())
+        pred_area = float((pred_instances == pid).sum())
+        overall_inter += inter
+        overall_union += true_area + pred_area - inter
+
+    paired_true_ids = {true_ids[i] for i in paired_true}
+    paired_pred_ids = {pred_ids[j] for j in paired_pred}
+    for tid in true_ids:
+        if tid not in paired_true_ids:
+            overall_union += float((true_instances == tid).sum())
+    for pid in pred_ids:
+        if pid not in paired_pred_ids:
+            overall_union += float((pred_instances == pid).sum())
+
+    if overall_union <= 0:
+        return 0.0
+    return float(overall_inter / overall_union)

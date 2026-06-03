@@ -124,7 +124,7 @@ The headline held-out test metric for **individual grain instance recovery**: Pa
 _Avoid:_ area-only overlap headlines, patch-level PQ as the primary rank
 
 **PQ diagnostics**:
-Required companion metrics for PQ on the evaluated sample unit: detection quality (**DQ**), segmentation quality (**SQ**), precision/recall/F1 at IoU50 and IoU75, mean F1 over IoU50:95, predicted instance count, ground-truth instance count, predicted/ground-truth instance ratio, and **AJI+**. Thresholded matching diagnostics use the same strict IoU > threshold convention as PQ.
+Required companion metrics for PQ on the evaluated sample unit: detection quality (**DQ**), segmentation quality (**SQ**), precision/recall/F1 at IoU50 and IoU75, mean precision/recall/F1 over IoU50:95 (`mP_iou50_95`, `mR_iou50_95`, `mF1_iou50_95`), predicted instance count, ground-truth instance count, predicted/ground-truth instance ratio, and **AJI+**. Thresholded matching diagnostics use the same strict IoU > threshold convention as PQ.
 _Avoid:_ reporting PQ without explaining whether failures come from missed/duplicate grains, poor mask boundaries, or object-count inflation
 
 **Instance metric bundle**:

@@ -8,7 +8,7 @@ Definitions for evaluation numbers produced by SLURM eval jobs and **post-eval r
 - **DQ (Detection Quality):** PQ component measuring one-to-one instance detection quality.
 - **SQ (Segmentation Quality):** PQ component measuring mean IoU of matched instances.
 - **Precision / Recall / F1 at IoU thresholds:** Object-level matching diagnostics at IoU50 and IoU75 using strict IoU > threshold matching.
-- **Mean F1 over IoU 0.50–0.95:** `mF1_iou50_95` averages F1 at IoU thresholds 0.50, 0.55, …, 0.95 with the same strict-threshold matching rule.
+- **Mean precision / recall / F1 over IoU 0.50–0.95:** `mP_iou50_95`, `mR_iou50_95`, and `mF1_iou50_95` average precision, recall, and F1 at IoU thresholds 0.50, 0.55, …, 0.95 with the same strict-threshold matching rule.
 - **Instance counts:** Predicted instance count, ground-truth instance count, and predicted/ground-truth instance ratio.
 - **AJI+ (Aggregated Jaccard Index Plus):** Supporting microscopy-style overlap diagnostic with unique instance pairing. Not a headline metric.
 

@@ -10,11 +10,11 @@ patch:
 
 yolo:
   # YOLO inference profile (ADR 0005): baseline until profile selection promotes winners.
-  conf: 0.15
+  conf: 0.01
   mask_threshold: 0.4
   postprocess_type: GREEDYNMM
   match_metric: IOU
-  match_threshold: 0.6
+  match_threshold: 0.95
   patch:
     batch: 16
   val:

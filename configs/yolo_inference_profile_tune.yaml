@@ -30,21 +30,40 @@
 # postprocess_type: GREEDYNMM beats NMM at the same IOU / 0.6 / 0.15 / 0.4 (~+0.034)
 
 
-# Refinement round (active grid). Override path on submit: GRID_CONFIG=...
-# Candidate count = product of list lengths below (currently 27).
+# Refinement round
+# grid:
+#   postprocess_type:
+#     - GREEDYNMM
+#   match_metric:
+#     - IOU
+#   match_threshold:
+#     - 0.6
+#     - 0.7
+#     - 0.8
+#   conf:
+#     - 0.05
+#     - 0.10
+#     - 0.15
+#   mask_threshold:
+#     - 0.4
+#
+# Winner: # Prior winner: GREEDYNMM / IOU / m=0.8 / c=0.05 / t=0.4  (mean train AJI ≈ 0.292)
 
+
+# Second refinement round:
 grid:
   postprocess_type:
     - GREEDYNMM
   match_metric:
     - IOU
   match_threshold:
-    - 0.6
-    - 0.7
     - 0.8
+    - 0.85
+    - 0.9
+    - 0.95
   conf:
+    - 0.01
+    - 0.03
     - 0.05
-    - 0.10
-    - 0.15
   mask_threshold:
     - 0.4

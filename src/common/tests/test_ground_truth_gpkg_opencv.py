@@ -1,4 +1,4 @@
-"""OpenCV merged instance view for vector ground truth (ADR 0006).
+"""OpenCV merged instance view for vector ground truth (ADR 0005).
 
 Covers ``evaluate_instances`` / ``ground_truth`` paths. Watershed tune wiring is
 tested in ``unet.tests.test_tune_watershed_gpkg_gt``.
@@ -73,7 +73,7 @@ def test_scene_polygons_patch_origin_matches_golden_subregion() -> None:
 
 
 def test_ground_truth_module_does_not_import_pycocotools_gt_rasterizer() -> None:
-    """Vector GT must not go through gt_annotations_to_instance_map (ADR 0006)."""
+    """Vector GT must not go through gt_annotations_to_instance_map (ADR 0005)."""
     source = importlib.util.find_spec("common.ground_truth")
     assert source is not None and source.origin is not None
     text = Path(source.origin).read_text(encoding="utf-8")

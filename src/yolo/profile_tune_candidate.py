@@ -142,7 +142,7 @@ def load_shared_train_gt_map(
     work_root: Path,
     grainseg_root: Path,
 ) -> np.ndarray:
-    """Load the shared train GT cache once per candidate task (ADR 0007)."""
+    """Load the shared train GT cache once per candidate task (ADR 0005)."""
     labels_gpkg = train_labels_gpkg_path(grainseg_root)
     anchor_image = train_anchor_image_path(grainseg_root)
     img_height, img_width = image_dimensions(anchor_image)

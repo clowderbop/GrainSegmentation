@@ -1,4 +1,4 @@
-"""Direct score-merge paint from SAHI predictions (ADR 0007)."""
+"""Direct score-merge paint from SAHI predictions (ADR 0005)."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def test_score_merged_instance_map_direct_paint_matches_prediction_set_path(
 
 
 def test_score_merged_instance_map_paints_incrementally() -> None:
-    """ADR 0007: score-merge must not batch all decoded masks before painting."""
+    """ADR 0005: score-merge must not batch all decoded masks before painting."""
     height, width = 16, 16
     proposals = overlapping_sahi_proposals(height, width)
 

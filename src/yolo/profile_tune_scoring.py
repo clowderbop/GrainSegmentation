@@ -57,7 +57,7 @@ def merged_instance_view_from_proposals(
     width: int,
     timings: ProfileSelectionScoringTimings | None = None,
 ) -> np.ndarray:
-    """SAHI proposals → slice-merge → direct score-merge paint (ADR 0007)."""
+    """SAHI proposals → slice-merge → direct score-merge paint (ADR 0005)."""
     t0 = time.perf_counter()
     merged_predictions = slice_merge_proposals(proposals, candidate=candidate)
     slice_merge_s = time.perf_counter() - t0

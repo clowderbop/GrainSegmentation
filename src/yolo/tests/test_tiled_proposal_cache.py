@@ -244,7 +244,7 @@ def test_load_or_write_tiled_proposals_recomputes_on_fingerprint_mismatch(
 
 
 def test_collect_tiled_detector_proposals_never_allocates_whole_section_plane() -> None:
-    """ADR 0007: encode must not materialize (H,W) masks per proposal."""
+    """ADR 0005: encode must not materialize (H,W) masks per proposal."""
     section_h, section_w = 10_000, 52_000
     slice_h, slice_w = 64, 64
     tile_mask = np.zeros((slice_h, slice_w), dtype=bool)
@@ -337,7 +337,7 @@ def test_tiled_proposal_records_from_tile_predictions_crop_local() -> None:
 
 
 def test_sahi_predictions_from_tiled_records_use_crop_local_masks() -> None:
-    """ADR 0007: scoring adapter must not materialize full-section bool_mask planes."""
+    """ADR 0005: scoring adapter must not materialize full-section bool_mask planes."""
     section_h, section_w = 10_000, 52_000
     crop = np.zeros((12, 12), dtype=bool)
     crop[2:10, 2:10] = True

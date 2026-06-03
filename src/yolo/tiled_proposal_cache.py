@@ -227,7 +227,7 @@ def collect_tiled_detector_proposals(
     overlap_width_ratio: float,
     mask_threshold: float,
 ) -> list[TiledProposalRecord]:
-    """Profile-tune detector path: slice loop + tile-local v2 encode (ADR 0007)."""
+    """Profile-tune detector path: slice loop + tile-local v2 encode (ADR 0005)."""
     from yolo.sliced_detection import iter_whole_slice_predictions
 
     records: list[TiledProposalRecord] = []
@@ -309,7 +309,7 @@ def _full_binary_mask_from_tiled_proposal_record(
 ) -> np.ndarray:
     """Reconstruct one full-section mask from crop-local RLE + offsets.
 
-    Not for profile selection scoring load (ADR 0007): materializing many planes
+    Not for profile selection scoring load (ADR 0005): materializing many planes
     OOMs candidate jobs. Use ``sahi_predictions_from_tiled_proposal_records`` instead.
     """
     crop = crop_segmentation_to_binary_mask(record["segmentation"])
@@ -369,7 +369,7 @@ def sahi_predictions_from_tiled_proposal_records(
     height: int,
     width: int,
 ) -> list[Any]:
-    """Adapt v2 records to SAHI-shaped predictions with crop-local masks (ADR 0007)."""
+    """Adapt v2 records to SAHI-shaped predictions with crop-local masks (ADR 0005)."""
     from sahi.annotation import Mask as SahiMask
 
     section_shape = (int(height), int(width))

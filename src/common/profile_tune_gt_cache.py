@@ -1,4 +1,4 @@
-"""Profile selection ground truth cache — train merged instance view (ADR 0006)."""
+"""Profile selection ground truth cache — train merged instance view (ADR 0005)."""
 
 from __future__ import annotations
 

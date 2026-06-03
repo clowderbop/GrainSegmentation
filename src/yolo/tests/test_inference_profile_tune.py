@@ -945,7 +945,7 @@ def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None
 def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
     tmp_path: Path,
 ) -> None:
-    """ADR 0006 + 0007: load both caches from disk and score in sub-minute walltime."""
+    """ADR 0005: load both caches from disk and score in sub-minute walltime."""
     import os
     import shutil
     import subprocess

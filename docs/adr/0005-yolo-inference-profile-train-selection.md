@@ -1,29 +1,38 @@
-# YOLO inference profile train selection
+# YOLO inference profile selection architecture
 
-Status: accepted; metric objective superseded by [ADR 0008](0008-pq-headline-instance-evaluation.md)
+Status: accepted
 
-YOLO whole-section inference uses SAHI sliding windows plus per-slice Ultralytics detection. Hyperparameters for slice-merge postprocess (`postprocess_type`, `match_metric`, `match_threshold`), minimum **score** (`conf`), and `mask_threshold` were previously hard-coded (GREEDYNMM, IOS, 0.5, 0.25, SAHI default 0.5) and not train-selected. ADR 0003 fixed window geometry and rejected **per-variant** inference tuning on test so **variant test ranking** is not confounded by modality-specific settings. We still need a defensible way to choose YOLO inference settings before held-out test.
+## Context / Problem
 
-We use **YOLO inference profile** selection on the **train** section: evaluate a **factorial grid** of profile points defined in YAML (`configs/yolo_inference_profile_tune.yaml` by default; override with `GRID_CONFIG` on submit) and pick the point that maximizes mean whole-section train **PQ** (ADR 0008), averaged across all registry variants. Each axis lists discrete values; candidates are the Cartesian product of the five profile knobs. The search space may be a wide first pass or a narrow refinement grid after inspecting prior candidate diagnostics. Pre-merge proposal counts and patch metrics are diagnostics only, not the selection objective.
+YOLO whole-section inference uses sliding windows plus per-slice Ultralytics detection. The shared test recipe fixes window geometry, but YOLO still needs five train-selected knobs before held-out test: `postprocess_type`, `match_metric`, `match_threshold`, `conf`, and `mask_threshold`.
 
-The winning profile is **one shared set of values for all variants**, promoted into `configs/test_inference.yaml` and **committed to git**; scratch tune runs retain audit tables under `runs/yolo_inference_profile_tune/<run_id>/grid/`. Re-run profile selection when train labels or YOLO weights change materially, or when the committed grid changes enough to warrant new detector caches, not after every single-variant training job. Patch test jobs use `conf` and `mask_threshold` from the same recipe; SAHI merge keys apply to whole-section predict only.
+## Decision
 
-**Slice-boundary duplicate** (non-overlapping halves of one grain across tiles) is not expected to be fixed by this tuning; it remains an accepted limitation of the YOLO system.
+We select one shared **YOLO inference profile** on the whole train section. A factorial grid from `configs/yolo_inference_profile_tune.yaml` is scored by mean whole-section train PQ across all registry variants. Pre-merge proposal counts, patch metrics, and other diagnostics are audit information only. The winner is promoted into `configs/test_inference.yaml` and committed before held-out test.
 
-**Considered options:** Per-variant profiles on train (rejected; confounds **variant test ranking** on test); two-stage coordinate search over merge then `conf`/`mask_threshold` (superseded for v1; can miss knob interactions); primary objective on overlapping **detector proposals** (rejected; not the deployed system after ADR 0004); Bayesian search (deferred); scratch-only winning values without git commit (rejected; weak reproducibility). ADR 0008 records the rejection of AJI as the profile-selection objective.
+The profile is shared across variants. Per-variant profiles are rejected because they would confound **variant test ranking** with inference settings. Re-run profile selection when train labels or YOLO weights change materially, not after every single-variant training job. **Slice-boundary duplicate** behavior is not expected to be solved by this profile; it remains a known YOLO limitation.
 
-**Consequences:** Depends on ADR 0004 implementation before tune jobs. Extend `configs/test_inference.yaml` and `test_inference` loader with YOLO profile fields; wire `yolo.predict` and SLURM whole/patch test scripts; add `SLURM/yolo` train whole tune step and a versioned grid YAML. [ADR 0003](0003-test-evaluation-policy.md) documents how the promoted profile fits the test inference recipe. U-Net **extraction profile** stays per-model (watershed JSON), unchanged.
+Profile tuning uses two caches that are internal to tune runs:
 
-**Mask threshold** is a detector binarization cutoff: whole-section predict passes it into SAHI `AutoDetectionModel`; patch predict passes it into Ultralytics `predict`. Grid search over `mask_threshold` affects whole-section metrics via the detector, not via a second threshold when encoding the **instance prediction set** from an already-binarized `bool_mask` plane.
+- **Tiled detector proposals:** detector outputs cached per `(variant, conf, mask_threshold)` as compact records with score, whole-image bbox, crop-local COCO RLE, crop offset, and image shape. The cache is not the canonical prediction artifact and is not used by held-out `yolo.predict`.
+- **Profile selection ground truth cache:** one train **merged instance view** under `_work/gt_cache/train/`, rasterized from `train_labels.gpkg` with the canonical OpenCV polygon painter. It is shared across variants because label geometry is shared.
 
-**Profile promotion** copies the grid winner (`grid/winner.json`, all five profile knobs) into `configs/test_inference.yaml` for git commit and held-out test. Promotion rewrites the five YOLO profile scalars in the recipe file text so comments and unrelated keys are preserved (structured YAML round-trip deferred).
+Candidate scoring loads tiled proposals and the GT cache, applies SAHI slice-merge, paints **score merge** into a merged instance view, and computes train PQ plus the full diagnostic bundle. It does not write an **instance prediction set** for every grid point. Held-out test still runs full prediction and persists canonical prediction sets.
 
-**Tiled proposal cache (profile tune only):** Grid points that share detector inputs (variant `best.pt`, train whole **sample id**, **test inference recipe** window geometry, `conf`, **mask threshold**) reuse persisted **tiled detector proposals** under `runs/yolo_inference_profile_tune/<run_id>/_work/` (on-disk layout and scoring path: [ADR 0007](0007-profile-selection-proposal-cache-and-scoring.md)). Train manifests are staged once per variant. On cache hit each scoring task re-runs only SAHI slice-merge and **score merge** to a **merged instance view** for **profile selection scoring**. Held-out `yolo.predict` is unchanged (no cache CLI). Slice inference is shared with `predict.py` via extracted internals, not duplicated in tune.
+Each candidate writes a **profile selection result row** with knob values, per-variant PQ, mean PQ, diagnostics, and input fingerprints. Finalization merges rows into `grid/results.csv` and writes `grid/winner.json`. Valid detector caches may be reused within a compatible run directory; stale rows or incompatible cache schema versions must not resume.
 
-**Profile selection ground truth cache:** After detector jobs finish, one CPU job builds the fingerprinted **profile selection ground truth cache** (see [ADR 0006](0006-gpkg-ground-truth-rasterization.md) for canonical layout `_work/gt_cache/train/` and OpenCV rasterization). All candidate scoring tasks read this cache; GT does not depend on **tiled detector proposals**.
+## Rejected Alternatives
 
-**Profile selection scoring:** Grid scoring computes train **PQ** and the full **instance metric bundle** from **tiled detector proposals** through slice-merge and **score merge** to a **merged instance view**, compared against the GT cache. It does not require writing an **instance prediction set** for every grid point. Held-out test still uses full predict and persisted **instance prediction set** artifacts.
+Per-variant profiles; coordinate search instead of a factorial grid; optimizing overlapping detector proposals; AJI as the selection objective; Bayesian search for v1; scratch-only winners without git promotion; full-section proposal masks in caches; per-variant GT caches; using semantic preprocessing TIFFs as GT. These were rejected for fairness, reproducibility, memory, wrong target semantics, or avoidable complexity.
 
-**Tune job audit and resume:** Each grid candidate task writes one **profile selection result row** (`grid/rows/{candidate_id}.json`) with per-variant **PQ**, mean **PQ**, the diagnostic bundle, knob values, and input fingerprints. A finalize job (`afterok` on the candidate array) merges rows into `grid/results.csv` and writes `grid/winner.json` (or recomputes the winner from the CSV). A candidate task skips when its row exists and fingerprints still match (grid spec, GT cache, weights, proposal caches). `NO_RESUME` clears row sidecars and resubmits scoring; valid **tiled detector proposals** remain reused.
+## Consequences
 
-**Cluster orchestration:** `submit_inference_profile_tune.sh` assigns `OUTPUT_DIR` (`runs/yolo_inference_profile_tune/<run_id>/`) before submission, then: (1) one GPU job per `(variant, conf, mask_threshold)` via `yolo.profile_tune_detector` (tiled-proposal cache only); (2) after all detectors succeed, one CPU GT-cache job; (3) a SLURM array of one CPU job per grid candidate, each scoring all registry variants; (4) one CPU finalize job after the array. Failed detector or GT-cache jobs block downstream work until resubmitted.
+Profile selection depends on score-merged YOLO predictions as the deployed system and on PQ as the selection objective. The runbook owns SLURM orchestration, resource defaults, and recovery steps.
+
+## Links
+
+- Canonical prediction output: [ADR 0001](0001-instance-prediction-set.md)
+- Evaluation policy: [ADR 0003](0003-test-evaluation-policy.md)
+- YOLO runbook: [`docs/runbooks/yolo.md`](../runbooks/yolo.md#profile-selection)
+- Glossary: [`CONTEXT.md`](../../CONTEXT.md)
+- Profile grid: [`configs/yolo_inference_profile_tune.yaml`](../../configs/yolo_inference_profile_tune.yaml)

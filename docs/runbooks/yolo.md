@@ -60,7 +60,7 @@ bash SLURM/yolo/submit_tune_or_train_variants.sh --all
 
 Runs on the **train** whole section after **all registry** variant weights exist and **score merge** at predict is in use. Submit sets `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/`. Re-run when train labels or weights change materially—not after every single-variant job.
 
-ADRs: [0005](../adr/0005-yolo-inference-profile-train-selection.md), [0006](../adr/0006-gpkg-ground-truth-rasterization.md), [0007](../adr/0007-profile-selection-proposal-cache-and-scoring.md). Glossary: **Profile selection** in [`CONTEXT.md`](../../CONTEXT.md).
+ADR: [0005](../adr/0005-yolo-inference-profile-train-selection.md). Glossary: **Profile selection** in [`CONTEXT.md`](../../CONTEXT.md).
 
 ### 1. Detector array
 
@@ -182,7 +182,7 @@ sbatch --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
 
 - **`prediction_sets/{sample_id}.json`:** canonical **instance prediction set** (non-overlapping grains after **score merge**, each with **score**).
 - **`run_provenance.json`:** `score_merge_at_predict: true`, resolved **YOLO inference profile** (`conf`, `mask_threshold`; whole adds SAHI merge and slice geometry).
-- Whole eval also writes `mask_ap_metrics.json`.
+- Optional AP/mAP diagnostics come from Ultralytics patch val, not whole-section eval.
 - Eval uses `stage_manifest write-eval` → `eval_manifest.json`; no second merge at eval.
 
 Pre-change eval trees on scratch are invalid—delete `eval/yolo_{variant}/` and `eval/yolo_patches/{variant}/*/` and re-run test eval before refreshing reporting.

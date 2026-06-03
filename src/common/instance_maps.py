@@ -284,7 +284,7 @@ def score_merged_instance_map_from_sahi_predictions(
     """Paint overlapping SAHI proposals by ascending score (no prediction-set RLE round-trip).
 
     Decodes and paints one mask at a time so slice-merged full-section masks are not
-    all materialized in a list before painting (ADR 0007; avoids candidate OOM).
+    all materialized in a list before painting (ADR 0005; avoids candidate OOM).
     """
     if not predictions:
         return np.zeros((height, width), dtype=np.int32)

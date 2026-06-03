@@ -1,4 +1,4 @@
-"""Golden tests for OpenCV GPKG → merged instance view (ADR 0006)."""
+"""Golden tests for OpenCV GPKG → merged instance view (ADR 0005)."""
 
 from __future__ import annotations
 

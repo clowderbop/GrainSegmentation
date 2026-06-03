@@ -1,5 +1,5 @@
 #!/bin/bash
-# Profile selection ground truth cache (ADR 0006): OpenCV rasterize train_labels.gpkg
+# Profile selection ground truth cache (ADR 0005): OpenCV rasterize train_labels.gpkg
 # → OUTPUT_DIR/_work/gt_cache/train/; sync src/common only (GPKG copy + timings in CLI).
 #SBATCH --job-name=yolo_prof_gt
 #SBATCH --output=logs/yolo_prof_gt-%j.log

@@ -115,7 +115,7 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
     tmp_path: Path,
     proposals_fn,
 ) -> None:
-    """ADR 0007 parity on on-disk v2 caches: direct paint AJI == legacy round-trip."""
+    """ADR 0005 parity on on-disk v2 caches: direct paint AJI == legacy round-trip."""
     from common.metrics import compute_aji
     from common.test_inference import load_test_inference_recipe
     from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
@@ -199,7 +199,7 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
 def test_v2_overlapping_tiled_proposal_cache_scoring_aji_matches_legacy(
     tmp_path: Path,
 ) -> None:
-    """ADR 0007: overlapping v2 records exercise slice-merge mask union (crop-local adapter)."""
+    """ADR 0005: overlapping v2 records exercise slice-merge mask union (crop-local adapter)."""
     from common.metrics import compute_aji
     from common.test_inference import load_test_inference_recipe
     from yolo.profile_tune_candidate import score_variant_train_aji_from_cache

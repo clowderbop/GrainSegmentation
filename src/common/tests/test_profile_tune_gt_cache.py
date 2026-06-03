@@ -1,4 +1,4 @@
-"""Tests for profile selection ground truth cache (ADR 0006)."""
+"""Tests for profile selection ground truth cache (ADR 0005)."""
 
 from __future__ import annotations
 

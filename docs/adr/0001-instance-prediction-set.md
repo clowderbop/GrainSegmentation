@@ -1,15 +1,32 @@
-# Instance prediction set as canonical instance output
+# Canonical instance prediction output
 
-Status: accepted; whole-section Mask AP references superseded by [ADR 0008](0008-pq-headline-instance-evaluation.md)
+Status: accepted
 
-Whole-image YOLO inference materialized dense `(N, H, W)` mask stacks, which required hundreds of gigabytes of RAM on 10k×10k test mosaics. U-Net and YOLO also diverged on disk (instance label-map TIFF vs mask NPZ) while sharing only some evaluation steps.
+## Context / Problem
 
-We store one **instance prediction set** per sample: JSON (`schema_version: 1`) under `prediction_sets/{sample_id}.json`, with COCO RLE per entry and manifest field `instance_prediction_set`. **U-Net** writes **extracted grains** (non-overlapping, no score field) after instance extraction from **semantic prediction**. **YOLO** writes the canonical **instance prediction set** (non-overlapping grains after **score merge** at predict, each with **score**); see [ADR 0004](0004-yolo-score-merge-at-predict.md). Instance metrics rasterize the stored set via **merged instance view** (no second **score merge** at eval for YOLO). U-Net keeps a separate **semantic prediction** raster for pixel metrics. Run parameters live in a **run provenance** sidecar beside `prediction_sets/`, not in every file. ADR 0008 removes whole-section Mask AP from the standard evaluation policy.
+Whole-image YOLO inference once materialized dense `(N, H, W)` mask stacks, which was not viable for 10k×10k mosaics. U-Net and YOLO also wrote different instance artifacts, making cross-model evaluation harder to reason about.
 
-Legacy instance label-map TIFFs and dense mask NPZs are not written or read (clean break). Domain terms are defined in `CONTEXT.md`.
+## Decision
 
-**Considered options:** Keep dense NPZ; store merged grains only; dual artifacts with legacy readers; RLE-only eval without ever rasterizing (rejected for metric parity and simplicity).
+The canonical output is one **instance prediction set** per sample: JSON (`schema_version: 1`) at `prediction_sets/{sample_id}.json`, with COCO RLE mask geometry and manifest field `instance_prediction_set`.
 
-**Consequences:** `common.evaluate_instances`, `yolo.predict`, `unet.extract_instances`, manifest schema, and SLURM eval scripts must move together. Patch and whole use the same prediction set shape; `unit` stays on manifests.
+- **YOLO** writes non-overlapping grains after **score merge** at predict time. Each grain keeps the winning proposal **score**.
+- **U-Net** writes non-overlapping **extracted grains** after instance extraction from a **semantic prediction**. U-Net instance entries do not carry scores.
+- Evaluation, overlays, and reporting all read the same prediction set. YOLO is not merged a second time at evaluation.
+- Run parameters live once in a **run provenance** sidecar beside `prediction_sets/`, not duplicated in every prediction file.
 
-**Superseded (YOLO persistence and eval merge):** Persisting overlapping **detector proposals** on disk and applying **score merge** only at eval — see [ADR 0004](0004-yolo-score-merge-at-predict.md).
+Legacy instance label-map TIFFs, dense mask NPZs, and persisted overlapping YOLO proposal sets are not read or written as canonical outputs.
+
+## Rejected Alternatives
+
+Keep dense NPZs; persist YOLO proposals and merge only at eval; dual-write proposals plus merged grains; use RLE-only metrics without rasterizing. These were rejected for memory, artifact ambiguity, or metric parity reasons.
+
+## Consequences
+
+`common.evaluate_instances`, `yolo.predict`, `unet.extract_instances`, manifest schema, and SLURM eval scripts must agree on this shape. Patch and whole-section samples use the same prediction-set schema; sample unit stays on manifests. Whole-section Mask AP is outside the standard policy.
+
+## Links
+
+- Evaluation policy: [ADR 0003](0003-test-evaluation-policy.md)
+- Glossary: [`CONTEXT.md`](../../CONTEXT.md)
+- Manifest contract: [`docs/manifests.md`](../manifests.md)

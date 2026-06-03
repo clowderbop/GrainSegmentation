@@ -1,4 +1,4 @@
-"""Watershed hyperparameter tuning loads GPKG GT via the OpenCV painter (ADR 0006)."""
+"""Watershed hyperparameter tuning loads GPKG GT via the OpenCV painter (ADR 0005)."""
 
 from __future__ import annotations
 

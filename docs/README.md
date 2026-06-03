@@ -3,7 +3,7 @@
 | Layer | Location | Purpose |
 |-------|----------|---------|
 | Glossary | [`CONTEXT.md`](../CONTEXT.md) | Domain terms, test policy, profile selection vocabulary |
-| Decisions | [`docs/adr/`](adr/) | Why the system is shaped this way |
+| Decisions | [`docs/adr/README.md`](adr/README.md) | Current ADR index |
 | Runbooks | [`docs/runbooks/`](runbooks/) | How to run cluster workflows (canonical ops docs) |
 | Contracts | [`docs/manifests.md`](manifests.md) | Dataset manifest schema and paths |
 | Reference | [`docs/reference/`](reference/) | Scratch layout, staging on compute nodes |

@@ -6,7 +6,7 @@ from pathlib import Path
 
 from common.variants import repo_root
 
-# ADR 0007: detector jobs run as a throttled SLURM array (default max 6 concurrent).
+# ADR 0005: detector jobs run as a throttled SLURM array (default max 6 concurrent).
 PROFILE_TUNE_DETECTOR_MAX_PARALLEL_DEFAULT = "6"
 PROFILE_TUNE_DETECTOR_RESOURCES: dict[str, str] = {
     "job-name": "yolo_prof_det",
@@ -16,7 +16,7 @@ PROFILE_TUNE_DETECTOR_RESOURCES: dict[str, str] = {
     "time": "00:10:00",
 }
 
-# ADR 0007: candidate scoring is single-threaded; 50G interim after crop-local adapter fix.
+# ADR 0005: candidate scoring is single-threaded; 50G interim after crop-local adapter fix.
 PROFILE_TUNE_CANDIDATE_RESOURCES: dict[str, str] = {
     "job-name": "yolo_prof_cand",
     "output": "logs/yolo_prof_cand-%a-%j.log",
@@ -33,7 +33,7 @@ PROFILE_TUNE_VENV_PREP_RESOURCES: dict[str, str] = {
     "time": "00:30:00",
 }
 
-# ADR 0006: OpenCV GT rasterization; common-only sync (8 CPUs for rasterize — not candidate).
+# ADR 0005: OpenCV GT rasterization; common-only sync (8 CPUs for rasterize — not candidate).
 PROFILE_TUNE_GT_CACHE_RESOURCES: dict[str, str] = {
     "job-name": "yolo_prof_gt",
     "output": "logs/yolo_prof_gt-%j.log",

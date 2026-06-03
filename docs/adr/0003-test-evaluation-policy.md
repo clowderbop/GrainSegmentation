@@ -1,15 +1,35 @@
-# Test evaluation policy
+# Test evaluation and ranking policy
 
-Status: accepted; metric headline and profile-selection objective superseded by [ADR 0008](0008-pq-headline-instance-evaluation.md)
+Status: accepted
 
-Held-out test reporting uses one headline and a fixed inference geometry so input variants and model families are comparable. **Variant test ranking** and **model test comparison** both use whole-section sliding-window inference, scored by **whole-section PQ** with required diagnostics (see `CONTEXT.md` and ADR 0008). YOLO reaches instances via SAHI, **score merge** at predict time, and a non-overlapping **instance prediction set**; U-Net via semantic prediction, sliding-window stitch, and per-checkpoint **U-Net extraction profile** (watershed tune JSON; not shared across models).
+## Context / Problem
 
-**Supporting test metrics** are not headlines. Patch-level instance metric bundles use the **patch metric aggregate**: unweighted mean over grain-bearing patches only (empty-GT tiles excluded and counted) plus grain-weighted mean. Patch metrics diagnose whether **sliding window** inference changes performance; they do not guide locked grid designs or profile selection. AP/mAP metrics are optional YOLO patch diagnostics computed only by Ultralytics val, not whole-section Mask AP.
+Held-out reporting needs one headline objective and one fixed inference setup so input configurations and model families are comparable. The scientific target is **individual grain instance recovery** on whole sandstone sections: each annotated grain should be recovered as a separate predicted instance, with object detection and mask quality both reflected.
 
-**Test inference recipe** lives in `configs/test_inference.yaml` at the repo root. It governs window size, stride/overlap, patch crop size, batching, the frozen **YOLO inference profile**, and patch-val settings for all variants and both producers. SLURM and Python eval entrypoints read it instead of duplicating constants. Per-variant **ranking** inference settings on test (different `conf`, SAHI merge, or window geometry per input variant) are out of scope.
+## Decision
 
-**YOLO inference profile (before held-out test):** Five SAHI merge and detector knobs (`postprocess_type`, `match_metric`, `match_threshold`, `conf`, `mask_threshold`) are train-selected on the whole **train** section, then **profile promoted** into the recipe and committed to git; see [ADR 0005](0005-yolo-inference-profile-train-selection.md) and [ADR 0008](0008-pq-headline-instance-evaluation.md). Selection evaluates the factorial grid in `configs/yolo_inference_profile_tune.yaml` (or another path via `GRID_CONFIG`), maximizing mean whole-section train **PQ** via **profile selection scoring**, averaged across registry variants. Held-out `yolo.predict` and test SLURM jobs read the promoted recipe only (no tune cache). Re-run selection when train labels or YOLO weights change materially, not after every single-variant training job.
+**Variant test ranking** and **model test comparison** use whole-section sliding-window inference, scored by **whole-section PQ** on the **merged instance view**. Reports also include DQ, SQ, precision/recall/F1 at IoU50 and IoU75, mean F1 over IoU50:95, predicted and ground-truth instance counts, predicted/ground-truth ratio, and AJI+. AJI+ remains a supporting microscopy overlap diagnostic, not the headline.
 
-**Considered options:** Patch mean metrics or Ultralytics mAP as headline (rejected; training-crop or detector-native, not deployment unit); per-variant inference profiles on test (rejected; confounds modality with inference settings); single watershed profile in the shared recipe (rejected; U-Net checkpoints retain per-model tune JSON). ADR 0008 records the later rejection of AJI as headline.
+The same **instance metric bundle** is computed for every instance evaluation whenever artifacts support it. Patch evaluations compute patch-level PQ and diagnostics as supporting evidence only. Patch metric aggregates exclude empty-GT patches from means, count them separately, and report both unweighted and grain-weighted means over grain-bearing patches.
 
-**Consequences:** Add patch aggregates to `instance_metrics.json` reporting; wire YOLO and U-Net whole/patch test scripts to the shared YAML. Train-section **profile selection** is a separate SLURM step before held-out test (ADR 0005); recipe YOLO profile fields are frozen after promotion until the next selection run. ADR 0008 adds PQ-centered metrics and removes whole-section Mask AP from the standard evaluation policy.
+AP/mAP metrics are outside the instance metric bundle. They are optional YOLO patch diagnostics from Ultralytics val only, not whole-section Mask AP and not cross-model ranking evidence.
+
+The shared **test inference recipe** lives at `configs/test_inference.yaml`. It governs window geometry, patch crop size, batching, the frozen **YOLO inference profile**, and patch-val settings. Per-variant test inference settings are out of scope. U-Net keeps per-checkpoint **U-Net extraction profile** settings selected on train; those are not stored as shared recipe knobs.
+
+Before held-out test, YOLO profile selection chooses the shared profile on the whole train section by mean whole-section train PQ across registry variants, then promotes the winner into the recipe; see [ADR 0005](0005-yolo-inference-profile-train-selection.md). U-Net watershed tuning and CC-vs-watershed selection also use train whole-section PQ.
+
+## Rejected Alternatives
+
+Patch metrics or Ultralytics mAP as headline; AJI or AJI+ as headline; F1@IoU50 as headline; per-variant test profiles; a single shared U-Net watershed profile. These were rejected because they either miss the deployment unit, are YOLO-centric, over-reward area overlap, or confound input configuration with inference settings.
+
+## Consequences
+
+Evaluation code, reporting, YOLO profile tune scoring, U-Net watershed tuning, and CC-vs-watershed comparison must expose PQ-centered diagnostics. Existing AJI-selected profile or watershed runs are audit evidence only and should not be promoted as final test settings under this policy.
+
+## Links
+
+- YOLO profile selection: [ADR 0005](0005-yolo-inference-profile-train-selection.md)
+- Metric definitions: [`docs/metrics.md`](../metrics.md)
+- Glossary: [`CONTEXT.md`](../../CONTEXT.md)
+- YOLO runbook: [`docs/runbooks/yolo.md`](../runbooks/yolo.md)
+- U-Net runbook: [`docs/runbooks/unet.md`](../runbooks/unet.md)

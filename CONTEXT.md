@@ -174,11 +174,11 @@ One grid candidate’s audit record: profile knob values, per-variant and mean t
 _Avoid:_ treating a stale row as valid after labels or weights change
 
 **Profile selection scoring**:
-Computing train **whole-section PQ** and **PQ diagnostics** for one grid point from **tiled detector proposals** through slice-merge and **score merge** to a **merged instance view**, without persisting a full **instance prediction set** for that point. Held-out test still uses full predict and canonical prediction artifacts (ADR 0007).
+Computing train **whole-section PQ** and **PQ diagnostics** for one grid point from **tiled detector proposals** through slice-merge and **score merge** to a **merged instance view**, without persisting a full **instance prediction set** for that point. Held-out test still uses full predict and canonical prediction artifacts (ADR 0005).
 _Avoid:_ skipping **score merge**, requiring prediction-set JSON equality on every grid point
 
 **Profile selection ground truth cache**:
-The canonical train ground-truth **merged instance view** for a tune run, built once from vector labels and reused by all **profile selection scoring** tasks across input variants (label geometry is shared; channels are not). ADR 0006.
+The canonical train ground-truth **merged instance view** for a tune run, built once from vector labels and reused by all **profile selection scoring** tasks across input variants (label geometry is shared; channels are not). ADR 0005.
 _Avoid:_ per-variant GT caches when label geometry is shared, using semantic TIFFs as GT for profile selection
 
 **Profile promotion**:

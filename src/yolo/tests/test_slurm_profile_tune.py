@@ -1,4 +1,4 @@
-"""SLURM wrapper contracts for YOLO profile selection (ADR 0006/0007)."""
+"""SLURM wrapper contracts for YOLO profile selection (ADR 0005)."""
 
 from __future__ import annotations
 
@@ -89,7 +89,7 @@ def test_submit_profile_tune_submits_throttled_detector_array() -> None:
 
 
 def test_profile_tune_gt_cache_slurm_matches_adr_0006_contract() -> None:
-    """ADR 0006: common-only job, train GPKG, shared gt_cache/train/ layout."""
+    """ADR 0005: common-only job, train GPKG, shared gt_cache/train/ layout."""
     script = run_profile_tune_gt_cache_script_path()
     text = script.read_text(encoding="utf-8")
     for key in ("mem", "cpus-per-task", "time"):

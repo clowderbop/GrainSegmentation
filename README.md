@@ -44,7 +44,7 @@ Metrics and thesis ranking policy: [`docs/metrics.md`](docs/metrics.md) and [`CO
 | **Doc map** | [`docs/README.md`](docs/README.md) |
 | **Cluster runbooks** | [`docs/runbooks/`](docs/runbooks/) (preprocessing, YOLO, U-Net, analysis) |
 | **Glossary & policy** | [`CONTEXT.md`](CONTEXT.md) |
-| **ADRs** | [`docs/adr/`](docs/adr/) |
+| **ADRs** | [`docs/adr/README.md`](docs/adr/README.md) |
 | **Dataset background** | [`docs/dataset.md`](docs/dataset.md) |
 | **Staging on nodes** | [`docs/reference/staging.md`](docs/reference/staging.md) |
 

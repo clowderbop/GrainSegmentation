@@ -9,7 +9,12 @@ import pandas as pd
 
 import pytest
 
-from analysis.build_report import build_reporting_bundle
+from analysis.build_report import (
+    FIGURE_NOT_GENERATED_SKIP_REASON,
+    FIGURES_DISABLED_SKIP_REASON,
+    MODEL_COMPARISON_SKIP_REASON,
+    build_reporting_bundle,
+)
 from analysis.derived_tables import WHOLE_SECTION_PQ_COL
 from analysis.tests.test_discover import MINIMAL_INSTANCE_METRICS, _write_json
 from analysis.tests.test_load_metrics import PQ_SAMPLE_ROW
@@ -89,6 +94,159 @@ def test_build_reporting_bundle_writes_thesis_core_tables(tmp_path: Path) -> Non
     assert matrix.index.name == "Model"
 
 
+def _producer_comparison_eval_tree(root: Path) -> None:
+    pq_by_variant = {
+        "PPL": {"yolo": 0.30, "unet": 0.40},
+        "PPL+AllPPX": {"yolo": 0.50, "unet": 0.45},
+    }
+    for variant, scores in pq_by_variant.items():
+        for model_type, pq in scores.items():
+            if model_type == "yolo":
+                eval_path = root / f"eval/yolo_{variant}/instance_metrics.json"
+            else:
+                eval_path = (
+                    root
+                    / f"eval/unet_test/run_unet_finetuned_{variant}/instance_metrics.json"
+                )
+            _write_json(
+                eval_path,
+                {
+                    **MINIMAL_INSTANCE_METRICS,
+                    "schema_version": 2,
+                    "model_type": model_type,
+                    "variant": variant,
+                    "samples": [{**PQ_SAMPLE_ROW, "pq": pq}],
+                },
+            )
+
+
+def test_build_reporting_bundle_writes_producer_comparison_tables(tmp_path: Path) -> None:
+    root = tmp_path / "GrainSeg"
+    _producer_comparison_eval_tree(root)
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    derived = summary["written"]["derived_tables"]
+    assert "per_variant_winner.csv" in derived
+    assert "ppl_baseline_gain.csv" in derived
+    assert "model_family_comparison_matrix.csv" in derived
+
+    winner = pd.read_csv(out / "derived" / "per_variant_winner.csv")
+    assert "Winner" in winner.columns
+    assert winner.loc[winner["Input configuration"] == "FullStack", "Winner"].iloc[0] == "YOLO"
+
+    comparison = pd.read_csv(
+        out / "derived" / "model_family_comparison_matrix.csv", index_col=0
+    )
+    assert comparison.loc["Whole-section PQ", "PPL"] == pytest.approx(-0.10)
+
+
+def test_build_reporting_bundle_skips_family_comparison_without_both_producers(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "GrainSeg"
+    _write_json(
+        root / "eval/yolo_PPL/instance_metrics.json",
+        {
+            **MINIMAL_INSTANCE_METRICS,
+            "schema_version": 2,
+            "variant": "PPL",
+            "samples": [PQ_SAMPLE_ROW],
+        },
+    )
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    derived = summary["written"]["derived_tables"]
+    assert "ppl_baseline_gain.csv" in derived
+    assert "per_variant_winner.csv" not in derived
+    assert "model_family_comparison_matrix.csv" not in derived
+
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert skipped_by_id["per_variant_winner_table"] == MODEL_COMPARISON_SKIP_REASON
+    assert skipped_by_id["model_family_comparison_matrix"] == MODEL_COMPARISON_SKIP_REASON
+    assert skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+
+
+def test_build_reporting_bundle_skips_model_comparison_for_mosaic_producers(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "GrainSeg"
+    _write_json(
+        root / "eval/yolo_PPL/instance_metrics.json",
+        {
+            **MINIMAL_INSTANCE_METRICS,
+            "schema_version": 2,
+            "model_type": "yolo",
+            "variant": "PPL",
+            "samples": [{**PQ_SAMPLE_ROW, "pq": 0.30}],
+        },
+    )
+    _write_json(
+        root
+        / "eval/unet_test/run_unet_finetuned_PPL+AllPPX/instance_metrics.json",
+        {
+            **MINIMAL_INSTANCE_METRICS,
+            "schema_version": 2,
+            "model_type": "unet",
+            "variant": "PPL+AllPPX",
+            "samples": [{**PQ_SAMPLE_ROW, "pq": 0.45}],
+        },
+    )
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    derived = summary["written"]["derived_tables"]
+    assert "per_variant_winner.csv" not in derived
+    assert "model_family_comparison_matrix.csv" not in derived
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert skipped_by_id["per_variant_winner_table"] == MODEL_COMPARISON_SKIP_REASON
+    assert skipped_by_id["model_family_comparison_matrix"] == MODEL_COMPARISON_SKIP_REASON
+    assert skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+
+
+def test_build_reporting_bundle_skips_ppl_heatmap_when_renderer_writes_no_file(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("seaborn")
+
+    root = tmp_path / "GrainSeg"
+    _write_json(
+        root / "eval/yolo_PPL/instance_metrics.json",
+        {
+            **MINIMAL_INSTANCE_METRICS,
+            "schema_version": 2,
+            "variant": "PPL",
+            "samples": [PQ_SAMPLE_ROW],
+        },
+    )
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=True)
+
+    assert "ppl_delta_heatmap.png" not in summary["written"]["figures"]
+    assert "ppl_relative_diagnostic_heatmaps.png" not in summary["written"]["figures"]
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert (
+        skipped_by_id["ppl_relative_diagnostic_heatmap"]
+        == FIGURE_NOT_GENERATED_SKIP_REASON
+    )
+
+
+def test_build_reporting_bundle_registers_figure_outputs_when_rendering_disabled(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "GrainSeg"
+    _producer_comparison_eval_tree(root)
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+    assert "whole_section_pq_matrix_heatmap" not in skipped_by_id
+    assert summary["written"]["figures"] == []
+
+
 def test_build_reporting_bundle_writes_pq_matrix_and_heatmap_with_figures(
     tmp_path: Path,
 ) -> None:
@@ -102,8 +260,14 @@ def test_build_reporting_bundle_writes_pq_matrix_and_heatmap_with_figures(
 
     assert "whole_section_pq_matrix.csv" in summary["written"]["derived_tables"]
     assert "headline_heatmap.png" in summary["written"]["figures"]
+    assert "ppl_relative_diagnostic_heatmaps.png" in summary["written"]["figures"]
     assert (out / "derived" / "whole_section_pq_matrix.csv").is_file()
     assert (out / "figures" / "headline_heatmap.png").is_file()
+    assert (out / "figures" / "ppl_relative_diagnostic_heatmaps.png").is_file()
+
+    skipped_ids = {item["id"] for item in summary["skipped"]}
+    assert "ppl_relative_diagnostic_heatmap" not in skipped_ids
+    assert "whole_section_pq_matrix_heatmap" not in skipped_ids
 
     matrix = pd.read_csv(out / "derived" / "whole_section_pq_matrix.csv", index_col=0)
     assert matrix.loc["YOLO", "PPL"] == pytest.approx(0.30)

@@ -47,11 +47,13 @@ WAVE1_APPROVED_OUTPUTS: list[ReportingOutput] = [
         "id": "per_variant_winner_table",
         "label": "Per-Variant Winner Table",
         "tier": "thesis-core",
+        "filename_patterns": ["per_variant_winner.csv"],
     },
     {
         "id": "ppl_baseline_gain_table",
         "label": "PPL Baseline Gain Table",
         "tier": "thesis-core",
+        "filename_patterns": ["ppl_baseline_gain.csv"],
     },
     {
         "id": "pq_decomposition_grouped_bars",
@@ -63,11 +65,16 @@ WAVE1_APPROVED_OUTPUTS: list[ReportingOutput] = [
         "id": "ppl_relative_diagnostic_heatmap",
         "label": "PPL-Relative Diagnostic Heatmap",
         "tier": "discussion-diagnostic",
+        "filename_patterns": [
+            "ppl_relative_diagnostic_heatmaps.png",
+            "ppl_delta_heatmap.png",
+        ],
     },
     {
         "id": "model_family_comparison_matrix",
         "label": "Model Family Comparison Matrix",
         "tier": "discussion-diagnostic",
+        "filename_patterns": ["model_family_comparison_matrix.csv"],
     },
     {
         "id": "patch_to_whole_gap_table",
@@ -291,3 +298,14 @@ def reporting_contract_metadata() -> dict[str, Any]:
 
 def optional_wave1_outputs() -> list[ReportingOutput]:
     return [item for item in WAVE1_APPROVED_OUTPUTS if item.get("optional")]
+
+
+def wave1_output_by_id(output_id: str) -> ReportingOutput | None:
+    for item in WAVE1_APPROVED_OUTPUTS:
+        if item["id"] == output_id:
+            return item
+    return None
+
+
+def required_wave1_outputs() -> list[ReportingOutput]:
+    return [item for item in WAVE1_APPROVED_OUTPUTS if not item.get("optional")]

@@ -7,6 +7,9 @@ from pathlib import Path
 import pandas as pd
 
 from analysis.derived_tables import (
+    PPL_RELATIVE_DIAGNOSTIC_METRICS,
+    available_ppl_relative_diagnostic_metrics,
+    ppl_relative_gain_matrix_table,
     whole_section_metric_matrix_table,
     whole_section_pq_matrix_table,
 )
@@ -16,7 +19,7 @@ from analysis.reporting_labels import (
     MODEL_LEGEND_ORDER,
     model_display_name,
 )
-from common.variants import variant_display_names_in_thesis_order
+from analysis.variant_order import thesis_ordered_display_names
 
 HEADLINE_PQ_COLUMNS = ("pq", "dq", "sq")
 
@@ -30,6 +33,9 @@ PQ_DIAGNOSTIC_DQ_TITLE = "PQ diagnostic: DQ (whole-section test)"
 PQ_DIAGNOSTIC_SQ_TITLE = "PQ diagnostic: SQ (whole-section test)"
 MODEL_VARIANT_BARS_TITLE = "Headline: whole-section PQ by input configuration"
 PPL_DELTA_PQ_TITLE = "Headline: whole-section PQ gain vs PPL baseline"
+PPL_RELATIVE_DIAGNOSTIC_HEATMAP_TITLE = (
+    "PPL-relative diagnostic gain vs PPL baseline (whole-section test)"
+)
 ULTRALYTICS_VAL_PANEL_TITLE = (
     "Supporting: YOLO patch Ultralytics val mAP@0.5 (not whole-section SAHI)"
 )
@@ -52,13 +58,6 @@ def _require_plotting() -> None:
             "Plotting requires the analysis optional extra: "
             "uv sync --group analysis"
         ) from exc
-
-
-def _ordered_display_names(df: pd.DataFrame) -> list[str]:
-    thesis_order = list(variant_display_names_in_thesis_order())
-    present = [name for name in thesis_order if name in set(df["display_name"])]
-    extra = sorted(set(df["display_name"]) - set(present))
-    return present + extra
 
 
 def _whole_headline_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -127,7 +126,7 @@ def figure_model_variant_bars(df: pd.DataFrame, path: Path) -> None:
     whole["model"] = whole["producer"].map(MODEL_DISPLAY_NAMES)
     whole["display_name"] = pd.Categorical(
         whole["display_name"],
-        categories=_ordered_display_names(whole),
+        categories=thesis_ordered_display_names(whole["display_name"]),
         ordered=True,
     )
     whole["model"] = pd.Categorical(
@@ -151,38 +150,23 @@ def figure_model_variant_bars(df: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
+def _ppl_relative_pq_gain_matrix(df: pd.DataFrame) -> pd.DataFrame:
+    try:
+        return ppl_relative_gain_matrix_table(df, "pq")
+    except ValueError as exc:
+        raise HeadlineFigureError(str(exc)) from exc
+
+
 def figure_ppl_delta_heatmap(df: pd.DataFrame, path: Path) -> None:
     _require_plotting()
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    whole = require_headline_pq_table(df)
-    ppl_name = "PPL"
-    baseline = (
-        whole[whole["display_name"] == ppl_name].set_index("producer")["pq"].to_dict()
-    )
-    rows: list[dict[str, object]] = []
-    for _, row in whole.iterrows():
-        if row["display_name"] == ppl_name:
-            continue
-        base = baseline.get(row["producer"])
-        if base is None:
-            continue
-        rows.append(
-            {
-                "producer": row["producer"],
-                "display_name": row["display_name"],
-                "delta_pq": float(row["pq"]) - float(base),
-            }
-        )
-    if not rows:
-        raise HeadlineFigureError(
-            "PPL baseline whole-section PQ is missing for one or more producers"
-        )
-    delta = pd.DataFrame(rows)
-    pivot = delta.pivot(index="display_name", columns="producer", values="delta_pq")
-    pivot = pivot.reindex(_ordered_display_names(delta))
-    pivot = _rename_model_columns(pivot)
+    require_headline_pq_table(df)
+    pivot = _ppl_relative_pq_gain_matrix(df).T
+    if pivot.empty:
+        return
+    pivot = pivot.reindex(thesis_ordered_display_names(pivot.index))
     fig, ax = plt.subplots(figsize=(8, 3.5), constrained_layout=True)
     sns.heatmap(
         pivot,
@@ -201,6 +185,60 @@ def figure_ppl_delta_heatmap(df: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
+def figure_ppl_relative_diagnostic_heatmaps(df: pd.DataFrame, path: Path) -> None:
+    _require_plotting()
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    require_headline_pq_table(df)
+    metrics = available_ppl_relative_diagnostic_metrics(df)
+    if not metrics:
+        return
+    label_by_metric = {key: label for label, key in PPL_RELATIVE_DIAGNOSTIC_METRICS}
+    panels: list[tuple[str, pd.DataFrame]] = []
+    for metric in metrics:
+        try:
+            pivot = ppl_relative_gain_matrix_table(df, metric).T
+        except ValueError:
+            continue
+        pivot = pivot.reindex(thesis_ordered_display_names(pivot.index))
+        if pivot.empty:
+            continue
+        panels.append((label_by_metric[metric], pivot))
+
+    if not panels:
+        return
+
+    ncols = min(3, len(panels))
+    nrows = (len(panels) + ncols - 1) // ncols
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(4.5 * ncols, 3.5 * nrows),
+        constrained_layout=True,
+        squeeze=False,
+    )
+    for ax, (title, pivot) in zip(axes.flat, panels, strict=False):
+        sns.heatmap(
+            pivot,
+            annot=True,
+            fmt="+.3f",
+            cmap="RdBu_r",
+            center=0.0,
+            ax=ax,
+        )
+        ax.set_title(f"{title} vs PPL baseline")
+        ax.set_xlabel(MODEL_AXIS_LABEL)
+        ax.set_ylabel("")
+        ax.tick_params(axis="x", labelrotation=0)
+        plt.setp(ax.get_xticklabels(), ha="center")
+    for ax in axes.flat[len(panels) :]:
+        ax.set_visible(False)
+    fig.suptitle(PPL_RELATIVE_DIAGNOSTIC_HEATMAP_TITLE)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def figure_ultralytics_val_panel(val_df: pd.DataFrame, path: Path) -> None:
     _require_plotting()
     import matplotlib.pyplot as plt
@@ -211,7 +249,7 @@ def figure_ultralytics_val_panel(val_df: pd.DataFrame, path: Path) -> None:
     panel = val_df.copy()
     panel["display_name"] = pd.Categorical(
         panel["display_name"],
-        categories=_ordered_display_names(panel),
+        categories=thesis_ordered_display_names(panel["display_name"]),
         ordered=True,
     )
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
@@ -233,6 +271,7 @@ FIGURE_BUNDLE_FILENAMES: tuple[str, ...] = (
     "headline_heatmap.png",
     "model_variant_bars.png",
     "ppl_delta_heatmap.png",
+    "ppl_relative_diagnostic_heatmaps.png",
     "yolo_patch_val_panel.png",
 )
 
@@ -247,6 +286,11 @@ def render_all_figures(
         ("headline_heatmap.png", figure_headline_heatmap, instance_df),
         ("model_variant_bars.png", figure_model_variant_bars, instance_df),
         ("ppl_delta_heatmap.png", figure_ppl_delta_heatmap, instance_df),
+        (
+            "ppl_relative_diagnostic_heatmaps.png",
+            figure_ppl_relative_diagnostic_heatmaps,
+            instance_df,
+        ),
         ("yolo_patch_val_panel.png", figure_ultralytics_val_panel, val_df),
     ]
     written: list[str] = []

@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from analysis.derived_tables import (
+    can_compare_yolo_and_unet_on_shared_inputs,
     headline_ranking_table,
+    model_family_comparison_matrix_table,
+    per_variant_winner_table,
+    ppl_baseline_gain_table,
     thesis_ready_results_table,
     whole_section_pq_matrix_table,
 )
@@ -18,10 +22,31 @@ from analysis.figures import render_all_figures
 from analysis.load_metrics import metrics_table_from_runs, ultralytics_val_table
 from analysis.reporting_contract import (
     HEADLINE_POLICY,
+    ReportingOutput,
     WAVE1_APPROVED_OUTPUTS,
     optional_wave1_outputs,
     reporting_contract_metadata,
+    required_wave1_outputs,
 )
+
+MODEL_COMPARISON_OUTPUT_IDS = frozenset(
+    {
+        "per_variant_winner_table",
+        "model_family_comparison_matrix",
+    }
+)
+MODEL_COMPARISON_SKIP_REASON = (
+    "YOLO and U-Net whole-section metrics are not both present for any "
+    "shared input configuration"
+)
+NOT_IMPLEMENTED_SKIP_REASON = (
+    "output not implemented in this Wave 1 reporting bundle run"
+)
+FIGURES_DISABLED_SKIP_REASON = "figure rendering disabled for this reporting run"
+FIGURE_NOT_GENERATED_SKIP_REASON = (
+    "figure not generated: required data missing or renderer produced no file"
+)
+NO_INSTANCE_ROWS_SKIP_REASON = "no instance metric rows were loaded"
 
 def _written_output_ids(
     derived_tables: list[str],
@@ -35,6 +60,84 @@ def _written_output_ids(
         if any(pattern in name for name in written_names for pattern in patterns):
             matched.add(item["id"])
     return matched
+
+
+def _figure_filename_patterns(item: ReportingOutput) -> list[str]:
+    return [
+        pattern
+        for pattern in item.get("filename_patterns", [])
+        if pattern.endswith(".png")
+    ]
+
+
+def _table_filename_patterns(item: ReportingOutput) -> list[str]:
+    return [
+        pattern
+        for pattern in item.get("filename_patterns", [])
+        if pattern.endswith(".csv")
+    ]
+
+
+def _skip_reason_for_required_output(
+    output_id: str,
+    item: ReportingOutput,
+    *,
+    render_figures: bool,
+    has_instance_rows: bool,
+    can_compare_models: bool,
+) -> str:
+    if output_id in MODEL_COMPARISON_OUTPUT_IDS and not can_compare_models:
+        return MODEL_COMPARISON_SKIP_REASON
+
+    patterns = item.get("filename_patterns", [])
+    if not patterns:
+        return NOT_IMPLEMENTED_SKIP_REASON
+
+    figure_patterns = _figure_filename_patterns(item)
+    table_patterns = _table_filename_patterns(item)
+
+    if not has_instance_rows and (figure_patterns or table_patterns):
+        return NO_INSTANCE_ROWS_SKIP_REASON
+
+    if figure_patterns and not render_figures:
+        return FIGURES_DISABLED_SKIP_REASON
+
+    if figure_patterns and render_figures:
+        return FIGURE_NOT_GENERATED_SKIP_REASON
+
+    if table_patterns and output_id in MODEL_COMPARISON_OUTPUT_IDS:
+        return MODEL_COMPARISON_SKIP_REASON
+
+    return NOT_IMPLEMENTED_SKIP_REASON
+
+
+def _skipped_required_outputs(
+    written_ids: set[str],
+    *,
+    render_figures: bool,
+    has_instance_rows: bool,
+    can_compare_models: bool,
+) -> list[dict[str, str]]:
+    """Required contract outputs that were not written, with reasons."""
+    skipped: list[dict[str, str]] = []
+    for item in required_wave1_outputs():
+        output_id = item["id"]
+        if output_id in written_ids:
+            continue
+        skipped.append(
+            {
+                "id": output_id,
+                "label": item["label"],
+                "reason": _skip_reason_for_required_output(
+                    output_id,
+                    item,
+                    render_figures=render_figures,
+                    has_instance_rows=has_instance_rows,
+                    can_compare_models=can_compare_models,
+                ),
+            }
+        )
+    return skipped
 
 
 SCOPE_NOTE = (
@@ -83,6 +186,19 @@ def build_reporting_bundle(
         whole_section_pq_matrix_table(instance_df).to_csv(matrix_csv)
         derived_tables.append("whole_section_pq_matrix.csv")
 
+        gain_csv = derived_dir / "ppl_baseline_gain.csv"
+        ppl_baseline_gain_table(instance_df).to_csv(gain_csv, index=False)
+        derived_tables.append("ppl_baseline_gain.csv")
+
+        if can_compare_yolo_and_unet_on_shared_inputs(instance_df):
+            winner_csv = derived_dir / "per_variant_winner.csv"
+            per_variant_winner_table(instance_df).to_csv(winner_csv, index=False)
+            derived_tables.append("per_variant_winner.csv")
+
+            comparison_csv = derived_dir / "model_family_comparison_matrix.csv"
+            model_family_comparison_matrix_table(instance_df).to_csv(comparison_csv)
+            derived_tables.append("model_family_comparison_matrix.csv")
+
     if not val_df.empty:
         val_csv = derived_dir / "ultralytics_val.csv"
         val_df.to_csv(val_csv, index=False)
@@ -97,9 +213,20 @@ def build_reporting_bundle(
         figure_names = render_all_figures(instance_df, val_df, figures_dir)
 
     written_figure_names = list(figure_names)
+    written_ids = _written_output_ids(derived_tables, written_figure_names)
+    can_compare_models = (
+        not instance_df.empty
+        and can_compare_yolo_and_unet_on_shared_inputs(instance_df)
+    )
+    skipped_required = _skipped_required_outputs(
+        written_ids,
+        render_figures=render_figures,
+        has_instance_rows=not instance_df.empty,
+        can_compare_models=can_compare_models,
+    )
     skipped_optional: list[dict[str, str]] = []
     for item in optional_wave1_outputs():
-        if item["id"] not in _written_output_ids(derived_tables, written_figure_names):
+        if item["id"] not in written_ids:
             skipped_optional.append(
                 {
                     "id": item["id"],
@@ -123,6 +250,7 @@ def build_reporting_bundle(
             "audits": [],
             "narratives": [],
         },
+        "skipped": skipped_required,
         "skipped_optional": skipped_optional,
     }
     summary_path = output_dir / "analysis_summary.json"

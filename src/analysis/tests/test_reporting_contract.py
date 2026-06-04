@@ -158,8 +158,13 @@ def test_build_reporting_bundle_records_contract_in_summary(tmp_path: Path) -> N
     assert "headline_pq_ranking.csv" in written_tables
     assert "thesis_ready_results.csv" in written_tables
     assert "whole_section_pq_matrix.csv" in written_tables
+    assert "ppl_baseline_gain.csv" in written_tables
+    assert "per_variant_winner.csv" not in written_tables
     assert payload["written"]["figures"] == []
+    assert isinstance(payload["skipped"], list)
     assert isinstance(payload["skipped_optional"], list)
+    required_skipped = {item["id"] for item in payload["skipped"]}
+    assert "ppl_relative_diagnostic_heatmap" in required_skipped
     skipped_ids = {item["id"] for item in payload["skipped_optional"]}
     assert "precision_recall_diagnostic_map_iou75" in skipped_ids
     assert "pareto_plot" in skipped_ids

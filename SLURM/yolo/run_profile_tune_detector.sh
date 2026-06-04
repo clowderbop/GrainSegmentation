@@ -17,7 +17,7 @@ source "$SLURM_ROOT/utils/assertions.sh"
 
 GRAINSEG_ROOT="$(grainseg_root)"
 RUN_ROOT="$GRAINSEG_ROOT/runs/yolo26-seg"
-GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/configs/yolo_inference_profile_tune.yaml}"
+GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/config/yolo_inference_profile_tune.yaml}"
 DEVICE="${DEVICE:-0}"
 
 source "$SLURM_ROOT/prepare_env.sh"

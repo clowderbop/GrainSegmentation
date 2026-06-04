@@ -33,7 +33,7 @@ from yolo.tiled_proposal_cache import recipe_whole_window_fingerprint, weights_s
 
 VariantScorer = Callable[[str, YoloInferenceProfileCandidate, Path], Path]
 
-_TUNE_GRID_RELATIVE = Path("configs") / "yolo_inference_profile_tune.yaml"
+_TUNE_GRID_RELATIVE = Path("config") / "yolo_inference_profile_tune.yaml"
 
 
 @dataclass(frozen=True)

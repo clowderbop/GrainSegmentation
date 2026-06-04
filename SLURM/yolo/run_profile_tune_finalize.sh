@@ -10,7 +10,7 @@ set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/SLURM/utils/enter_job.sh"
 
 : "${OUTPUT_DIR:?OUTPUT_DIR must be set by submit script}"
-GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/configs/yolo_inference_profile_tune.yaml}"
+GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/config/yolo_inference_profile_tune.yaml}"
 
 source "$SLURM_ROOT/prepare_env.sh"
 # shellcheck source=SLURM/utils/yolo_venv.sh

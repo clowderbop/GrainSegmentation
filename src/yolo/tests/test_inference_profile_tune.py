@@ -14,6 +14,7 @@ from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
 )
+from common.variants import repo_root
 
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from yolo.inference_profile_tune import (
@@ -358,8 +359,12 @@ unet:
     assert recipe_path.read_text(encoding="utf-8") == original
 
 
+def test_tune_grid_path_defaults_to_config_yolo_inference_profile_tune_yaml() -> None:
+    assert tune_grid_path() == repo_root() / "config" / "yolo_inference_profile_tune.yaml"
+
+
 def test_committed_tune_grid_is_well_formed_factorial() -> None:
-    """Default configs/yolo_inference_profile_tune.yaml must be a valid non-empty grid."""
+    """Default config/yolo_inference_profile_tune.yaml must be a valid non-empty grid."""
     spec = load_tune_grid(tune_grid_path())
     grid = spec.grid
     for axis_name, values in (

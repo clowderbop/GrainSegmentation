@@ -12,7 +12,7 @@ RUN_ID="${RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
 OUTPUT_DIR="${OUTPUT_DIR:-$GRAINSEG_ROOT/runs/yolo_inference_profile_tune/$RUN_ID}"
 DRY_RUN=false
 SKIP_DETECTORS="${SKIP_DETECTORS:-0}"
-GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/configs/yolo_inference_profile_tune.yaml}"
+GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/config/yolo_inference_profile_tune.yaml}"
 
 function usage {
     cat <<'EOF' >&2
@@ -40,7 +40,7 @@ Runs that used the old _work/ layout are incompatible; start a new RUN_ID after 
 Environment:
   OUTPUT_DIR       full run directory (default: .../yolo_inference_profile_tune/<run_id>)
   RUN_ID           run folder name when OUTPUT_DIR unset
-  GRID_CONFIG      search grid YAML (default: configs/yolo_inference_profile_tune.yaml)
+  GRID_CONFIG      search grid YAML (default: config/yolo_inference_profile_tune.yaml)
   SKIP_DETECTORS   set to 1 (or use --skip-detectors) to skip detector array
   DETECTOR_MAX_PARALLEL  max concurrent detector array tasks (default: 6)
   NO_RESUME        set to 1 to clear grid/rows/*.json before candidate array and pass --no-resume

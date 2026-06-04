@@ -17,6 +17,12 @@ from analysis.derived_tables import (
     thesis_ready_results_table,
     whole_section_pq_matrix_table,
 )
+from analysis.diagnostic_derivation import (
+    failure_mode_classification_table,
+    failure_mode_metrics_available,
+    failure_mode_rules_markdown,
+    pq_decomposition_metrics_available,
+)
 from analysis.discover import discover_eval_runs, discover_ultralytics_val
 from analysis.figures import render_all_figures
 from analysis.load_metrics import metrics_table_from_runs, ultralytics_val_table
@@ -47,6 +53,9 @@ FIGURE_NOT_GENERATED_SKIP_REASON = (
     "figure not generated: required data missing or renderer produced no file"
 )
 NO_INSTANCE_ROWS_SKIP_REASON = "no instance metric rows were loaded"
+MISSING_DQ_SQ_SKIP_REASON = (
+    "required whole-section DQ and SQ fields missing or non-finite"
+)
 
 def _written_output_ids(
     derived_tables: list[str],
@@ -85,9 +94,19 @@ def _skip_reason_for_required_output(
     render_figures: bool,
     has_instance_rows: bool,
     can_compare_models: bool,
+    failure_mode_available: bool,
+    pq_decomposition_available: bool,
 ) -> str:
     if output_id in MODEL_COMPARISON_OUTPUT_IDS and not can_compare_models:
         return MODEL_COMPARISON_SKIP_REASON
+
+    if output_id == "failure_mode_classification" and has_instance_rows:
+        if not failure_mode_available:
+            return MISSING_DQ_SQ_SKIP_REASON
+
+    if output_id == "pq_decomposition_grouped_bars" and has_instance_rows:
+        if not pq_decomposition_available:
+            return MISSING_DQ_SQ_SKIP_REASON
 
     patterns = item.get("filename_patterns", [])
     if not patterns:
@@ -117,6 +136,8 @@ def _skipped_required_outputs(
     render_figures: bool,
     has_instance_rows: bool,
     can_compare_models: bool,
+    failure_mode_available: bool,
+    pq_decomposition_available: bool,
 ) -> list[dict[str, str]]:
     """Required contract outputs that were not written, with reasons."""
     skipped: list[dict[str, str]] = []
@@ -134,6 +155,8 @@ def _skipped_required_outputs(
                     render_figures=render_figures,
                     has_instance_rows=has_instance_rows,
                     can_compare_models=can_compare_models,
+                    failure_mode_available=failure_mode_available,
+                    pq_decomposition_available=pq_decomposition_available,
                 ),
             }
         )
@@ -199,6 +222,17 @@ def build_reporting_bundle(
             model_family_comparison_matrix_table(instance_df).to_csv(comparison_csv)
             derived_tables.append("model_family_comparison_matrix.csv")
 
+        if failure_mode_metrics_available(instance_df):
+            failure_csv = derived_dir / "failure_mode_classification.csv"
+            failure_mode_classification_table(instance_df).to_csv(
+                failure_csv, index=False
+            )
+            derived_tables.append("failure_mode_classification.csv")
+
+            rules_md = derived_dir / "failure_mode_classification_rules.md"
+            rules_md.write_text(failure_mode_rules_markdown(), encoding="utf-8")
+            derived_tables.append("failure_mode_classification_rules.md")
+
     if not val_df.empty:
         val_csv = derived_dir / "ultralytics_val.csv"
         val_df.to_csv(val_csv, index=False)
@@ -223,6 +257,8 @@ def build_reporting_bundle(
         render_figures=render_figures,
         has_instance_rows=not instance_df.empty,
         can_compare_models=can_compare_models,
+        failure_mode_available=failure_mode_metrics_available(instance_df),
+        pq_decomposition_available=pq_decomposition_metrics_available(instance_df),
     )
     skipped_optional: list[dict[str, str]] = []
     for item in optional_wave1_outputs():

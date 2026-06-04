@@ -59,6 +59,7 @@ WAVE1_APPROVED_OUTPUTS: list[ReportingOutput] = [
         "id": "pq_decomposition_grouped_bars",
         "label": "PQ Decomposition Grouped Bars",
         "tier": "thesis-core",
+        "filename_patterns": ["pq_decomposition_grouped_bars.png"],
     },
     # Discussion-diagnostic tier
     {
@@ -117,6 +118,10 @@ WAVE1_APPROVED_OUTPUTS: list[ReportingOutput] = [
         "id": "failure_mode_classification",
         "label": "Failure-Mode Classification",
         "tier": "discussion-diagnostic",
+        "filename_patterns": [
+            "failure_mode_classification.csv",
+            "failure_mode_classification_rules.md",
+        ],
     },
     # QA / writing-aid tier
     {

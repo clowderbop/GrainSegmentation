@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pandas as pd
 
+from analysis.diagnostic_derivation import (
+    pq_decomposition_long_table,
+    pq_decomposition_metrics_available,
+)
 from analysis.derived_tables import (
+    INPUT_CONFIGURATION_COL,
+    MODEL_COL,
     PPL_RELATIVE_DIAGNOSTIC_METRICS,
     available_ppl_relative_diagnostic_metrics,
     ppl_relative_gain_matrix_table,
@@ -32,6 +38,9 @@ HEADLINE_PQ_TITLE = "Headline: whole-section PQ (held-out test)"
 PQ_DIAGNOSTIC_DQ_TITLE = "PQ diagnostic: DQ (whole-section test)"
 PQ_DIAGNOSTIC_SQ_TITLE = "PQ diagnostic: SQ (whole-section test)"
 MODEL_VARIANT_BARS_TITLE = "Headline: whole-section PQ by input configuration"
+PQ_DECOMPOSITION_GROUPED_BARS_TITLE = (
+    "PQ decomposition: whole-section PQ, DQ, and SQ (held-out test)"
+)
 PPL_DELTA_PQ_TITLE = "Headline: whole-section PQ gain vs PPL baseline"
 PPL_RELATIVE_DIAGNOSTIC_HEATMAP_TITLE = (
     "PPL-relative diagnostic gain vs PPL baseline (whole-section test)"
@@ -157,6 +166,53 @@ def _ppl_relative_pq_gain_matrix(df: pd.DataFrame) -> pd.DataFrame:
         raise HeadlineFigureError(str(exc)) from exc
 
 
+def figure_pq_decomposition_grouped_bars(df: pd.DataFrame, path: Path) -> None:
+    _require_plotting()
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    if not pq_decomposition_metrics_available(df):
+        return
+    long = pq_decomposition_long_table(df)
+    if long.empty:
+        return
+    long = long.copy()
+    long[INPUT_CONFIGURATION_COL] = pd.Categorical(
+        long[INPUT_CONFIGURATION_COL],
+        categories=thesis_ordered_display_names(long[INPUT_CONFIGURATION_COL]),
+        ordered=True,
+    )
+    long[MODEL_COL] = pd.Categorical(
+        long[MODEL_COL],
+        categories=[m for m in MODEL_LEGEND_ORDER if m in set(long[MODEL_COL])],
+        ordered=True,
+    )
+    long["Metric"] = pd.Categorical(
+        long["Metric"],
+        categories=["PQ", "DQ", "SQ"],
+        ordered=True,
+    )
+    g = sns.catplot(
+        data=long,
+        kind="bar",
+        x=INPUT_CONFIGURATION_COL,
+        y="Value",
+        hue="Metric",
+        col=MODEL_COL,
+        height=4,
+        aspect=1.1,
+        legend_out=False,
+    )
+    g.set_axis_labels("Input configuration", "Score")
+    g.set_titles("{col_name}")
+    for ax in g.axes.flat:
+        ax.tick_params(axis="x", labelrotation=0)
+        plt.setp(ax.get_xticklabels(), ha="center")
+    g.fig.suptitle(PQ_DECOMPOSITION_GROUPED_BARS_TITLE, y=1.02)
+    g.fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(g.fig)
+
+
 def figure_ppl_delta_heatmap(df: pd.DataFrame, path: Path) -> None:
     _require_plotting()
     import matplotlib.pyplot as plt
@@ -270,6 +326,7 @@ def figure_ultralytics_val_panel(val_df: pd.DataFrame, path: Path) -> None:
 FIGURE_BUNDLE_FILENAMES: tuple[str, ...] = (
     "headline_heatmap.png",
     "model_variant_bars.png",
+    "pq_decomposition_grouped_bars.png",
     "ppl_delta_heatmap.png",
     "ppl_relative_diagnostic_heatmaps.png",
     "yolo_patch_val_panel.png",
@@ -285,6 +342,11 @@ def render_all_figures(
     specs = [
         ("headline_heatmap.png", figure_headline_heatmap, instance_df),
         ("model_variant_bars.png", figure_model_variant_bars, instance_df),
+        (
+            "pq_decomposition_grouped_bars.png",
+            figure_pq_decomposition_grouped_bars,
+            instance_df,
+        ),
         ("ppl_delta_heatmap.png", figure_ppl_delta_heatmap, instance_df),
         (
             "ppl_relative_diagnostic_heatmaps.png",

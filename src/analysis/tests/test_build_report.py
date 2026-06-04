@@ -12,6 +12,7 @@ import pytest
 from analysis.build_report import (
     FIGURE_NOT_GENERATED_SKIP_REASON,
     FIGURES_DISABLED_SKIP_REASON,
+    MISSING_DQ_SQ_SKIP_REASON,
     MODEL_COMPARISON_SKIP_REASON,
     build_reporting_bundle,
 )
@@ -243,6 +244,7 @@ def test_build_reporting_bundle_registers_figure_outputs_when_rendering_disabled
 
     skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
     assert skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+    assert skipped_by_id["pq_decomposition_grouped_bars"] == FIGURES_DISABLED_SKIP_REASON
     assert "whole_section_pq_matrix_heatmap" not in skipped_by_id
     assert summary["written"]["figures"] == []
 
@@ -260,14 +262,69 @@ def test_build_reporting_bundle_writes_pq_matrix_and_heatmap_with_figures(
 
     assert "whole_section_pq_matrix.csv" in summary["written"]["derived_tables"]
     assert "headline_heatmap.png" in summary["written"]["figures"]
+    assert "pq_decomposition_grouped_bars.png" in summary["written"]["figures"]
     assert "ppl_relative_diagnostic_heatmaps.png" in summary["written"]["figures"]
     assert (out / "derived" / "whole_section_pq_matrix.csv").is_file()
     assert (out / "figures" / "headline_heatmap.png").is_file()
+    assert (out / "figures" / "pq_decomposition_grouped_bars.png").is_file()
     assert (out / "figures" / "ppl_relative_diagnostic_heatmaps.png").is_file()
 
     skipped_ids = {item["id"] for item in summary["skipped"]}
     assert "ppl_relative_diagnostic_heatmap" not in skipped_ids
     assert "whole_section_pq_matrix_heatmap" not in skipped_ids
+    assert "pq_decomposition_grouped_bars" not in skipped_ids
 
     matrix = pd.read_csv(out / "derived" / "whole_section_pq_matrix.csv", index_col=0)
     assert matrix.loc["YOLO", "PPL"] == pytest.approx(0.30)
+
+
+def test_build_reporting_bundle_writes_failure_mode_outputs(tmp_path: Path) -> None:
+    root = tmp_path / "GrainSeg"
+    _figure_ready_eval_tree(root)
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    derived = summary["written"]["derived_tables"]
+    assert "failure_mode_classification.csv" in derived
+    assert "failure_mode_classification_rules.md" in derived
+
+    failure = pd.read_csv(out / "derived" / "failure_mode_classification.csv")
+    assert "Failure mode labels" in failure.columns
+
+    rules = (out / "derived" / "failure_mode_classification_rules.md").read_text(
+        encoding="utf-8"
+    )
+    assert "detection-limited" in rules
+
+    skipped_ids = {item["id"] for item in summary["skipped"]}
+    assert "failure_mode_classification" not in skipped_ids
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert skipped_by_id["pq_decomposition_grouped_bars"] == FIGURES_DISABLED_SKIP_REASON
+
+
+def test_build_reporting_bundle_skips_failure_mode_without_dq_sq(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "GrainSeg"
+    _figure_ready_eval_tree(root)
+    out = tmp_path / "reporting"
+
+    monkeypatch.setattr(
+        "analysis.build_report.failure_mode_metrics_available",
+        lambda _df: False,
+    )
+    monkeypatch.setattr(
+        "analysis.build_report.pq_decomposition_metrics_available",
+        lambda _df: False,
+    )
+
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    derived = summary["written"]["derived_tables"]
+    assert "failure_mode_classification.csv" not in derived
+    assert "failure_mode_classification_rules.md" not in derived
+
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert skipped_by_id["failure_mode_classification"] == MISSING_DQ_SQ_SKIP_REASON
+    assert skipped_by_id["pq_decomposition_grouped_bars"] == MISSING_DQ_SQ_SKIP_REASON

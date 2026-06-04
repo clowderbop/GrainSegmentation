@@ -12,9 +12,11 @@ from analysis.figures import (
     HeadlineFigureError,
     MODEL_AXIS_LABEL,
     MODEL_VARIANT_BARS_TITLE,
+    PQ_DECOMPOSITION_GROUPED_BARS_TITLE,
     PPL_DELTA_PQ_TITLE,
     ULTRALYTICS_VAL_PANEL_TITLE,
     figure_headline_heatmap,
+    figure_pq_decomposition_grouped_bars,
     model_display_name,
     require_headline_pq_table,
 )
@@ -87,3 +89,20 @@ def test_require_headline_pq_table_rejects_missing_pq_columns() -> None:
     )
     with pytest.raises(HeadlineFigureError, match="missing"):
         require_headline_pq_table(df)
+
+
+def test_pq_decomposition_grouped_bars_title_and_file(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("seaborn")
+
+    assert "PQ" in PQ_DECOMPOSITION_GROUPED_BARS_TITLE
+    assert "DQ" in PQ_DECOMPOSITION_GROUPED_BARS_TITLE
+    assert "SQ" in PQ_DECOMPOSITION_GROUPED_BARS_TITLE
+    assert "AJI" not in PQ_DECOMPOSITION_GROUPED_BARS_TITLE
+
+    out = tmp_path / "pq_decomposition_grouped_bars.png"
+    figure_pq_decomposition_grouped_bars(_four_combo_instance_df(), out)
+    assert out.is_file()
+

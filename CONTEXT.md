@@ -91,6 +91,10 @@ _Avoid:_ modality (ambiguous), All-Stack / All-Comp (legacy thesis names), repea
 Thesis-facing label for an **input configuration** on tables and figures. One `display_name` per registry variant; join key remains the variant key (e.g. *FullStack* for `PPL+AllPPX`).
 _Avoid:_ registry key on plot axes, PPL+AllPPX / PPL+PPXblend on figures, separate reporting config for labels only
 
+**Input image count**:
+The number of microscopy images in an **input configuration**, used as the thesis-facing complexity axis for cost/benefit reporting. Values come from the variant registry input suffixes: PPL and FullComp use one image, PPL+XPLComp uses two images, and FullStack uses seven images.
+_Avoid:_ YOLO tensor channel count, RGB channel count, using "input count" without saying what is counted
+
 ### Manifests & run layout
 
 **Sample id**:
@@ -198,3 +202,7 @@ _Avoid:_ submit script name as discovery key, required TSV before plotting
 **Reporting bundle**:
 The regenerated output of **post-eval reporting** (figures, derived tables, run summary). Not versioned in git.
 _Avoid:_ repo `reports/` binaries, figures committed to git
+
+**Reporting tier**:
+A grouping inside the **reporting bundle** that separates thesis-facing results, supporting diagnostics, and artifact QA outputs. Core thesis results carry **whole-section PQ** as the headline; diagnostic outputs explain metric behavior; artifact QA outputs catch missing, stale, or suspicious eval artifacts.
+_Avoid:_ treating every generated figure as equally thesis-facing, mixing QA checks into headline result ranking

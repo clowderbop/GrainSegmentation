@@ -60,7 +60,17 @@ bash SLURM/yolo/submit_tune_or_train_variants.sh --all
 
 Runs on the **train** whole section after **all registry** variant weights exist and **score merge** at predict is in use. Submit sets `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/`. Re-run when train labels or weights change materially—not after every single-variant job.
 
-ADR: [0005](../adr/0005-yolo-inference-profile-train-selection.md). Glossary: **Profile selection** in [`CONTEXT.md`](../../CONTEXT.md).
+ADR: [0005](../adr/0005-yolo-inference-profile-train-selection.md). PQ policy and stale-output rules: [`docs/metrics.md`](../metrics.md#pq-centered-rerun-policy). Glossary: **Profile selection** in [`CONTEXT.md`](../../CONTEXT.md).
+
+Each grid candidate is scored by **profile selection scoring**: slice-merge and **score merge** on cached **tiled detector proposals**, compared to the shared **profile selection ground truth cache**, using the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) (including [PQ diagnostics](../metrics.md#pq-diagnostics)).
+
+| Field | Role |
+|-------|------|
+| `mean_pq` | Selection objective: mean train **whole-section PQ** across all registry variants |
+| `pq__{variant}` | Per-variant train PQ for audit |
+| Other bundle fields in each row | Full diagnostic record per variant (see metrics doc) |
+
+**Finalize** (`run_profile_tune_finalize.sh` / `yolo.profile_tune_finalize`) picks the highest `mean_pq` and writes `grid/winner.json`. **Profile promotion** must use that PQ-centered winner only. Pre-merge proposal counts, patch metrics, and legacy `mean_aji` on old rows are audit-only ([stale AJI-selected outputs](../metrics.md#stale-aji-selected-scratch-outputs)).
 
 ### 1. Detector array
 
@@ -125,12 +135,14 @@ Writes `grid/results.csv` and `grid/winner.json`.
 
 ### Promotion
 
+Promote only after finalize reports a PQ winner (`mean_pq` in `grid/winner.json` matches the top `mean_pq` in `grid/results.csv`).
+
 ```bash
 uv run --directory src/yolo python -m yolo.promote_inference_profile \
   --winner-json "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<run_id>/grid/winner.json"
 ```
 
-Commit `configs/test_inference.yaml` after promotion.
+Commit `configs/test_inference.yaml` after promotion. The five **YOLO inference profile** knobs in git are the frozen held-out test settings; geometry stays in the shared **test inference recipe**.
 
 ### Rerun without detectors
 

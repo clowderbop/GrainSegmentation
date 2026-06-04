@@ -24,6 +24,8 @@ Each runbook includes:
 
 YOLO and U-Net training/eval can proceed in parallel after preprocessing. **Profile selection** runs after all YOLO variant weights exist. **Post-eval reporting** runs after YOLO and U-Net test eval jobs complete.
 
+**Evaluation policy:** [`docs/metrics.md` § PQ-centered rerun policy](../metrics.md#pq-centered-rerun-policy) (ADR [0003](../adr/0003-test-evaluation-policy.md)).
+
 ## High-level experiment sequence
 
 Per input variant (see root [`README.md`](../../README.md)):

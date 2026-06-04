@@ -60,7 +60,7 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 
 **Submit:** `bash SLURM/unet/submit_watershed_tuning.sh`
 
-Grid search on **train** section (sliding-window predictions vs `train_labels.gpkg`). One job per variant; needs finetuned model. Select the watershed settings by train whole-section **PQ** and record the full instance metric bundle for audit.
+Grid search on **train** section (sliding-window predictions vs `train_labels.gpkg`). One job per variant; needs finetuned model. Select the **U-Net extraction profile** by train **whole-section PQ** (`best_mean_pq` in `watershed_best_*.json`) and record the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) for audit. `best_mean_aji` / per-row `mean_aji`, when present, are audit-only ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
 
 | Output | Path |
 |--------|------|
@@ -85,6 +85,8 @@ Two jobs compare connected components vs tuned watershed on **train** using `who
 | Selection | `eval/extraction_method_selection.json` |
 
 `submit_cc_vs_watershed_train_eval.sh` submits both eval jobs and a follow-up selection job (`run_cc_vs_watershed_selection.sh`) that picks the method by mean train whole-section **PQ** across registry variants. Overlays remain supporting evidence for failure-mode review, not the selection criterion.
+
+`eval/extraction_method_selection.json` records the PQ winner and per-variant [PQ diagnostics](../metrics.md#pq-diagnostics). Use that file when choosing `--instance-method` for held-out whole test. Stale AJI-driven selection: [`metrics.md`](../metrics.md#stale-aji-selected-scratch-outputs).
 
 ## Whole test eval
 

@@ -33,7 +33,9 @@ Profile selection depends on score-merged YOLO predictions as the deployed syste
 
 - Canonical prediction output: [ADR 0001](0001-instance-prediction-set.md)
 - Evaluation policy: [ADR 0003](0003-test-evaluation-policy.md)
-- YOLO runbook: `[docs/runbooks/yolo.md](../runbooks/yolo.md#profile-selection)`
-- Glossary: `[CONTEXT.md](../../CONTEXT.md)`
-- Profile grid: `[configs/yolo_inference_profile_tune.yaml](../../configs/yolo_inference_profile_tune.yaml)`
+- YOLO runbook: [`docs/runbooks/yolo.md`](../runbooks/yolo.md#profile-selection)
+- PQ policy: [`docs/metrics.md`](../metrics.md#pq-centered-rerun-policy)
+- Metric policy: [`docs/metrics.md`](../metrics.md)
+- Glossary: [`CONTEXT.md`](../../CONTEXT.md)
+- Profile grid: [`configs/yolo_inference_profile_tune.yaml`](../../configs/yolo_inference_profile_tune.yaml)
 

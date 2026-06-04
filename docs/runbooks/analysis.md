@@ -1,6 +1,16 @@
 # Post-eval reporting runbook
 
-CPU-only job that discovers finished **test** eval artifacts on scratch and writes the **reporting bundle** under `eval/reporting/`. Not part of inference or per-job metric computation. See [`docs/metrics.md`](../metrics.md) and **Post-eval reporting** in [`CONTEXT.md`](../../CONTEXT.md).
+CPU-only job that discovers finished **test** eval artifacts on scratch and writes the **reporting bundle** under `eval/reporting/`. Not part of inference or per-job metric computation.
+
+**Headline vs supporting metrics:** policy and field definitions in [`docs/metrics.md`](../metrics.md#policy-headline-vs-supporting) and [`#pq-centered-rerun-policy`](../metrics.md#pq-centered-rerun-policy); glossary **Post-eval reporting** in [`CONTEXT.md`](../../CONTEXT.md).
+
+| Role | Metrics | Source eval |
+|------|---------|-------------|
+| Headline tables and figures | **Whole-section PQ** plus [**PQ diagnostics**](../metrics.md#pq-diagnostics) | YOLO and U-Net whole-section test `instance_metrics.json` |
+| Supporting patch diagnostics | Patch-level [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) aggregates | `eval/yolo_patches/`, `eval/unet_patches/` |
+| YOLO-only patch detector panel | AP/mAP from Ultralytics patch val | `eval/yolo_patches/` only—not cross-model evidence |
+
+Do not use patch AP/mAP or patch means as **variant test ranking** or **model test comparison** (whole-section PQ under the shared **test inference recipe**). Use PQ-centered held-out eval only; stale scratch outputs: [`metrics.md` § Stale AJI-selected](../metrics.md#stale-aji-selected-scratch-outputs).
 
 ## Prerequisites
 

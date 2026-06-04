@@ -8,7 +8,7 @@
 | Contracts | [`docs/manifests.md`](manifests.md) | Dataset manifest schema and paths |
 | Reference | [`docs/reference/`](reference/) | Scratch layout, staging on compute nodes |
 | Background | [`docs/dataset.md`](dataset.md) | Microscopy data, QGIS labels, overlap splitting, patches |
-| Metrics | [`docs/metrics.md`](metrics.md) | Metric definitions; policy terms link to `CONTEXT.md` |
+| Metrics | [`docs/metrics.md`](metrics.md) | **Instance metric bundle**, headline PQ policy, stale-output guidance; terms link to `CONTEXT.md` and [ADR 0003](adr/0003-test-evaluation-policy.md) |
 | Agents | [`docs/agents/`](agents/) | Issue tracker, triage, domain doc conventions |
 
 ## Runbooks

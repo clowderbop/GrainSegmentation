@@ -197,6 +197,11 @@ def get_variant(name: str) -> VariantSpec:
         ) from exc
 
 
+def variant_input_image_count(variant_key: str) -> int:
+    """Microscopy image count for an input configuration (thesis complexity axis)."""
+    return get_variant(variant_key).unet.num_inputs
+
+
 def validate(registry: VariantRegistry | None = None) -> None:
     reg = registry or load_registry()
     if reg.schema_version != 1:

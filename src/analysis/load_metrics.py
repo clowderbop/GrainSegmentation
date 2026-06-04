@@ -247,6 +247,7 @@ def instance_metric_row(
         "producer": producer,
         "variant": variant,
         "display_name": spec.display_name,
+        "input_image_count": spec.unet.num_inputs,
         "unit": unit,
         "source": "instance",
     }

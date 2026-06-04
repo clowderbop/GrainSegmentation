@@ -7,21 +7,11 @@ from typing import Any
 
 import numpy as np
 
+from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 
-INSTANCE_METRIC_KEYS: tuple[str, ...] = (
-    "aji",
-    "precision_iou50",
-    "recall_iou50",
-    "f1_iou50",
-    "precision_iou75",
-    "recall_iou75",
-    "f1_iou75",
-    "mP_iou50_95",
-    "mR_iou50_95",
-    "mF1_iou50_95",
-)
+INSTANCE_METRIC_KEYS: tuple[str, ...] = INSTANCE_METRIC_BUNDLE_KEYS
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def json_safe_for_dump(value: Any) -> Any:
@@ -49,20 +39,17 @@ def count_instances(instance_map: np.ndarray) -> int:
 def build_sample_row(
     sample_id: str,
     *,
-    metrics: dict[str, float],
-    gt_instances: int,
-    predicted_grain_count: int,
+    metrics: dict[str, float | int],
     empty_gt: bool,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     row: dict[str, Any] = {
         "sample_id": sample_id,
-        "gt_instances": int(gt_instances),
-        "predicted_grain_count": int(predicted_grain_count),
         "empty_gt": bool(empty_gt),
     }
     for key in INSTANCE_METRIC_KEYS:
-        row[key] = float(metrics[key])
+        value = metrics[key]
+        row[key] = int(value) if key.endswith("_count") else float(value)
     if extra:
         for k, v in extra.items():
             if k in row:
@@ -71,40 +58,75 @@ def build_sample_row(
     return row
 
 
+def patch_aggregate_grainy_key(metric_key: str) -> str:
+    return f"mean_{metric_key}_grainy"
+
+
+def patch_aggregate_weighted_key(metric_key: str) -> str:
+    return f"mean_{metric_key}_weighted"
+
+
+def patch_aggregate_extra_keys(
+    metric_keys: tuple[str, ...] = INSTANCE_METRIC_KEYS,
+) -> tuple[str, ...]:
+    """Extra report keys written for patch unit instance evaluations."""
+    keys: list[str] = ["n_patches", "n_empty_gt"]
+    for metric_key in metric_keys:
+        keys.append(patch_aggregate_grainy_key(metric_key))
+        keys.append(patch_aggregate_weighted_key(metric_key))
+    return tuple(keys)
+
+
 def compute_patch_metric_aggregates(
     rows: list[dict[str, Any]],
+    *,
+    metric_keys: tuple[str, ...] = INSTANCE_METRIC_KEYS,
 ) -> dict[str, float | int]:
-    """Unweighted (grain-bearing patches) and grain-weighted AJI / F1@50 means."""
+    """Unweighted and grain-weighted means over grain-bearing patches for the bundle."""
     n_patches = len(rows)
     grainy = [row for row in rows if not row.get("empty_gt")]
     n_empty_gt = n_patches - len(grainy)
 
+    def _finite_metric_values(
+        subset: list[dict[str, Any]], key: str
+    ) -> list[tuple[dict[str, Any], float]]:
+        pairs: list[tuple[dict[str, Any], float]] = []
+        for row in subset:
+            if key not in row:
+                continue
+            value = float(row[key])
+            if np.isfinite(value):
+                pairs.append((row, value))
+        return pairs
+
     def _mean_for_key(
         subset: list[dict[str, Any]], key: str, *, weight_by_gt: bool
     ) -> float:
-        if not subset:
+        pairs = _finite_metric_values(subset, key)
+        if not pairs:
             return float("nan")
         if weight_by_gt:
-            weights = [float(row.get("gt_instances", 0)) for row in subset]
-            total_weight = sum(weights)
+            total_weight = sum(float(row.get("gt_instance_count", 0)) for row, _ in pairs)
             if total_weight <= 0:
                 return float("nan")
             return float(
-                sum(float(row[key]) * w for row, w in zip(subset, weights, strict=True))
+                sum(value * float(row.get("gt_instance_count", 0)) for row, value in pairs)
                 / total_weight
             )
-        return float(np.mean([float(row[key]) for row in subset]))
+        return float(np.mean([value for _, value in pairs]))
 
-    return {
+    agg: dict[str, float | int] = {
         "n_patches": n_patches,
         "n_empty_gt": n_empty_gt,
-        "mean_aji_grainy": _mean_for_key(grainy, "aji", weight_by_gt=False),
-        "mean_f1_iou50_grainy": _mean_for_key(grainy, "f1_iou50", weight_by_gt=False),
-        "mean_aji_weighted": _mean_for_key(grainy, "aji", weight_by_gt=True),
-        "mean_f1_iou50_weighted": _mean_for_key(
-            grainy, "f1_iou50", weight_by_gt=True
-        ),
     }
+    for key in metric_keys:
+        agg[patch_aggregate_grainy_key(key)] = _mean_for_key(
+            grainy, key, weight_by_gt=False
+        )
+        agg[patch_aggregate_weighted_key(key)] = _mean_for_key(
+            grainy, key, weight_by_gt=True
+        )
+    return agg
 
 
 def aggregate_mean_metrics(

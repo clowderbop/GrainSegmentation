@@ -94,7 +94,7 @@ def test_evaluate_instances_from_prediction_set_manifest(tmp_path: Path) -> None
         variant="PPL",
         unit="patch",
     )
-    assert report["samples"][0]["aji"] == 1.0
+    assert report["samples"][0]["pq"] == 1.0
 
 
 def test_evaluate_instances_from_unet_prediction_set_manifest(tmp_path: Path) -> None:
@@ -158,4 +158,4 @@ def test_evaluate_instances_from_unet_prediction_set_manifest(tmp_path: Path) ->
         variant="PPL",
         unit="patch",
     )
-    assert report["samples"][0]["aji"] == 1.0
+    assert report["samples"][0]["pq"] == 1.0

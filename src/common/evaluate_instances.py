@@ -24,8 +24,8 @@ from common.manifest_io import (
     resolve_row_path,
 )
 from common.ground_truth import GtOriginMode, scene_polygons_to_patch_instance_map
-from common.metrics import compute_aji, compute_instance_metrics_dict
-from common.reporting import build_instance_eval_report, build_sample_row, count_instances
+from common.instance_metric_bundle import compute_instance_metric_bundle
+from common.reporting import build_instance_eval_report, build_sample_row
 from common.yolo_seg_labels import yolo_seg_labels_to_instance_map
 
 Unit = Literal["patch", "whole"]
@@ -212,26 +212,18 @@ def evaluate_instance_samples(
                 f"Prediction map shape {pred_map.shape} does not match image "
                 f"({height}, {width}) for {sample.sample_id}"
             )
-        metrics = {
-            "aji": float(compute_aji(gt_map, pred_map)),
-            **{
-                key: float(value)
-                for key, value in compute_instance_metrics_dict(gt_map, pred_map).items()
-            },
-        }
-        gt_n = count_instances(gt_map)
-        pred_n = count_instances(pred_map)
+        metrics = compute_instance_metric_bundle(gt_map, pred_map)
+        gt_n = int(metrics["gt_instance_count"])
+        pred_n = int(metrics["pred_instance_count"])
         print(
-            f"{sample.sample_id}: aji={metrics['aji']:.4f} "
-            f"f1_iou50={metrics['f1_iou50']:.4f} "
+            f"{sample.sample_id}: pq={metrics['pq']:.4f} "
+            f"dq={metrics['dq']:.4f} sq={metrics['sq']:.4f} "
             f"gt={gt_n} pred={pred_n}"
         )
         sample_rows.append(
             build_sample_row(
                 sample.sample_id,
                 metrics=metrics,
-                gt_instances=gt_n,
-                predicted_grain_count=pred_n,
                 empty_gt=gt_n == 0,
                 extra={
                     "image_path": str(sample.image_path.resolve()),
@@ -336,7 +328,7 @@ def main() -> None:
     mean = report.get("mean")
     if mean is not None:
         print(
-            f"mean: aji={mean['aji']:.4f} f1_iou50={mean['f1_iou50']:.4f}"
+            f"mean: pq={mean['pq']:.4f} aji_plus={mean['aji_plus']:.4f}"
         )
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")

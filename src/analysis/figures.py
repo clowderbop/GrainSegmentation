@@ -6,14 +6,18 @@ from pathlib import Path
 
 import pandas as pd
 
+from analysis.derived_tables import (
+    whole_section_metric_matrix_table,
+    whole_section_pq_matrix_table,
+)
+from analysis.reporting_labels import (
+    MODEL_AXIS_LABEL,
+    MODEL_DISPLAY_NAMES,
+    MODEL_LEGEND_ORDER,
+    model_display_name,
+)
 from common.variants import variant_display_names_in_thesis_order
 
-MODEL_DISPLAY_NAMES: dict[str, str] = {
-    "yolo": "YOLO",
-    "unet": "U-Net",
-}
-MODEL_AXIS_LABEL = "Model"
-MODEL_LEGEND_ORDER = ("YOLO", "U-Net")
 HEADLINE_PQ_COLUMNS = ("pq", "dq", "sq")
 
 
@@ -29,11 +33,6 @@ PPL_DELTA_PQ_TITLE = "Headline: whole-section PQ gain vs PPL baseline"
 ULTRALYTICS_VAL_PANEL_TITLE = (
     "Supporting: YOLO patch Ultralytics val mAP@0.5 (not whole-section SAHI)"
 )
-
-
-def model_display_name(producer: str) -> str:
-    """Thesis-facing label for a producer family on figures (data keeps `producer`)."""
-    return MODEL_DISPLAY_NAMES.get(producer, producer)
 
 
 def _rename_model_index(pivot: pd.DataFrame) -> pd.DataFrame:
@@ -89,13 +88,18 @@ def require_headline_pq_table(df: pd.DataFrame) -> pd.DataFrame:
     return whole
 
 
+def _headline_metric_matrix(df: pd.DataFrame, metric: str) -> pd.DataFrame:
+    if metric == "pq":
+        return whole_section_pq_matrix_table(df)
+    return whole_section_metric_matrix_table(df, metric)
+
+
 def figure_headline_heatmap(df: pd.DataFrame, path: Path) -> None:
     _require_plotting()
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    whole = require_headline_pq_table(df)
-    display_order = _ordered_display_names(whole)
+    require_headline_pq_table(df)
     fig, axes = plt.subplots(1, 3, figsize=(14, 3.5), constrained_layout=True)
     for ax, metric, title in zip(
         axes,
@@ -103,9 +107,7 @@ def figure_headline_heatmap(df: pd.DataFrame, path: Path) -> None:
         (HEADLINE_PQ_TITLE, PQ_DIAGNOSTIC_DQ_TITLE, PQ_DIAGNOSTIC_SQ_TITLE),
         strict=True,
     ):
-        pivot = whole.pivot(index="producer", columns="display_name", values=metric)
-        pivot = pivot.reindex(columns=display_order)
-        pivot = _rename_model_index(pivot)
+        pivot = _headline_metric_matrix(df, metric)
         sns.heatmap(pivot, annot=True, fmt=".3f", cmap="viridis", ax=ax)
         ax.set_title(title)
         ax.set_xlabel("Input configuration")

@@ -153,7 +153,11 @@ def test_build_reporting_bundle_records_contract_in_summary(tmp_path: Path) -> N
     assert contract["cut_outputs"] == CUT_OUTPUTS
 
     payload = json.loads((out / "analysis_summary.json").read_text(encoding="utf-8"))
+    written_tables = payload["written"]["derived_tables"]
     assert payload["written"]["derived_tables"] == summary["written"]["derived_tables"]
+    assert "headline_pq_ranking.csv" in written_tables
+    assert "thesis_ready_results.csv" in written_tables
+    assert "whole_section_pq_matrix.csv" in written_tables
     assert payload["written"]["figures"] == []
     assert isinstance(payload["skipped_optional"], list)
     skipped_ids = {item["id"] for item in payload["skipped_optional"]}

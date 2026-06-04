@@ -1,9 +1,12 @@
 """Figure-facing labels for producer families and PQ headline policy."""
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
 from analysis.build_report import SCOPE_NOTE
+from analysis.derived_tables import whole_section_pq_matrix_table
 from analysis.figures import (
     HEADLINE_PQ_TITLE,
     HeadlineFigureError,
@@ -11,9 +14,11 @@ from analysis.figures import (
     MODEL_VARIANT_BARS_TITLE,
     PPL_DELTA_PQ_TITLE,
     ULTRALYTICS_VAL_PANEL_TITLE,
+    figure_headline_heatmap,
     model_display_name,
     require_headline_pq_table,
 )
+from analysis.tests.test_derived_tables import _four_combo_instance_df
 
 
 def test_model_display_name_maps_producers() -> None:
@@ -44,6 +49,28 @@ def test_scope_note_headlines_whole_section_pq() -> None:
     assert "Headline AJI" not in SCOPE_NOTE
     assert "F1@IoU50" not in SCOPE_NOTE
     assert "AP/mAP" in SCOPE_NOTE
+
+
+def test_figure_headline_heatmap_pq_panel_uses_derived_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("seaborn")
+
+    calls: list[pd.DataFrame] = []
+
+    def tracking(df: pd.DataFrame) -> pd.DataFrame:
+        result = whole_section_pq_matrix_table(df)
+        calls.append(result)
+        return result
+
+    monkeypatch.setattr("analysis.figures.whole_section_pq_matrix_table", tracking)
+    figure_headline_heatmap(_four_combo_instance_df(), tmp_path / "headline_heatmap.png")
+
+    assert len(calls) == 1
+    assert calls[0].loc["YOLO", "PPL"] == pytest.approx(0.30)
+    assert (tmp_path / "headline_heatmap.png").is_file()
 
 
 def test_require_headline_pq_table_rejects_missing_pq_columns() -> None:

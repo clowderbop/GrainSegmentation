@@ -8,6 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from analysis.derived_tables import (
+    headline_ranking_table,
+    thesis_ready_results_table,
+    whole_section_pq_matrix_table,
+)
 from analysis.discover import discover_eval_runs, discover_ultralytics_val
 from analysis.figures import render_all_figures
 from analysis.load_metrics import metrics_table_from_runs, ultralytics_val_table
@@ -64,6 +69,19 @@ def build_reporting_bundle(
     instance_csv = derived_dir / "instance_metrics.csv"
     instance_df.to_csv(instance_csv, index=False)
     derived_tables = ["instance_metrics.csv"]
+
+    if not instance_df.empty:
+        ranking_csv = derived_dir / "headline_pq_ranking.csv"
+        headline_ranking_table(instance_df).to_csv(ranking_csv, index=False)
+        derived_tables.append("headline_pq_ranking.csv")
+
+        thesis_csv = derived_dir / "thesis_ready_results.csv"
+        thesis_ready_results_table(instance_df).to_csv(thesis_csv, index=False)
+        derived_tables.append("thesis_ready_results.csv")
+
+        matrix_csv = derived_dir / "whole_section_pq_matrix.csv"
+        whole_section_pq_matrix_table(instance_df).to_csv(matrix_csv)
+        derived_tables.append("whole_section_pq_matrix.csv")
 
     if not val_df.empty:
         val_csv = derived_dir / "ultralytics_val.csv"

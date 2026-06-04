@@ -26,17 +26,22 @@ WAVE1_APPROVED_OUTPUTS: list[ReportingOutput] = [
         "id": "headline_ranking_table",
         "label": "Headline Ranking Table",
         "tier": "thesis-core",
+        "filename_patterns": ["headline_pq_ranking.csv"],
     },
     {
         "id": "whole_section_pq_matrix_heatmap",
         "label": "Whole-section PQ Matrix / Heatmap",
         "tier": "thesis-core",
-        "filename_patterns": ["headline_heatmap.png"],
+        "filename_patterns": [
+            "whole_section_pq_matrix.csv",
+            "headline_heatmap.png",
+        ],
     },
     {
         "id": "thesis_ready_results_table",
         "label": "Thesis-Ready Results Table",
         "tier": "thesis-core",
+        "filename_patterns": ["thesis_ready_results.csv"],
     },
     {
         "id": "per_variant_winner_table",

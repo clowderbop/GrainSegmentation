@@ -14,6 +14,21 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
 }
 MODEL_AXIS_LABEL = "Model"
 MODEL_LEGEND_ORDER = ("YOLO", "U-Net")
+HEADLINE_PQ_COLUMNS = ("pq", "dq", "sq")
+
+
+class HeadlineFigureError(ValueError):
+    """Raised when instance metrics lack required whole-section PQ headline fields."""
+
+
+HEADLINE_PQ_TITLE = "Headline: whole-section PQ (held-out test)"
+PQ_DIAGNOSTIC_DQ_TITLE = "PQ diagnostic: DQ (whole-section test)"
+PQ_DIAGNOSTIC_SQ_TITLE = "PQ diagnostic: SQ (whole-section test)"
+MODEL_VARIANT_BARS_TITLE = "Headline: whole-section PQ by input configuration"
+PPL_DELTA_PQ_TITLE = "Headline: whole-section PQ gain vs PPL baseline"
+ULTRALYTICS_VAL_PANEL_TITLE = (
+    "Supporting: YOLO patch Ultralytics val mAP@0.5 (not whole-section SAHI)"
+)
 
 
 def model_display_name(producer: str) -> str:
@@ -52,20 +67,40 @@ def _whole_headline_table(df: pd.DataFrame) -> pd.DataFrame:
     return whole.sort_values(["producer", "display_name"])
 
 
+def require_headline_pq_table(df: pd.DataFrame) -> pd.DataFrame:
+    """Whole-section instance rows with headline PQ and required PQ diagnostics."""
+    whole = _whole_headline_table(df)
+    if whole.empty:
+        raise HeadlineFigureError(
+            "no whole-section instance rows for headline figures; "
+            "run held-out whole-section eval before post-eval reporting"
+        )
+    missing = [col for col in HEADLINE_PQ_COLUMNS if col not in whole.columns]
+    if missing:
+        raise HeadlineFigureError(
+            "headline figures require whole-section PQ bundle columns "
+            f"{list(HEADLINE_PQ_COLUMNS)!r}; missing {missing!r} - "
+            "regenerate eval artifacts under the PQ bundle policy"
+        )
+    if whole[list(HEADLINE_PQ_COLUMNS)].isna().any().any():
+        raise HeadlineFigureError(
+            "headline figures require finite whole-section PQ, DQ, and SQ values"
+        )
+    return whole
+
+
 def figure_headline_heatmap(df: pd.DataFrame, path: Path) -> None:
     _require_plotting()
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    whole = _whole_headline_table(df)
-    if whole.empty:
-        return
+    whole = require_headline_pq_table(df)
     display_order = _ordered_display_names(whole)
-    fig, axes = plt.subplots(1, 2, figsize=(12, 3.5), constrained_layout=True)
+    fig, axes = plt.subplots(1, 3, figsize=(14, 3.5), constrained_layout=True)
     for ax, metric, title in zip(
         axes,
-        ("aji", "f1_iou50"),
-        ("AJI (whole-section test)", "F1@IoU50 (whole-section test)"),
+        HEADLINE_PQ_COLUMNS,
+        (HEADLINE_PQ_TITLE, PQ_DIAGNOSTIC_DQ_TITLE, PQ_DIAGNOSTIC_SQ_TITLE),
         strict=True,
     ):
         pivot = whole.pivot(index="producer", columns="display_name", values=metric)
@@ -86,10 +121,7 @@ def figure_model_variant_bars(df: pd.DataFrame, path: Path) -> None:
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    whole = _whole_headline_table(df)
-    if whole.empty:
-        return
-    whole = whole.copy()
+    whole = require_headline_pq_table(df).copy()
     whole["model"] = whole["producer"].map(MODEL_DISPLAY_NAMES)
     whole["display_name"] = pd.Categorical(
         whole["display_name"],
@@ -105,13 +137,13 @@ def figure_model_variant_bars(df: pd.DataFrame, path: Path) -> None:
     sns.barplot(
         data=whole,
         x="display_name",
-        y="aji",
+        y="pq",
         hue="model",
         ax=ax,
     )
-    ax.set_title("Whole-section test AJI by input configuration")
+    ax.set_title(MODEL_VARIANT_BARS_TITLE)
     ax.set_xlabel("Input configuration")
-    ax.set_ylabel("AJI")
+    ax.set_ylabel("PQ")
     ax.legend(title=MODEL_AXIS_LABEL)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -122,12 +154,10 @@ def figure_ppl_delta_heatmap(df: pd.DataFrame, path: Path) -> None:
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-    whole = _whole_headline_table(df)
-    if whole.empty:
-        return
+    whole = require_headline_pq_table(df)
     ppl_name = "PPL"
     baseline = (
-        whole[whole["display_name"] == ppl_name].set_index("producer")["aji"].to_dict()
+        whole[whole["display_name"] == ppl_name].set_index("producer")["pq"].to_dict()
     )
     rows: list[dict[str, object]] = []
     for _, row in whole.iterrows():
@@ -140,13 +170,15 @@ def figure_ppl_delta_heatmap(df: pd.DataFrame, path: Path) -> None:
             {
                 "producer": row["producer"],
                 "display_name": row["display_name"],
-                "delta_aji": float(row["aji"]) - float(base),
+                "delta_pq": float(row["pq"]) - float(base),
             }
         )
     if not rows:
-        return
+        raise HeadlineFigureError(
+            "PPL baseline whole-section PQ is missing for one or more producers"
+        )
     delta = pd.DataFrame(rows)
-    pivot = delta.pivot(index="display_name", columns="producer", values="delta_aji")
+    pivot = delta.pivot(index="display_name", columns="producer", values="delta_pq")
     pivot = pivot.reindex(_ordered_display_names(delta))
     pivot = _rename_model_columns(pivot)
     fig, ax = plt.subplots(figsize=(8, 3.5), constrained_layout=True)
@@ -158,7 +190,7 @@ def figure_ppl_delta_heatmap(df: pd.DataFrame, path: Path) -> None:
         center=0.0,
         ax=ax,
     )
-    ax.set_title("AJI gain vs PPL baseline (whole-section test)")
+    ax.set_title(PPL_DELTA_PQ_TITLE)
     ax.set_xlabel(MODEL_AXIS_LABEL)
     ax.set_ylabel("")
     ax.tick_params(axis="x", labelrotation=0)
@@ -188,9 +220,7 @@ def figure_ultralytics_val_panel(val_df: pd.DataFrame, path: Path) -> None:
         color="steelblue",
         ax=ax,
     )
-    ax.set_title(
-        "Supporting: YOLO patch Ultralytics val mAP@0.5 (not whole-section SAHI)"
-    )
+    ax.set_title(ULTRALYTICS_VAL_PANEL_TITLE)
     ax.set_xlabel("Input configuration")
     ax.set_ylabel("seg mAP@0.5")
     fig.savefig(path, dpi=150, bbox_inches="tight")

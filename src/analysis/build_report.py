@@ -13,9 +13,11 @@ from analysis.figures import render_all_figures
 from analysis.load_metrics import metrics_table_from_runs, ultralytics_val_table
 
 SCOPE_NOTE = (
-    "Headline AJI and F1@IoU50 use whole-section held-out test eval (sliding-window). "
+    "Headline whole-section PQ ranks input configurations and compares YOLO vs U-Net "
+    "on held-out test eval (sliding-window). DQ, SQ, thresholded F1, instance counts, "
+    "and AJI+ in instance_metrics.csv are companion diagnostics for failure-mode review. "
     "Patch instance rows and the Ultralytics val panel are supporting metrics with "
-    "different inference geometry; do not rank variants from the patch-val panel alone."
+    "different inference geometry; do not rank variants from patch metrics or AP/mAP alone."
 )
 
 
@@ -49,7 +51,11 @@ def build_reporting_bundle(
         derived_tables.append("ultralytics_val.csv")
 
     figure_names: list[str] = []
-    if render_figures and not instance_df.empty:
+    if render_figures:
+        if instance_df.empty:
+            raise ValueError(
+                "cannot render headline figures: no instance metric rows were loaded"
+            )
         figure_names = render_all_figures(instance_df, val_df, figures_dir)
 
     summary: dict[str, Any] = {

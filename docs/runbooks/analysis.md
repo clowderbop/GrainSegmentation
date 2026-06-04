@@ -65,7 +65,7 @@ Under `$SCRATCH/GrainSeg/eval/reporting/` (or `OUTPUT_DIR`):
 | Path | Contents |
 |------|----------|
 | `derived/` | Comparison tables |
-| `figures/` | Thesis charts (AJI/F1 heatmap, model×configuration bars, PPL-relative delta; supporting YOLO patch-val panel) |
+| `figures/` | Thesis charts (whole-section PQ headline heatmap and bars, PPL-relative PQ delta; supporting YOLO patch-val mAP panel) |
 | `analysis_summary.json` | Run summary |
 
 **Eval run discovery (v1):** `analysis.build_report` locates runs by path conventions per **producer**, registry variant key, and **sample unit** (whole vs patch). Implementation: `src/analysis/discover.py`. No catalog file in v1.

@@ -25,7 +25,11 @@ from common.manifest_io import (
 )
 from common.ground_truth import GtOriginMode, scene_polygons_to_patch_instance_map
 from common.instance_metric_bundle import compute_instance_metric_bundle
-from common.reporting import build_instance_eval_report, build_sample_row
+from common.reporting import (
+    build_instance_eval_report,
+    build_sample_row,
+    json_safe_for_dump,
+)
 from common.yolo_seg_labels import yolo_seg_labels_to_instance_map
 
 Unit = Literal["patch", "whole"]
@@ -331,7 +335,10 @@ def main() -> None:
             f"mean: pq={mean['pq']:.4f} aji_plus={mean['aji_plus']:.4f}"
         )
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
-    args.output_json.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
+    args.output_json.write_text(
+        json.dumps(json_safe_for_dump(report), indent=2, allow_nan=False),
+        encoding="utf-8",
+    )
     print(f"Wrote instance metrics to {args.output_json}")
 
 

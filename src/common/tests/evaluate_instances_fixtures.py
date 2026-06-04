@@ -64,3 +64,34 @@ def perfect_match_eval_sample(
         instance_prediction_set=pred_path,
         gt_txt=gt_txt,
     )
+
+
+def empty_gt_false_positive_eval_sample(
+    tmp_path: Path,
+    *,
+    sample_id: str = "empty_gt_fp",
+    width: int = 48,
+    height: int = 48,
+) -> InstanceEvalSample:
+    """No GT instances, one predicted instance (pred_gt_instance_ratio is +inf)."""
+    image_path = tmp_path / f"{sample_id}_PPL.tif"
+    write_blank_image(image_path, width, height)
+    gt_txt = tmp_path / f"{sample_id}.txt"
+    gt_txt.write_text("", encoding="utf-8")
+
+    pred_map = np.zeros((height, width), dtype=np.int32)
+    pred_map[4:16, 4:16] = 1
+    ps = yolo_prediction_set_from_masks(
+        masks_hw=pred_map.astype(np.float32)[None, ...],
+        scores=np.array([0.9], dtype=np.float32),
+        height=height,
+        width=width,
+    )
+    pred_path = prediction_set_path(tmp_path, sample_id)
+    save_prediction_set(pred_path, ps)
+    return InstanceEvalSample(
+        sample_id=sample_id,
+        image_path=image_path,
+        instance_prediction_set=pred_path,
+        gt_txt=gt_txt,
+    )

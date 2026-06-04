@@ -149,7 +149,7 @@ def test_v2_tiled_proposal_cache_scoring_bundle_matches_legacy(
     weights = run_root / "PPL" / "weights" / "best.pt"
     weights.parent.mkdir(parents=True)
     weights.write_bytes(b"weights")
-    work_root = tmp_path / "_work"
+    work_root = tmp_path / ".cache"
     recipe = load_test_inference_recipe()
     v2_records = v2_records_from_disjoint_via_collector(
         height, width, mask_threshold=candidate.mask_threshold
@@ -232,7 +232,7 @@ def test_v2_overlapping_tiled_proposal_cache_scoring_bundle_matches_legacy(
     weights = run_root / "PPL" / "weights" / "best.pt"
     weights.parent.mkdir(parents=True)
     weights.write_bytes(b"weights")
-    work_root = tmp_path / "_work"
+    work_root = tmp_path / ".cache"
     recipe = load_test_inference_recipe()
     v2_records = v2_records_from_overlapping_masks(height, width)
     write_tiled_proposals(

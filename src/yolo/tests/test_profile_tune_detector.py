@@ -33,7 +33,7 @@ def detector_tune_layout(tmp_path: Path) -> dict[str, Path]:
     weights.parent.mkdir(parents=True)
     weights.write_bytes(b"weights-bytes")
 
-    work_root = tmp_path / "tune_out" / "_work"
+    work_root = tmp_path / "tune_out" / ".cache"
     staged_manifest = work_root / variant / "staged" / "manifest.json"
     staged_manifest.parent.mkdir(parents=True)
     staged_manifest.write_text(
@@ -216,7 +216,7 @@ def test_profile_tune_detector_main_resolves_array_index(
 
     def fake_write(**kwargs: object) -> Path:
         captured.update(kwargs)
-        return output_dir / "_work" / "PPL" / "cache"
+        return output_dir / ".cache" / "PPL" / "cache"
 
     monkeypatch.setattr("yolo.profile_tune_detector.write_detector_proposal_cache", fake_write)
 

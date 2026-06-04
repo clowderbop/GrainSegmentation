@@ -24,8 +24,10 @@ Cluster workflow, resources, and promotion: docs/runbooks/yolo.md#profile-select
 Requires all registry variant weights under runs/yolo26-seg/{variant}/weights/best.pt
 when running detectors.
 
---skip-detectors  Skip the detector array when this OUTPUT_DIR already has valid v2 _work/
+--skip-detectors  Skip the detector array when this OUTPUT_DIR already has valid v2 .cache/
                   (same run). GT cache, venv prep, candidates, and finalize still run.
+
+Runs that used the old _work/ layout are incompatible; start a new RUN_ID after upgrading.
 
 Environment:
   OUTPUT_DIR       full run directory (default: .../yolo_inference_profile_tune/<run_id>)
@@ -122,7 +124,7 @@ if [ "$SKIP_DETECTORS" != "1" ]; then
         fi
     fi
 else
-    echo "Skipping detector jobs (SKIP_DETECTORS=1); using existing _work/ in $OUTPUT_DIR"
+    echo "Skipping detector jobs (SKIP_DETECTORS=1); using existing .cache/ in $OUTPUT_DIR"
 fi
 
 detector_dep=""

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Profile selection ground truth cache (ADR 0005): OpenCV rasterize train_labels.gpkg
-# → OUTPUT_DIR/_work/gt_cache/train/; sync src/common only (GPKG copy + timings in CLI).
+# → OUTPUT_DIR/.cache/gt_cache/train/; sync src/common only (GPKG copy + timings in CLI).
 #SBATCH --job-name=yolo_prof_gt
 #SBATCH --output=logs/yolo_prof_gt-%j.log
 #SBATCH --mem=32G
@@ -27,7 +27,7 @@ echo "[$(date -Is)] uv sync (common only) …"
 uv sync
 echo "[$(date -Is)] uv sync done"
 
-echo "GT cache → $OUTPUT_DIR/_work/gt_cache/train/"
+echo "GT cache → $OUTPUT_DIR/.cache/gt_cache/train/"
 echo "  train_labels: $train_gpkg"
 echo "  grainseg_root: $GRAINSEG_ROOT"
 uv run python -u -m common.profile_tune_gt_cache \

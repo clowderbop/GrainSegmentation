@@ -613,7 +613,7 @@ def test_validate_detector_caches_raises_when_cache_missing(tmp_path: Path) -> N
     weights.write_bytes(b"weights")
     with pytest.raises(FileNotFoundError, match="Missing or invalid"):
         validate_detector_caches(
-            work_root=tmp_path / "_work",
+            work_root=tmp_path / ".cache",
             spec=spec,
             variants=("PPL",),
             grainseg_root=tmp_path / "grainseg",
@@ -734,7 +734,7 @@ def test_grid_coordinator_cache_miss_fails_validation(tmp_path: Path) -> None:
     weights.write_bytes(b"weights")
     with pytest.raises(FileNotFoundError, match="Missing or invalid detector caches"):
         validate_detector_caches(
-            work_root=tmp_path / "_work",
+            work_root=tmp_path / ".cache",
             spec=spec,
             variants=("PPL",),
             grainseg_root=tmp_path / "grainseg",
@@ -782,7 +782,7 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     weights = run_root / "PPL" / "weights" / "best.pt"
     weights.parent.mkdir(parents=True)
     weights.write_bytes(b"weights")
-    work_root = tmp_path / "_work"
+    work_root = tmp_path / ".cache"
     recipe = load_test_inference_recipe()
     v2_records = v2_records_from_disjoint_via_collector(
         height, width, mask_threshold=candidate.mask_threshold
@@ -899,7 +899,7 @@ def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None
     tifffile.imwrite(anchor, np.zeros((height, width, 3), dtype=np.uint8))
 
     output_dir = tmp_path / "run"
-    work_root = output_dir / "_work"
+    work_root = output_dir / ".cache"
     common_src = Path(__file__).resolve().parents[2] / "common"
     tmpdir = tmp_path / "tmpdir"
     tmpdir.mkdir(parents=True)
@@ -1014,7 +1014,7 @@ def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
     tifffile.imwrite(anchor, np.zeros((height, width, 3), dtype=np.uint8))
 
     output_dir = tmp_path / "run"
-    work_root = output_dir / "_work"
+    work_root = output_dir / ".cache"
     common_src = Path(__file__).resolve().parents[2] / "common"
     tmpdir = tmp_path / "tmpdir"
     tmpdir.mkdir(parents=True)
@@ -1106,7 +1106,7 @@ def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
     weights = run_root / "PPL" / "weights" / "best.pt"
     weights.parent.mkdir(parents=True)
     weights.write_bytes(b"weights")
-    work_root = tmp_path / "_work"
+    work_root = tmp_path / ".cache"
     recipe = load_test_inference_recipe()
     height, width = 16, 16
     mask = np.zeros((height, width), dtype=bool)

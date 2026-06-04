@@ -15,7 +15,9 @@ The profile is shared across variants. Per-variant profiles are rejected because
 Profile tuning uses two caches that are internal to tune runs:
 
 - **Tiled detector proposals:** detector outputs cached per `(variant, conf, mask_threshold)` as compact records with score, whole-image bbox, crop-local COCO RLE, crop offset, and image shape. The cache is not the canonical prediction artifact and is not used by held-out `yolo.predict`.
-- **Profile selection ground truth cache:** one train **merged instance view** under `_work/gt_cache/train/`, rasterized from `train_labels.gpkg` with the canonical OpenCV polygon painter. It is shared across variants because label geometry is shared.
+- **Profile selection ground truth cache:** one train **merged instance view** under `.cache/gt_cache/train/`, rasterized from `train_labels.gpkg` with the canonical OpenCV polygon painter. It is shared across variants because label geometry is shared.
+
+In-flight tune runs that used the legacy `_work/` cache root are incompatible and are not resumed; start a new run id after the layout change.
 
 Candidate scoring loads tiled proposals and the GT cache, applies SAHI slice-merge, paints **score merge** into a merged instance view, and computes train PQ plus the full diagnostic bundle. It does not write an **instance prediction set** for every grid point. Held-out test still runs full prediction and persists canonical prediction sets.
 

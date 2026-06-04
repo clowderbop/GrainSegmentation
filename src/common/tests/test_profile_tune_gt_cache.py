@@ -31,8 +31,9 @@ def _write_anchor_tiff(path: Path, *, height: int, width: int) -> None:
     tifffile.imwrite(path, np.zeros((height, width, 3), dtype=np.uint8))
 
 
-def test_gt_cache_dir_under_work_root(tmp_path: Path) -> None:
-    assert gt_cache_dir(tmp_path / "_work") == tmp_path / "_work" / "gt_cache" / "train"
+def test_gt_cache_dir_under_cache_root(tmp_path: Path) -> None:
+    cache_root = tmp_path / ".cache"
+    assert gt_cache_dir(cache_root) == cache_root / "gt_cache" / "train"
 
 
 def test_build_gt_fingerprint_excludes_variant_includes_geometry(
@@ -65,7 +66,7 @@ def test_write_and_load_gt_cache_round_trip(tmp_path: Path) -> None:
         width=8,
         height=8,
     )
-    cache_dir = gt_cache_dir(tmp_path / "_work")
+    cache_dir = gt_cache_dir(tmp_path / ".cache")
     write_gt_instance_map_cache(cache_dir, gt_map, fingerprint=fingerprint)
     loaded, meta = load_gt_instance_map_cache(cache_dir, expected=fingerprint)
     np.testing.assert_array_equal(loaded, gt_map)
@@ -80,7 +81,7 @@ def test_load_gt_cache_rejects_fingerprint_mismatch(tmp_path: Path) -> None:
     fingerprint = build_gt_fingerprint(
         sample_id="train", labels_gpkg=gpkg, width=4, height=4
     )
-    cache_dir = gt_cache_dir(tmp_path / "_work")
+    cache_dir = gt_cache_dir(tmp_path / ".cache")
     write_gt_instance_map_cache(cache_dir, gt_map, fingerprint=fingerprint)
     gpkg.write_bytes(b"gpkg-v2")
     mismatched = build_gt_fingerprint(
@@ -99,7 +100,7 @@ def test_write_train_gt_cache_from_micro_gpkg_matches_golden(tmp_path: Path) -> 
     _write_anchor_tiff(
         anchor, height=_FIXTURE_HEIGHT, width=_FIXTURE_WIDTH
     )
-    work_root = tmp_path / "_work"
+    work_root = tmp_path / ".cache"
 
     cache_dir = write_train_gt_cache(
         work_root=work_root,
@@ -154,7 +155,7 @@ def test_gt_cache_cli_module_writes_micro_fixture(tmp_path: Path) -> None:
         check=True,
         env=env,
     )
-    cache_dir = gt_cache_dir(output_dir / "_work")
+    cache_dir = gt_cache_dir(output_dir / ".cache")
     loaded, _meta = load_gt_instance_map_cache(
         cache_dir,
         expected=build_gt_fingerprint(

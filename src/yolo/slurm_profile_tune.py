@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from common.profile_tune_paths import PROFILE_TUNE_CACHE_DIR_NAME
 from common.variants import repo_root
 
 # ADR 0005: detector jobs run as a throttled SLURM array (default max 6 concurrent).
@@ -45,7 +46,7 @@ PROFILE_TUNE_GT_CACHE_RESOURCES: dict[str, str] = {
 PROFILE_TUNE_GT_CACHE_COMMON_CD = 'cd "$REPO_ROOT/src/common"'
 PROFILE_TUNE_GT_CACHE_MODULE = "common.profile_tune_gt_cache"
 PROFILE_TUNE_GT_CACHE_TRAIN_LABELS_GPKG = "dataset/train/train_labels.gpkg"
-PROFILE_TUNE_GT_CACHE_OUTPUT_REL = "_work/gt_cache/train/"
+PROFILE_TUNE_GT_CACHE_OUTPUT_REL = f"{PROFILE_TUNE_CACHE_DIR_NAME}/gt_cache/train/"
 
 PROFILE_TUNE_RUNBOOK_REL = Path("docs/runbooks/yolo.md")
 

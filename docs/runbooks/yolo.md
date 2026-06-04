@@ -82,7 +82,7 @@ Each grid candidate is scored by **profile selection scoring**: slice-merge and 
 | Parallelism | 36 tasks, max **6** concurrent (`DETECTOR_MAX_PARALLEL`) |
 | Time | 00:10:00 |
 
-Writes **tiled detector proposals** (`schema_version` 2) under `_work/{variant}/tiled_proposals/c{conf}_t{mask}/`.
+Writes **tiled detector proposals** (`schema_version` 2) under `.cache/{variant}/tiled_proposals/c{conf}_t{mask}/`.
 
 ### 2. Ground-truth cache
 
@@ -94,7 +94,7 @@ Writes **tiled detector proposals** (`schema_version` 2) under `_work/{variant}/
 | Time | 04:00:00 |
 | Depends on | `afterok` detectors |
 
-Rasterizes train GT to `_work/gt_cache/train/` (`src/common` only).
+Rasterizes train GT to `.cache/gt_cache/train/` (`src/common` only).
 
 ### 3. Venv prep
 
@@ -146,7 +146,7 @@ Commit `configs/test_inference.yaml` after promotion. The five **YOLO inference 
 
 ### Rerun without detectors
 
-`--skip-detectors` (or `SKIP_DETECTORS=1`) skips the detector array when this `OUTPUT_DIR` already has valid v2 tiled proposals under `_work/`. Submit still runs GT cache, venv prep, the candidate array, and finalize. Use when detectors already finished in the same run directory—not to reuse caches from an incompatible older run (see ADRs 0006/0007).
+`--skip-detectors` (or `SKIP_DETECTORS=1`) skips the detector array when this `OUTPUT_DIR` already has valid v2 tiled proposals under `.cache/`. Submit still runs GT cache, venv prep, the candidate array, and finalize. Use only when detectors already finished in **this** run directory with compatible caches—not when reusing another run id, stale grid rows, bumped cache schemas, or the legacy `_work/` layout ([ADR 0005](../adr/0005-yolo-inference-profile-train-selection.md)); start a fresh `RUN_ID` when those no longer match.
 
 ### Finalize recovery
 

@@ -130,6 +130,9 @@ def test_submit_profile_tune_usage_documents_skip_detectors() -> None:
     usage = result.stderr
     assert "--skip-detectors" in usage
     assert "SKIP_DETECTORS" in usage
+    assert "valid v2 .cache/" in usage
+    assert "old _work/" in usage
+    assert "RUN_ID" in usage
 
 
 def test_profile_tune_runbook_exists() -> None:

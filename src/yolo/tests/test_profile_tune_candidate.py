@@ -58,7 +58,7 @@ def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> No
         mask_threshold=0.5,
     )
     output_dir = tmp_path / "run"
-    work_root = output_dir / "_work"
+    work_root = output_dir / ".cache"
     grainseg_root = tmp_path / "grainseg"
     run_root = grainseg_root / "runs" / "yolo26-seg"
 
@@ -144,7 +144,7 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
             output_dir=output_dir,
             grainseg_root=tmp_path / "grainseg",
             run_root=tmp_path / "grainseg" / "runs" / "yolo26-seg",
-            work_root=output_dir / "_work",
+            work_root=output_dir / ".cache",
             grid_config=None,
             resume=True,
         )
@@ -194,7 +194,7 @@ def test_score_profile_selection_candidate_loads_gt_once(tmp_path: Path) -> None
             output_dir=output_dir,
             grainseg_root=tmp_path / "grainseg",
             run_root=tmp_path / "grainseg" / "runs" / "yolo26-seg",
-            work_root=output_dir / "_work",
+            work_root=output_dir / ".cache",
             grid_config=None,
             resume=False,
         )
@@ -320,7 +320,7 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
             output_dir=output_dir,
             grainseg_root=grainseg_root,
             run_root=run_root,
-            work_root=output_dir / "_work",
+            work_root=output_dir / ".cache",
             grid_config=None,
             resume=True,
         )

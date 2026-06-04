@@ -6,6 +6,8 @@ import argparse
 import json
 import time
 from pathlib import Path
+
+from common.profile_tune_paths import profile_tune_cache_root
 from typing import Any
 
 import numpy as np
@@ -372,7 +374,7 @@ def main(argv: list[str] | None = None) -> None:
     grainseg_root, run_root = default_grainseg_and_run_roots(
         args.grainseg_root, args.run_root
     )
-    work_root = args.work_root or (args.output_dir / "_work")
+    work_root = args.work_root or profile_tune_cache_root(args.output_dir)
     grid_dir = args.output_dir / "grid"
     _log("Profile selection candidate")
     _log(f"  output_dir={args.output_dir.resolve()}")

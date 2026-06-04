@@ -9,6 +9,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from common.profile_tune_paths import profile_tune_cache_root
+
 import numpy as np
 
 from common.evaluate_instances import image_dimensions
@@ -206,7 +208,7 @@ def _parse_args(argv: list[str] | None = None):
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     grainseg_root = args.grainseg_root or default_grainseg_root()
-    work_root = args.work_root or (args.output_dir / "_work")
+    work_root = args.work_root or profile_tune_cache_root(args.output_dir)
     labels_gpkg = train_labels_gpkg_path(grainseg_root)
     _log("Profile selection ground truth cache")
     _log(f"  output_dir={args.output_dir}")

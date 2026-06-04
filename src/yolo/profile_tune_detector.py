@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from common.profile_tune_paths import profile_tune_cache_root
+
 from sahi import AutoDetectionModel
 
 from common.manifest_io import collect_manifest_image_paths
@@ -67,7 +69,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--work-root",
         type=Path,
         default=None,
-        help="Profile tune work directory (default: output-dir/_work).",
+        help="Profile tune durable cache root (default: output-dir/.cache).",
     )
     return parser.parse_args(argv)
 
@@ -198,7 +200,7 @@ def main(argv: list[str] | None = None) -> None:
     grainseg_root, run_root = default_grainseg_and_run_roots(
         args.grainseg_root, args.run_root
     )
-    work_root = args.work_root or (args.output_dir / "_work")
+    work_root = args.work_root or profile_tune_cache_root(args.output_dir)
     if args.array_index is not None:
         print(
             f"Detector array task {args.array_index}: "

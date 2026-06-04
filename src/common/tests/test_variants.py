@@ -58,6 +58,19 @@ def test_load_registry_has_four_variants() -> None:
 def test_yolo_input_channels(name: str) -> None:
     spec = get_variant(name)
     assert spec.yolo.input_channels == EXPECTED_YOLO_CHANNELS[name]
+    assert spec.unet.channels_per_input == 3
+
+
+def test_ppl_plus_ppx_yaml_name_differs_from_subdir() -> None:
+    yolo = get_variant("PPL+PPXblend").yolo
+    assert yolo.dataset_subdir == "PPL+PPXblend"
+    assert yolo.yaml_name == "PPL_PPXblend.yaml"
+
+
+def test_stacked_mosaic_paths_use_literal_variant() -> None:
+    paths = get_variant("PPL+AllPPX").paths
+    assert paths.train_mosaic_stacked == "dataset/train/train_PPL+AllPPX.tif"
+    assert paths.test_mosaic_stacked == "dataset/test/test_PPL+AllPPX.tif"
 
 
 @pytest.mark.parametrize("name", EXPECTED_VARIANTS)

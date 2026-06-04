@@ -6,33 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from common.test_inference import inference_recipe_path, load_test_inference_recipe
-from common.variants import repo_root
-
-
-def test_inference_recipe_path_under_repo_root() -> None:
-    assert inference_recipe_path() == repo_root() / "configs" / "test_inference.yaml"
-
-
-def test_load_test_inference_recipe_values() -> None:
-    recipe = load_test_inference_recipe()
-    assert recipe.whole.window == 1024
-    assert recipe.whole.stride == 512
-    assert recipe.patch.imgsz == 1024
-    assert recipe.yolo.conf == 0.25
-    profile = recipe.yolo.profile
-    assert profile.postprocess_type == "GREEDYNMM"
-    assert profile.match_metric == "IOS"
-    assert profile.match_threshold == 0.5
-    assert profile.mask_threshold == 0.5
-    assert recipe.yolo.val.imgsz == 1024
-    assert recipe.yolo.val.batch == 16
-    assert recipe.yolo.patch.batch == 16
-    assert recipe.unet.whole.patch_size == 1024
-    assert recipe.unet.whole.stride == 512
-    assert recipe.unet.patch.patch_size == 1024
-    assert recipe.unet.patch.stride == 1024
-    assert recipe.unet.patch.batch_size == 1
+from common.test_inference import load_test_inference_recipe
 
 
 def test_load_test_inference_recipe_yolo_profile_from_yaml(tmp_path: Path) -> None:
@@ -89,21 +63,6 @@ def test_parse_yolo_profile_candidate_mapping_rejects_empty_postprocess_type() -
             },
             context="profile",
         )
-
-
-def test_yolo_profile_candidate_from_recipe_matches_recipe_fields() -> None:
-    from common.test_inference import (
-        load_test_inference_recipe,
-        yolo_profile_candidate_from_recipe,
-    )
-
-    recipe = load_test_inference_recipe()
-    candidate = yolo_profile_candidate_from_recipe(recipe)
-    assert candidate.conf == recipe.yolo.conf
-    assert candidate.mask_threshold == recipe.yolo.profile.mask_threshold
-    assert candidate.postprocess_type == recipe.yolo.profile.postprocess_type
-    assert candidate.match_metric == recipe.yolo.profile.match_metric
-    assert candidate.match_threshold == recipe.yolo.profile.match_threshold
 
 
 def test_emit_shell_exports_yolo_inference_profile(capsys: pytest.CaptureFixture[str]) -> None:

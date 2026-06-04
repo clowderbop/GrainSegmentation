@@ -46,7 +46,7 @@ Authoritative policy for train-side selection, held-out ranking, and reporting. 
 | Stage | PQ objective | Runbook |
 |-------|----------------|---------|
 | YOLO **profile selection** | Maximize `mean_pq` on train whole section | [`runbooks/yolo.md`](runbooks/yolo.md#profile-selection) |
-| **Profile promotion** | Install PQ winner into `configs/test_inference.yaml` | [`runbooks/yolo.md`](runbooks/yolo.md#promotion) |
+| **Profile promotion** | Install PQ winner into `config/test_inference.yaml` | [`runbooks/yolo.md`](runbooks/yolo.md#promotion) |
 | U-Net watershed tune | `best_mean_pq` per variant | [`runbooks/unet.md`](runbooks/unet.md#watershed-tuning) |
 | CC vs watershed (train) | Mean train PQ in `eval/extraction_method_selection.json` | [`runbooks/unet.md`](runbooks/unet.md#cc-vs-watershed-train-section) |
 | **Post-eval reporting** | Headline **whole-section PQ** + [PQ diagnostics](#pq-diagnostics); AP/mAP in YOLO-only patch panel | [`runbooks/analysis.md`](runbooks/analysis.md) |
@@ -58,7 +58,7 @@ Older artifacts may rank or promote by AJI or `mean_aji` instead of PQ:
 | Location | Do not use for final settings under PQ policy |
 |----------|-----------------------------------------------|
 | `runs/yolo_inference_profile_tune/` | AJI-era `grid/winner.json` or high-`mean_aji` rows for **profile promotion** |
-| `configs/test_inference.yaml` | Values promoted from an AJI-selected winner |
+| `config/test_inference.yaml` | Values promoted from an AJI-selected winner |
 | `runs/watershed_tune/`, `eval/extraction_method_selection.json` | AJI-driven extraction winners |
 | `eval/yolo_*`, `eval/unet_*`, `eval/reporting/` | Pre-policy or AJI-headline held-out eval / reporting |
 

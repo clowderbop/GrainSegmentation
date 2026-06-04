@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Load shared test inference recipe exports (configs/test_inference.yaml).
+# Load shared test inference recipe exports (config/test_inference.yaml).
 # Requires REPO_ROOT (from enter_job.sh).
 
 load_test_inference_exports() {

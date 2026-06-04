@@ -1,4 +1,4 @@
-"""Test inference recipe from configs/test_inference.yaml (ADR 0003)."""
+"""Test inference recipe from config/test_inference.yaml (ADR 0003)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from common.test_inference import load_test_inference_recipe
+from common.test_inference import inference_recipe_path, load_test_inference_recipe
+from common.variants import repo_root
+
+
+def test_inference_recipe_path_defaults_to_config_test_inference_yaml() -> None:
+    assert inference_recipe_path() == repo_root() / "config" / "test_inference.yaml"
 
 
 def test_load_test_inference_recipe_yolo_profile_from_yaml(tmp_path: Path) -> None:

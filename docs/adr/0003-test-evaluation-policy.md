@@ -14,7 +14,7 @@ The same **instance metric bundle** is computed for every instance evaluation wh
 
 AP/mAP metrics are outside the instance metric bundle. They are optional YOLO patch diagnostics from Ultralytics val only, not whole-section Mask AP and not cross-model ranking evidence.
 
-The shared **test inference recipe** lives at `configs/test_inference.yaml`. It governs window geometry, patch crop size, batching, the frozen **YOLO inference profile**, and patch-val settings. Per-variant test inference settings are out of scope. U-Net keeps per-checkpoint **U-Net extraction profile** settings selected on train; those are not stored as shared recipe knobs.
+The shared **test inference recipe** lives at `config/test_inference.yaml`. It governs window geometry, patch crop size, batching, the frozen **YOLO inference profile**, and patch-val settings. Per-variant test inference settings are out of scope. U-Net keeps per-checkpoint **U-Net extraction profile** settings selected on train; those are not stored as shared recipe knobs.
 
 Before held-out test, YOLO profile selection chooses the shared profile on the whole train section by mean whole-section train PQ across registry variants, then promotes the winner into the recipe; see [ADR 0005](0005-yolo-inference-profile-train-selection.md). U-Net watershed tuning and CC-vs-watershed selection also use train whole-section PQ.
 

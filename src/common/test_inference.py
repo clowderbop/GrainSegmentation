@@ -1,4 +1,4 @@
-"""Load the shared test inference recipe (configs/test_inference.yaml)."""
+"""Load the shared test inference recipe (config/test_inference.yaml)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import yaml
 from common import yaml_validate as yv
 from common.variants import repo_root
 
-_RECIPE_RELATIVE = Path("configs") / "test_inference.yaml"
+_RECIPE_RELATIVE = Path("config") / "test_inference.yaml"
 
 
 @dataclass(frozen=True)

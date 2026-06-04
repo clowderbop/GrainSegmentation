@@ -155,7 +155,7 @@ uv run --directory src/yolo python -m yolo.promote_inference_profile \
   --winner-json "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<run_id>/grid/winner.json"
 ```
 
-Commit `configs/test_inference.yaml` after promotion. The five **YOLO inference profile** knobs in git are the frozen held-out test settings; geometry stays in the shared **test inference recipe**.
+Commit `config/test_inference.yaml` after promotion. The five **YOLO inference profile** knobs in git are the frozen held-out test settings; geometry stays in the shared **test inference recipe**.
 
 ### Rerun without detectors
 
@@ -223,7 +223,7 @@ Pre-change eval trees on scratch are invalid—delete `eval/yolo_{variant}/` and
 |---------|----------|
 | `runs/yolo26-seg/{variant}/weights/best.pt` | Profile selection, test eval |
 | `runs/yolo_inference_profile_tune/<run_id>/` | Audit trail |
-| `configs/test_inference.yaml` | Shared test recipe |
+| `config/test_inference.yaml` | Shared test recipe |
 | `eval/yolo_patches/`, `eval/yolo_{variant}/` | Metrics, [analysis](analysis.md) |
 
 U-Net patch test crops (`dataset/test/unet_from_yolo/`) share YOLO patch geometry but are consumed by [unet.md](unet.md).

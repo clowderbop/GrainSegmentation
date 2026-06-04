@@ -33,7 +33,7 @@ Persistent artifacts live under **`$SCRATCH/GrainSeg`** by default (`SLURM/utils
 
 Two **producer** families: **U-Net** (semantic classes → instance extraction) and **YOLO** (direct instance segmentation). YOLO loads stacked TIFFs per variant; U-Net loads per-channel 3-channel TIFFs concatenated in the model (see [`docs/dataset.md`](docs/dataset.md)).
 
-After all YOLO weights exist, run **profile selection** on the train whole section, then **profile promotion** into `configs/test_inference.yaml` before held-out YOLO test eval. Details: [`docs/runbooks/yolo.md`](docs/runbooks/yolo.md).
+After all YOLO weights exist, run **profile selection** on the train whole section, then **profile promotion** into `config/test_inference.yaml` before held-out YOLO test eval. Details: [`docs/runbooks/yolo.md`](docs/runbooks/yolo.md).
 
 Metrics and thesis ranking policy: [`docs/metrics.md`](docs/metrics.md) and [`CONTEXT.md`](CONTEXT.md).
 

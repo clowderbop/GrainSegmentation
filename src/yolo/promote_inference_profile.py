@@ -1,4 +1,4 @@
-"""Promote grid profile-selection winner into configs/test_inference.yaml."""
+"""Promote grid profile-selection winner into config/test_inference.yaml."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--recipe",
         type=Path,
         default=None,
-        help="Target test inference recipe (default: configs/test_inference.yaml).",
+        help="Target test inference recipe (default: config/test_inference.yaml).",
     )
     return parser.parse_args(argv)
 

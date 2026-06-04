@@ -9,7 +9,6 @@ import pandas as pd
 import pytest
 
 from analysis.artifact_qa import (
-    MASK_AP_ARTIFACT,
     PATCH_ARTIFACT,
     ULTRALYTICS_VAL_ARTIFACT,
     WHOLE_SECTION_ARTIFACT,
@@ -53,10 +52,6 @@ def test_completeness_audit_reports_whole_patch_optional_and_val(
         {**MINIMAL_INSTANCE_METRICS, "variant": "PPL", "unit": "patch"},
     )
     _write_json(
-        root / "eval/yolo_PPL/mask_ap_metrics.json",
-        {"mask_ap": 0.5},
-    )
-    _write_json(
         root / "runs/yolo26-seg-val/PPL/test/metrics.json",
         {"seg": {"map50": 0.5}},
     )
@@ -79,9 +74,6 @@ def test_completeness_audit_reports_whole_patch_optional_and_val(
     assert _audit_status(
         audit, variant="PPL", producer="unet", artifact=PATCH_ARTIFACT
     ) == "missing"
-    assert _audit_status(
-        audit, variant="PPL", producer="yolo", artifact=MASK_AP_ARTIFACT
-    ) == "found"
     assert audit.loc[
         (audit["Variant"] == "PPL") & (audit["Artifact"] == ULTRALYTICS_VAL_ARTIFACT),
         "Status",
@@ -103,13 +95,7 @@ def test_completeness_audit_marks_optional_artifacts_missing_when_absent(
     )
     audit = completeness_artifact_audit_table(root, variants=("PPL",))
 
-    assert _audit_status(
-        audit, variant="PPL", producer="yolo", artifact=MASK_AP_ARTIFACT
-    ) == "missing"
-    assert audit.loc[
-        (audit["Variant"] == "PPL") & (audit["Artifact"] == MASK_AP_ARTIFACT),
-        "Expected",
-    ].iloc[0] == "optional"
+    assert "mask_ap" not in " ".join(audit["Artifact"].astype(str)).lower()
     assert audit.loc[
         (audit["Variant"] == "PPL") & (audit["Artifact"] == ULTRALYTICS_VAL_ARTIFACT),
         "Status",

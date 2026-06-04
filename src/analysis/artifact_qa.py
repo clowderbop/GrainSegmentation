@@ -47,7 +47,6 @@ DETAIL_COL = "Detail"
 
 WHOLE_SECTION_ARTIFACT = "whole-section instance metrics"
 PATCH_ARTIFACT = "patch instance metrics"
-MASK_AP_ARTIFACT = "YOLO mask AP metrics (optional diagnostic)"
 ULTRALYTICS_VAL_ARTIFACT = "YOLO patch Ultralytics val metrics (optional)"
 
 PATCH_GOOD_WHOLE_BAD_PQ_GAP = 0.05
@@ -122,18 +121,6 @@ def completeness_artifact_audit_table(
                     PATH_COL: str(patch_path),
                 }
             )
-
-        mask_path = yolo_whole_eval_dir(root, variant) / "mask_ap_metrics.json"
-        rows.append(
-            {
-                VARIANT_COL: variant,
-                PRODUCER_COL: "yolo",
-                ARTIFACT_COL: MASK_AP_ARTIFACT,
-                EXPECTED_COL: "optional",
-                STATUS_COL: "found" if mask_path.is_file() else "missing",
-                PATH_COL: str(mask_path),
-            }
-        )
 
         val_path = ultralytics_val_metrics_path(root, variant)
         rows.append(

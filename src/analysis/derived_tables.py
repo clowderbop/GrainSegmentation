@@ -289,5 +289,7 @@ def thesis_ready_results_table(df: pd.DataFrame) -> pd.DataFrame:
         INPUT_CONFIGURATION_COL: whole[INPUT_CONFIGURATION_COL].astype(str).tolist(),
     }
     for label, key in THESIS_READY_METRIC_COLUMNS:
-        columns[label] = whole[key].astype(float).tolist()
+        if key not in whole.columns:
+            continue
+        columns[label] = pd.to_numeric(whole[key], errors="coerce").tolist()
     return pd.DataFrame(columns)

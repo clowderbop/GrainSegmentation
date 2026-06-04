@@ -131,6 +131,35 @@ def test_thesis_ready_results_orders_models_yolo_before_unet() -> None:
     assert table[MODEL_COL].tolist() == ["YOLO", "YOLO", "U-Net", "U-Net"]
 
 
+def test_thesis_ready_results_table_omits_missing_optional_columns() -> None:
+    minimal_keys = ("pq", "dq", "sq")
+    rows = [
+        {
+            "producer": "yolo",
+            "variant": "PPL",
+            "display_name": "PPL",
+            "unit": "whole",
+            "source": "instance",
+            **{key: PQ_SAMPLE_ROW[key] for key in minimal_keys},
+        },
+        {
+            "producer": "unet",
+            "variant": "PPL",
+            "display_name": "PPL",
+            "unit": "whole",
+            "source": "instance",
+            **{key: PQ_SAMPLE_ROW[key] for key in minimal_keys},
+        },
+    ]
+    table = thesis_ready_results_table(pd.DataFrame(rows))
+
+    assert WHOLE_SECTION_PQ_COL in table.columns
+    assert "DQ" in table.columns
+    assert "Mean precision @ IoU 0.50:0.95" not in table.columns
+    assert "AJI+" not in table.columns
+    assert "GT instances" not in table.columns
+
+
 def test_per_variant_winner_table_picks_higher_pq_and_margin() -> None:
     table = per_variant_winner_table(_four_combo_instance_df())
 

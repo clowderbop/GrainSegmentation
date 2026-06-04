@@ -29,6 +29,7 @@ PRD_THESIS_CORE_IDS = {
     "per_variant_winner_table",
     "ppl_baseline_gain_table",
     "pq_decomposition_grouped_bars",
+    "model_variant_bars",
 }
 
 PRD_DISCUSSION_DIAGNOSTIC_IDS = {
@@ -74,7 +75,6 @@ def test_wave1_approved_outputs_match_prd_tiers() -> None:
     assert by_tier["thesis-core"] == PRD_THESIS_CORE_IDS
     assert by_tier["discussion-diagnostic"] == PRD_DISCUSSION_DIAGNOSTIC_IDS
     assert by_tier["qa-writing"] == PRD_QA_WRITING_IDS
-    assert "model_variant_bars" not in by_tier["thesis-core"]
     assert "ppl_delta_heatmap" not in by_tier["thesis-core"]
 
 
@@ -88,6 +88,11 @@ def test_cut_outputs_include_ap_map_additions() -> None:
     ids = {item["id"] for item in CUT_OUTPUTS}
     assert "ap_map_additions" in ids
     assert "dq_vs_sq_scatter" in ids
+
+
+def test_wave1_approved_outputs_exclude_whole_section_mask_ap() -> None:
+    approved_text = json.dumps(WAVE1_APPROVED_OUTPUTS).lower()
+    assert "mask_ap" not in approved_text
 
 
 def test_forbidden_outputs_cover_cut_wave2_and_ap_map() -> None:

@@ -61,6 +61,12 @@ WAVE1_APPROVED_OUTPUTS: list[ReportingOutput] = [
         "tier": "thesis-core",
         "filename_patterns": ["pq_decomposition_grouped_bars.png"],
     },
+    {
+        "id": "model_variant_bars",
+        "label": "Model × input configuration whole-section PQ bars",
+        "tier": "thesis-core",
+        "filename_patterns": ["model_variant_bars.png"],
+    },
     # Discussion-diagnostic tier
     {
         "id": "ppl_relative_diagnostic_heatmap",

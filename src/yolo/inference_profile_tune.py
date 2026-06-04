@@ -16,6 +16,11 @@ import yaml
 
 from common import yaml_validate as yv
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.instance_eval_report import (
+    extract_instance_metric_bundle_from_report,
+    extract_metric_from_report,
+    load_instance_eval_report,
+)
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
@@ -147,41 +152,8 @@ def variant_metric_column(metric_key: str, variant: str) -> str:
     return f"{metric_key}__{variant}"
 
 
-def _metric_values_from_report_samples(
-    report: dict[str, Any], metric_key: str
-) -> list[float]:
-    samples = report.get("samples")
-    if not isinstance(samples, list):
-        return []
-    return [
-        float(row[metric_key])
-        for row in samples
-        if isinstance(row, dict) and metric_key in row
-    ]
-
-
-def extract_metric_from_report(report: dict[str, Any], metric_key: str) -> float:
-    mean = report.get("mean")
-    if isinstance(mean, dict) and metric_key in mean:
-        return float(mean[metric_key])
-    values = _metric_values_from_report_samples(report, metric_key)
-    if values:
-        return float(sum(values) / len(values))
-    raise ValueError(
-        f"instance metrics report has no {metric_key!r} in mean or samples"
-    )
-
-
 def extract_mean_pq_from_report(report: dict[str, Any]) -> float:
     return extract_metric_from_report(report, PROFILE_SELECTION_OBJECTIVE)
-
-
-def extract_instance_metric_bundle_from_report(
-    report: dict[str, Any],
-) -> dict[str, float]:
-    return {
-        key: extract_metric_from_report(report, key) for key in INSTANCE_METRIC_BUNDLE_KEYS
-    }
 
 
 def mean_pq_across_variants(variant_pq: dict[str, float]) -> float:
@@ -207,7 +179,7 @@ def flatten_per_variant_bundles(
 
 
 def load_instance_metrics_report(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return load_instance_eval_report(path)
 
 
 def score_candidate_across_variants(

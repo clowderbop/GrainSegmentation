@@ -7,9 +7,8 @@ import itertools
 import json
 import re
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable
 
 import numpy as np
 
@@ -23,8 +22,15 @@ from common.image_io import (
 from common.manifest_io import collect_manifest_unet_samples, load_dataset_manifest
 from common.samples import load_rgb_image
 from common.arg_errors import raise_cli_argument_error
-from unet.instance_masks import semantic_to_instance_label_map_watershed
-from common.metrics import compute_aji
+from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from unet.extraction_tune_scoring import (
+    WatershedParamSet,
+    mean_aji_for_watershed_params,
+    mean_train_bundle_for_watershed_params,
+    select_best_watershed_tune_row,
+    watershed_tune_fieldnames,
+    watershed_tune_row,
+)
 
 
 def _validate_pred_semantic(pred: np.ndarray, mask_path: str) -> np.ndarray:
@@ -38,45 +44,6 @@ def _sanitize_csv_key(sample_id: str) -> str:
 def _load_pred_tiff(path: Path) -> np.ndarray:
     arr = load_tiff_single_channel_mask(path)
     return validate_semantic_labels(arr, str(path))
-
-
-@dataclass(frozen=True)
-class WatershedParamSet:
-    min_distance: int
-    boundary_dilate_iter: int
-    watershed_connectivity: int
-    min_area_px: int
-    exclude_border: bool
-    ridge_level: float | None
-
-
-def mean_aji_for_watershed_params(
-    true_instances_per_sample: Sequence[np.ndarray],
-    pred_semantic_per_sample: Sequence[np.ndarray],
-    params: WatershedParamSet,
-    *,
-    interior_class: int = 1,
-    boundary_class: int = 2,
-) -> tuple[float, list[float]]:
-    if len(true_instances_per_sample) != len(pred_semantic_per_sample):
-        raise ValueError("true and pred lists must have the same length")
-    kw: dict[str, Any] = dict(
-        interior_class=interior_class,
-        boundary_class=boundary_class,
-        min_distance=params.min_distance,
-        boundary_dilate_iter=params.boundary_dilate_iter,
-        watershed_connectivity=params.watershed_connectivity,
-        min_area_px=params.min_area_px,
-        exclude_border=params.exclude_border,
-    )
-    if params.ridge_level is not None:
-        kw["ridge_level"] = params.ridge_level
-
-    ajis: list[float] = []
-    for ti, pred in zip(true_instances_per_sample, pred_semantic_per_sample):
-        pi = semantic_to_instance_label_map_watershed(pred, **kw)
-        ajis.append(float(compute_aji(ti, pi)))
-    return float(np.mean(ajis)), ajis
 
 
 def _parse_args() -> argparse.Namespace:
@@ -344,75 +311,80 @@ def main() -> None:
     )
     print(f"Grid size: {grid_size} combinations on {len(sample_ids)} sample(s).")
 
-    best_mean = -1.0
-    best_params: WatershedParamSet | None = None
-    best_per_sample: list[float] | None = None
+    grid_rows: list[dict[str, Any]] = []
 
     out_path = Path(args.output_csv)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "min_distance",
-        "boundary_dilate_iter",
-        "watershed_connectivity",
-        "min_area_px",
-        "exclude_border",
-        "ridge_level",
-        "mean_aji",
-    ] + [f"aji__{_sanitize_csv_key(sid)}" for sid in sample_ids]
+    fieldnames = watershed_tune_fieldnames(
+        sample_ids, sanitize_sample_id=_sanitize_csv_key
+    )
 
     with out_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for combo_idx, params in enumerate(_iter_param_grid(args), start=1):
             t0 = time.perf_counter()
-            mean_aji, per = mean_aji_for_watershed_params(
+            mean_bundle, _per_sample_bundles = mean_train_bundle_for_watershed_params(
+                true_instances, pred_semantic, params
+            )
+            mean_aji, per_sample_aji_list = mean_aji_for_watershed_params(
                 true_instances, pred_semantic, params
             )
             elapsed = time.perf_counter() - t0
+            mean_pq = float(mean_bundle["pq"])
             print(
-                f"[{combo_idx}/{grid_size}] mean_aji={mean_aji:.6f} "
+                f"[{combo_idx}/{grid_size}] mean_pq={mean_pq:.6f} "
+                f"mean_aji={mean_aji:.6f} "
                 f"({_format_param_set(params)}) {elapsed:.2f}s"
             )
-            row: dict[str, Any] = {
-                "min_distance": params.min_distance,
-                "boundary_dilate_iter": params.boundary_dilate_iter,
-                "watershed_connectivity": params.watershed_connectivity,
-                "min_area_px": params.min_area_px,
-                "exclude_border": int(params.exclude_border),
-                "ridge_level": (
-                    "" if params.ridge_level is None else f"{params.ridge_level:g}"
-                ),
-                "mean_aji": f"{mean_aji:.8f}",
+            per_sample_aji = {
+                f"aji__{_sanitize_csv_key(sid)}": f"{a:.8f}"
+                for sid, a in zip(sample_ids, per_sample_aji_list, strict=True)
             }
-            for sid, a in zip(sample_ids, per):
-                row[f"aji__{_sanitize_csv_key(sid)}"] = f"{a:.8f}"
+            row = watershed_tune_row(
+                params,
+                mean_bundle,
+                mean_aji=mean_aji,
+                per_sample_aji=per_sample_aji,
+            )
             writer.writerow(row)
+            grid_rows.append(row)
 
-            if mean_aji > best_mean:
-                if best_mean >= 0:
-                    print(f"  -> new best (was {best_mean:.6f})")
-                else:
-                    print("  -> new best")
-                best_mean = mean_aji
-                best_params = params
-                best_per_sample = per
+    best_row = select_best_watershed_tune_row(grid_rows)
+    best_params = WatershedParamSet(
+        min_distance=int(best_row["min_distance"]),
+        boundary_dilate_iter=int(best_row["boundary_dilate_iter"]),
+        watershed_connectivity=int(best_row["watershed_connectivity"]),
+        min_area_px=int(best_row["min_area_px"]),
+        exclude_border=bool(int(best_row["exclude_border"])),
+        ridge_level=(
+            None
+            if best_row["ridge_level"] == ""
+            else float(best_row["ridge_level"])
+        ),
+    )
+    best_mean_pq = float(best_row["mean_pq"])
+    best_mean_aji = float(best_row["mean_aji"])
 
-    assert best_params is not None and best_per_sample is not None
-    print("\nBest watershed parameters (max mean AJI):")
+    print("\nBest watershed parameters (max mean train whole-section PQ):")
     print(f"  min_distance: {best_params.min_distance}")
     print(f"  boundary_dilate_iter: {best_params.boundary_dilate_iter}")
     print(f"  watershed_connectivity: {best_params.watershed_connectivity}")
     print(f"  min_area_px: {best_params.min_area_px}")
     print(f"  exclude_border: {best_params.exclude_border}")
     print(f"  ridge_level: {_format_ridge_level(best_params.ridge_level)}")
-    print(f"  mean_aji: {best_mean:.6f}")
-    for sid, a in zip(sample_ids, best_per_sample):
-        print(f"    {sid}: {a:.6f}")
+    print(f"  mean_pq: {best_mean_pq:.6f}")
+    print(f"  mean_aji: {best_mean_aji:.6f} (audit)")
+    for sid in sample_ids:
+        key = f"aji__{_sanitize_csv_key(sid)}"
+        print(f"    {sid}: {float(best_row[key]):.6f}")
     print(f"\nWrote grid results to {out_path}")
 
     if args.output_json:
         summary = {
-            "best_mean_aji": best_mean,
+            "selection_objective": "pq",
+            "best_mean_pq": best_mean_pq,
+            "best_mean_aji": best_mean_aji,
             "best_params": {
                 "min_distance": best_params.min_distance,
                 "boundary_dilate_iter": best_params.boundary_dilate_iter,
@@ -421,8 +393,13 @@ def main() -> None:
                 "exclude_border": best_params.exclude_border,
                 "ridge_level": best_params.ridge_level,
             },
-            "best_per_sample": {
-                sid: float(a) for sid, a in zip(sample_ids, best_per_sample)
+            "best_metric_bundle": {
+                key: float(best_row[f"mean_{key}"])
+                for key in INSTANCE_METRIC_BUNDLE_KEYS
+            },
+            "best_per_sample_aji": {
+                sid: float(best_row[f"aji__{_sanitize_csv_key(sid)}"])
+                for sid in sample_ids
             },
             "sample_ids": sample_ids,
         }

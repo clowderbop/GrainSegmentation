@@ -82,8 +82,9 @@ Two jobs compare connected components vs tuned watershed on **train** using `who
 |--------|------|
 | CC | `eval/instance_val_cc/` |
 | Watershed | `eval/instance_val_watershed/` |
+| Selection | `eval/extraction_method_selection.json` |
 
-**Manual step:** Use train-section whole-section **PQ** and the required diagnostics to choose CC or tuned watershed for test eval. Overlays are supporting evidence for explaining failure modes, not the primary selection criterion.
+`submit_cc_vs_watershed_train_eval.sh` submits both eval jobs and a follow-up selection job (`run_cc_vs_watershed_selection.sh`) that picks the method by mean train whole-section **PQ** across registry variants. Overlays remain supporting evidence for failure-mode review, not the selection criterion.
 
 ## Whole test eval
 

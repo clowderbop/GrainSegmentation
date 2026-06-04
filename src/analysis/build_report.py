@@ -11,6 +11,26 @@ from typing import Any
 from analysis.discover import discover_eval_runs, discover_ultralytics_val
 from analysis.figures import render_all_figures
 from analysis.load_metrics import metrics_table_from_runs, ultralytics_val_table
+from analysis.reporting_contract import (
+    HEADLINE_POLICY,
+    WAVE1_APPROVED_OUTPUTS,
+    optional_wave1_outputs,
+    reporting_contract_metadata,
+)
+
+def _written_output_ids(
+    derived_tables: list[str],
+    figure_names: list[str],
+) -> set[str]:
+    """Map written bundle filenames back to contract output ids when known."""
+    written_names = set(derived_tables) | set(figure_names)
+    matched: set[str] = set()
+    for item in WAVE1_APPROVED_OUTPUTS:
+        patterns = item.get("filename_patterns", [])
+        if any(pattern in name for name in written_names for pattern in patterns):
+            matched.add(item["id"])
+    return matched
+
 
 SCOPE_NOTE = (
     "Headline whole-section PQ ranks input configurations and compares YOLO vs U-Net "
@@ -58,15 +78,34 @@ def build_reporting_bundle(
             )
         figure_names = render_all_figures(instance_df, val_df, figures_dir)
 
+    written_figure_names = list(figure_names)
+    skipped_optional: list[dict[str, str]] = []
+    for item in optional_wave1_outputs():
+        if item["id"] not in _written_output_ids(derived_tables, written_figure_names):
+            skipped_optional.append(
+                {
+                    "id": item["id"],
+                    "label": item["label"],
+                    "reason": "optional output not generated in this reporting run",
+                }
+            )
+
     summary: dict[str, Any] = {
         "grainseg_root": str(grainseg_root),
         "output_dir": str(output_dir),
         "scope_note": SCOPE_NOTE,
+        "headline_policy": HEADLINE_POLICY,
+        "reporting_contract": reporting_contract_metadata(),
         "missing_artifacts": missing,
         "n_instance_rows": int(len(instance_df)),
         "n_ultralytics_val_rows": int(len(val_df)),
-        "derived_tables": derived_tables,
-        "figures": figure_names,
+        "written": {
+            "derived_tables": derived_tables,
+            "figures": written_figure_names,
+            "audits": [],
+            "narratives": [],
+        },
+        "skipped_optional": skipped_optional,
     }
     summary_path = output_dir / "analysis_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")

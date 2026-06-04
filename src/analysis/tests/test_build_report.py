@@ -29,4 +29,6 @@ def test_build_reporting_bundle_writes_derived_and_summary(tmp_path: Path) -> No
     payload = json.loads((out / "analysis_summary.json").read_text(encoding="utf-8"))
     assert "Headline whole-section PQ" in payload["scope_note"]
     assert "Headline AJI" not in payload["scope_note"]
-    assert payload["figures"] == []
+    assert payload["written"]["figures"] == []
+    assert payload["headline_policy"]
+    assert payload["reporting_contract"]["wave1_approved"]

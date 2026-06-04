@@ -227,6 +227,14 @@ def figure_ultralytics_val_panel(val_df: pd.DataFrame, path: Path) -> None:
     plt.close(fig)
 
 
+FIGURE_BUNDLE_FILENAMES: tuple[str, ...] = (
+    "headline_heatmap.png",
+    "model_variant_bars.png",
+    "ppl_delta_heatmap.png",
+    "yolo_patch_val_panel.png",
+)
+
+
 def render_all_figures(
     instance_df: pd.DataFrame,
     val_df: pd.DataFrame,

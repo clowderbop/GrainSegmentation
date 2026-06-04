@@ -1,69 +1,26 @@
-# First round:
-# grid:
-#   postprocess_type:
-#     - GREEDYNMM
-#     - NMM
-#   match_metric:
-#     - IOS
-#     - IOU
-#   match_threshold:
-#     - 0.4
-#     - 0.5
-#     - 0.6
-#   conf:
-#     - 0.15
-#     - 0.25
-#     - 0.35
-#   mask_threshold:
-#     - 0.4
-#     - 0.5
-#     - 0.6
-#
-# Winner:
-# postprocess_type=GREEDYNMM, match_metric=IOU, match_threshold=0.6, conf=0.15, mask_threshold=0.4
-#
-# Observed patterns:
-# conf: Monotonic: 0.15 → 0.25 → 0.35 gives 0.176 → 0.174 → 0.166 (best at lowest grid value)
-# match_threshold: Monotonic: 0.4 → 0.5 → 0.6 gives 0.094 → 0.148 → 0.176 (best at highest grid value)
-# mask_threshold: Flat at 0.4 / 0.5 / 0.6 for the winning merge path (~0.176)
-# match_metric: IOU ≫ IOS (~0.18 vs ~0.02–0.03 at the same conf/mask) 
-# postprocess_type: GREEDYNMM beats NMM at the same IOU / 0.6 / 0.15 / 0.4 (~+0.034)
-
-
-# Refinement round
-# grid:
-#   postprocess_type:
-#     - GREEDYNMM
-#   match_metric:
-#     - IOU
-#   match_threshold:
-#     - 0.6
-#     - 0.7
-#     - 0.8
-#   conf:
-#     - 0.05
-#     - 0.10
-#     - 0.15
-#   mask_threshold:
-#     - 0.4
-#
-# Winner: # Prior winner: GREEDYNMM / IOU / m=0.8 / c=0.05 / t=0.4  (mean train AJI ≈ 0.292)
-
-
-# Second refinement round:
 grid:
   postprocess_type:
     - GREEDYNMM
+    - NMM
   match_metric:
     - IOU
+    - IOS
   match_threshold:
+    - 0.4
+    - 0.5
+    - 0.6
+    - 0.7
     - 0.8
-    - 0.85
     - 0.9
-    - 0.95
   conf:
-    - 0.01
-    - 0.03
     - 0.05
+    - 0.10
+    - 0.15
+    - 0.20
+    - 0.25
+    - 0.30
+    - 0.35
   mask_threshold:
     - 0.4
+    - 0.5
+    - 0.6

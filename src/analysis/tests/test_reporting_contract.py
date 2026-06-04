@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from analysis.build_report import build_reporting_bundle
+from analysis.build_report import (
+    PRECISION_RECALL_NOT_INFORMATIVE_SKIP_REASON,
+    build_reporting_bundle,
+)
 from analysis.figures import FIGURE_BUNDLE_FILENAMES
 from analysis.reporting_contract import (
     CUT_OUTPUTS,
@@ -167,6 +170,13 @@ def test_build_reporting_bundle_records_contract_in_summary(tmp_path: Path) -> N
     assert "ppl_relative_diagnostic_heatmap" in required_skipped
     skipped_ids = {item["id"] for item in payload["skipped_optional"]}
     assert "precision_recall_diagnostic_map_iou75" in skipped_ids
+    skipped_optional_by_id = {
+        item["id"]: item["reason"] for item in payload["skipped_optional"]
+    }
+    assert (
+        skipped_optional_by_id["precision_recall_diagnostic_map_iou75"]
+        == PRECISION_RECALL_NOT_INFORMATIVE_SKIP_REASON
+    )
     assert "pareto_plot" in skipped_ids
 
 

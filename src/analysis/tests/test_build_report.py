@@ -13,12 +13,32 @@ from analysis.build_report import (
     FIGURE_NOT_GENERATED_SKIP_REASON,
     FIGURES_DISABLED_SKIP_REASON,
     MISSING_DQ_SQ_SKIP_REASON,
+    MISSING_F1_STRICTNESS_SKIP_REASON,
+    MISSING_PATCH_WHOLE_PAIRS_SKIP_REASON,
     MODEL_COMPARISON_SKIP_REASON,
+    NO_INSTANCE_ROWS_SKIP_REASON,
+    PRECISION_RECALL_NOT_INFORMATIVE_SKIP_REASON,
     build_reporting_bundle,
 )
+from analysis.diagnostic_derivation import DIAGNOSTIC_ONLY_LABEL
 from analysis.derived_tables import WHOLE_SECTION_PQ_COL
 from analysis.tests.test_discover import MINIMAL_INSTANCE_METRICS, _write_json
-from analysis.tests.test_load_metrics import PQ_SAMPLE_ROW
+from analysis.tests.test_load_metrics import PATCH_WITH_MEAN, PQ_SAMPLE_ROW
+
+
+def test_build_reporting_bundle_empty_discover_records_skips_without_crash(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "GrainSeg"
+    root.mkdir()
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    assert summary["n_instance_rows"] == 0
+    assert (out / "analysis_summary.json").is_file()
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert skipped_by_id["patch_to_whole_gap_table"] == NO_INSTANCE_ROWS_SKIP_REASON
+    assert skipped_by_id["strictness_drop_plot"] == NO_INSTANCE_ROWS_SKIP_REASON
 
 
 def test_build_reporting_bundle_writes_derived_and_summary(tmp_path: Path) -> None:
@@ -300,6 +320,138 @@ def test_build_reporting_bundle_writes_failure_mode_outputs(tmp_path: Path) -> N
     assert "failure_mode_classification" not in skipped_ids
     skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
     assert skipped_by_id["pq_decomposition_grouped_bars"] == FIGURES_DISABLED_SKIP_REASON
+
+
+def _patch_and_whole_eval_tree(root: Path) -> None:
+    for variant in ("PPL", "PPL+AllPPX"):
+        _write_json(
+            root / f"eval/yolo_{variant}/instance_metrics.json",
+            {
+                **MINIMAL_INSTANCE_METRICS,
+                "schema_version": 2,
+                "model_type": "yolo",
+                "variant": variant,
+                "unit": "whole",
+                "samples": [
+                    {
+                        **PQ_SAMPLE_ROW,
+                        "pq": 0.50 if variant == "PPL+AllPPX" else 0.30,
+                        "precision_iou75": 0.2 if variant == "PPL" else 0.8,
+                        "recall_iou75": 0.3 if variant == "PPL" else 0.7,
+                    }
+                ],
+            },
+        )
+        patch_payload = {
+            **PATCH_WITH_MEAN,
+            "schema_version": 2,
+            "variant": variant,
+            "extras": {
+                **PATCH_WITH_MEAN["extras"],
+                "mean_pq_weighted": 0.40 if variant == "PPL" else 0.45,
+            },
+        }
+        _write_json(
+            root / f"eval/yolo_patches/{variant}/100/instance_metrics.json",
+            patch_payload,
+        )
+
+
+def test_build_reporting_bundle_writes_patch_to_whole_and_threshold_diagnostics(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("seaborn")
+
+    root = tmp_path / "GrainSeg"
+    _patch_and_whole_eval_tree(root)
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=True)
+
+    derived = summary["written"]["derived_tables"]
+    assert "patch_to_whole_gap.csv" in derived
+    gap = pd.read_csv(out / "derived" / "patch_to_whole_gap.csv")
+    assert gap["Scope"].iloc[0] == DIAGNOSTIC_ONLY_LABEL
+    assert summary["diagnostic_tier_labeling"] == DIAGNOSTIC_ONLY_LABEL
+
+    figures = summary["written"]["figures"]
+    assert "patch_to_whole_diagnostic_heatmap.png" in figures
+    assert "strictness_drop_plot.png" in figures
+    assert "precision_recall_diagnostic_map_iou75.png" in figures
+
+    skipped_optional = {
+        item["id"]: item["reason"] for item in summary["skipped_optional"]
+    }
+    assert "precision_recall_diagnostic_map_iou75" not in skipped_optional
+
+
+def test_build_reporting_bundle_skips_patch_to_whole_without_patch_rows(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "GrainSeg"
+    _figure_ready_eval_tree(root)
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    derived = summary["written"]["derived_tables"]
+    assert "patch_to_whole_gap.csv" not in derived
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert (
+        skipped_by_id["patch_to_whole_gap_table"]
+        == MISSING_PATCH_WHOLE_PAIRS_SKIP_REASON
+    )
+    assert (
+        skipped_by_id["patch_to_whole_diagnostic_heatmap"]
+        == MISSING_PATCH_WHOLE_PAIRS_SKIP_REASON
+    )
+
+
+def test_build_reporting_bundle_skips_strictness_drop_without_f1_columns(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "GrainSeg"
+    _figure_ready_eval_tree(root)
+    out = tmp_path / "reporting"
+    monkeypatch.setattr(
+        "analysis.build_report.strictness_drop_metrics_available",
+        lambda _df: False,
+    )
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
+    assert skipped_by_id["strictness_drop_plot"] == MISSING_F1_STRICTNESS_SKIP_REASON
+
+
+def test_build_reporting_bundle_skips_precision_recall_when_not_informative(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "GrainSeg"
+    _write_json(
+        root / "eval/yolo_PPL/instance_metrics.json",
+        {
+            **MINIMAL_INSTANCE_METRICS,
+            "schema_version": 2,
+            "variant": "PPL",
+            "samples": [
+                {
+                    **PQ_SAMPLE_ROW,
+                    "precision_iou75": 0.5,
+                    "recall_iou75": 0.5,
+                }
+            ],
+        },
+    )
+    out = tmp_path / "reporting"
+    summary = build_reporting_bundle(root, out, render_figures=False)
+
+    skipped_optional = {
+        item["id"]: item["reason"] for item in summary["skipped_optional"]
+    }
+    assert (
+        skipped_optional["precision_recall_diagnostic_map_iou75"]
+        == PRECISION_RECALL_NOT_INFORMATIVE_SKIP_REASON
+    )
 
 
 def test_build_reporting_bundle_skips_failure_mode_without_dq_sq(

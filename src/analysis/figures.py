@@ -7,8 +7,21 @@ from pathlib import Path
 import pandas as pd
 
 from analysis.diagnostic_derivation import (
+    INPUT_IMAGE_COUNT_COL,
+    SIGNED_COUNT_BIAS_COL,
+    WHOLE_SECTION_PQ_LABEL,
+    count_error_bar_points,
+    count_error_metrics_available,
+    pareto_frontier_table,
+    pareto_plot_informative,
+    patch_to_whole_gap_metrics_available,
+    patch_to_whole_relative_gap_matrix_table,
     pq_decomposition_long_table,
     pq_decomposition_metrics_available,
+    precision_recall_iou75_informative,
+    precision_recall_iou75_points,
+    strictness_drop_matrix_table,
+    strictness_drop_metrics_available,
 )
 from analysis.derived_tables import (
     INPUT_CONFIGURATION_COL,
@@ -47,6 +60,28 @@ PPL_RELATIVE_DIAGNOSTIC_HEATMAP_TITLE = (
 )
 ULTRALYTICS_VAL_PANEL_TITLE = (
     "Supporting: YOLO patch Ultralytics val mAP@0.5 (not whole-section SAHI)"
+)
+PATCH_TO_WHOLE_DIAGNOSTIC_HEATMAP_TITLE = (
+    "Diagnostic: patch-to-whole relative gap (grain-weighted patch aggregate)"
+)
+STRICTNESS_DROP_PLOT_TITLE = (
+    "Diagnostic: F1 strictness drop (F1@IoU0.50 − F1@IoU0.75, whole-section test)"
+)
+PRECISION_RECALL_IOU75_TITLE = (
+    "Diagnostic: precision vs recall at IoU 0.75 (whole-section test)"
+)
+COUNT_ERROR_BAR_CHART_TITLE = (
+    "Diagnostic: signed count error (pred/GT ratio − 1, whole-section test)"
+)
+PARETO_PLOT_TITLE = (
+    "Diagnostic: whole-section PQ vs input image count (Pareto frontier)"
+)
+
+PATCH_TO_WHOLE_HEATMAP_METRICS: tuple[tuple[str, str], ...] = (
+    ("Whole-section PQ", "pq"),
+    ("DQ", "dq"),
+    ("SQ", "sq"),
+    ("AJI+", "aji_plus"),
 )
 
 
@@ -295,6 +330,194 @@ def figure_ppl_relative_diagnostic_heatmaps(df: pd.DataFrame, path: Path) -> Non
     plt.close(fig)
 
 
+def _available_patch_to_whole_heatmap_panels(
+    df: pd.DataFrame,
+) -> list[tuple[str, pd.DataFrame]]:
+    panels: list[tuple[str, pd.DataFrame]] = []
+    for label, metric_key in PATCH_TO_WHOLE_HEATMAP_METRICS:
+        pivot = patch_to_whole_relative_gap_matrix_table(df, metric_key)
+        if pivot.empty:
+            continue
+        panels.append((label, pivot))
+    return panels
+
+
+def figure_patch_to_whole_diagnostic_heatmap(df: pd.DataFrame, path: Path) -> None:
+    _require_plotting()
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    if not patch_to_whole_gap_metrics_available(df):
+        return
+    panels = _available_patch_to_whole_heatmap_panels(df)
+    if not panels:
+        return
+
+    ncols = min(2, len(panels))
+    nrows = (len(panels) + ncols - 1) // ncols
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(5.0 * ncols, 3.5 * nrows),
+        constrained_layout=True,
+        squeeze=False,
+    )
+    for ax, (title, pivot) in zip(axes.flat, panels, strict=False):
+        sns.heatmap(
+            pivot,
+            annot=True,
+            fmt="+.2f",
+            cmap="RdBu_r",
+            center=0.0,
+            ax=ax,
+        )
+        ax.set_title(title)
+        ax.set_xlabel("Input configuration")
+        ax.set_ylabel(MODEL_AXIS_LABEL)
+        ax.tick_params(axis="x", labelrotation=0)
+        plt.setp(ax.get_xticklabels(), ha="center")
+    for ax in axes.flat[len(panels) :]:
+        ax.set_visible(False)
+    fig.suptitle(PATCH_TO_WHOLE_DIAGNOSTIC_HEATMAP_TITLE)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def figure_strictness_drop_plot(df: pd.DataFrame, path: Path) -> None:
+    _require_plotting()
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    if not strictness_drop_metrics_available(df):
+        return
+    pivot = strictness_drop_matrix_table(df)
+    if pivot.empty:
+        return
+    fig, ax = plt.subplots(figsize=(8, 3.5), constrained_layout=True)
+    sns.heatmap(pivot, annot=True, fmt=".3f", cmap="YlOrRd", ax=ax)
+    ax.set_title(STRICTNESS_DROP_PLOT_TITLE)
+    ax.set_xlabel("Input configuration")
+    ax.set_ylabel(MODEL_AXIS_LABEL)
+    ax.tick_params(axis="x", labelrotation=0)
+    plt.setp(ax.get_xticklabels(), ha="center")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def figure_precision_recall_diagnostic_map_iou75(df: pd.DataFrame, path: Path) -> None:
+    _require_plotting()
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    if not precision_recall_iou75_informative(df):
+        return
+    points = precision_recall_iou75_points(df)
+    points = points.copy()
+    points[MODEL_COL] = pd.Categorical(
+        points[MODEL_COL],
+        categories=[m for m in MODEL_LEGEND_ORDER if m in set(points[MODEL_COL])],
+        ordered=True,
+    )
+    fig, ax = plt.subplots(figsize=(6, 5), constrained_layout=True)
+    sns.scatterplot(
+        data=points,
+        x="recall_iou75",
+        y="precision_iou75",
+        hue=MODEL_COL,
+        style=INPUT_CONFIGURATION_COL,
+        ax=ax,
+    )
+    ax.set_title(PRECISION_RECALL_IOU75_TITLE)
+    ax.set_xlabel("Recall @ IoU 0.75")
+    ax.set_ylabel("Precision @ IoU 0.75")
+    ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def figure_count_error_bar_chart(df: pd.DataFrame, path: Path) -> None:
+    _require_plotting()
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    if not count_error_metrics_available(df):
+        return
+    points = count_error_bar_points(df)
+    if points.empty:
+        return
+    points = points.copy()
+    points[INPUT_CONFIGURATION_COL] = pd.Categorical(
+        points[INPUT_CONFIGURATION_COL],
+        categories=thesis_ordered_display_names(points[INPUT_CONFIGURATION_COL]),
+        ordered=True,
+    )
+    points[MODEL_COL] = pd.Categorical(
+        points[MODEL_COL],
+        categories=[m for m in MODEL_LEGEND_ORDER if m in set(points[MODEL_COL])],
+        ordered=True,
+    )
+    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+    sns.barplot(
+        data=points,
+        x=INPUT_CONFIGURATION_COL,
+        y=SIGNED_COUNT_BIAS_COL,
+        hue=MODEL_COL,
+        ax=ax,
+    )
+    ax.axhline(0.0, color="0.4", linewidth=0.8, linestyle="--")
+    ax.set_title(COUNT_ERROR_BAR_CHART_TITLE)
+    ax.set_xlabel("Input configuration")
+    ax.set_ylabel("Signed count bias (pred/GT − 1)")
+    ax.legend(title=MODEL_AXIS_LABEL)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
+def figure_pareto_plot(df: pd.DataFrame, path: Path) -> None:
+    _require_plotting()
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    if not pareto_plot_informative(df):
+        return
+    table = pareto_frontier_table(df)
+    if table.empty:
+        return
+    table = table.copy()
+    table[MODEL_COL] = pd.Categorical(
+        table[MODEL_COL],
+        categories=[m for m in MODEL_LEGEND_ORDER if m in set(table[MODEL_COL])],
+        ordered=True,
+    )
+    fig, ax = plt.subplots(figsize=(6, 4), constrained_layout=True)
+    sns.scatterplot(
+        data=table,
+        x=INPUT_IMAGE_COUNT_COL,
+        y=WHOLE_SECTION_PQ_LABEL,
+        hue=MODEL_COL,
+        style="On Pareto frontier",
+        ax=ax,
+    )
+    frontier = table[table["On Pareto frontier"]].sort_values(
+        INPUT_IMAGE_COUNT_COL, kind="mergesort"
+    )
+    if len(frontier) >= 2:
+        ax.plot(
+            frontier[INPUT_IMAGE_COUNT_COL],
+            frontier[WHOLE_SECTION_PQ_LABEL],
+            color="0.35",
+            linestyle="--",
+            linewidth=1.0,
+            label="Pareto frontier",
+        )
+    ax.set_title(PARETO_PLOT_TITLE)
+    ax.set_xlabel("Input image count")
+    ax.set_ylabel("Whole-section PQ")
+    ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def figure_ultralytics_val_panel(val_df: pd.DataFrame, path: Path) -> None:
     _require_plotting()
     import matplotlib.pyplot as plt
@@ -329,6 +552,11 @@ FIGURE_BUNDLE_FILENAMES: tuple[str, ...] = (
     "pq_decomposition_grouped_bars.png",
     "ppl_delta_heatmap.png",
     "ppl_relative_diagnostic_heatmaps.png",
+    "patch_to_whole_diagnostic_heatmap.png",
+    "count_error_bar_chart.png",
+    "strictness_drop_plot.png",
+    "precision_recall_diagnostic_map_iou75.png",
+    "pareto_plot.png",
     "yolo_patch_val_panel.png",
 )
 
@@ -353,6 +581,19 @@ def render_all_figures(
             figure_ppl_relative_diagnostic_heatmaps,
             instance_df,
         ),
+        (
+            "patch_to_whole_diagnostic_heatmap.png",
+            figure_patch_to_whole_diagnostic_heatmap,
+            instance_df,
+        ),
+        ("count_error_bar_chart.png", figure_count_error_bar_chart, instance_df),
+        ("strictness_drop_plot.png", figure_strictness_drop_plot, instance_df),
+        (
+            "precision_recall_diagnostic_map_iou75.png",
+            figure_precision_recall_diagnostic_map_iou75,
+            instance_df,
+        ),
+        ("pareto_plot.png", figure_pareto_plot, instance_df),
         ("yolo_patch_val_panel.png", figure_ultralytics_val_panel, val_df),
     ]
     written: list[str] = []

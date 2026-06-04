@@ -55,8 +55,18 @@ THESIS_READY_METRIC_COLUMNS: tuple[tuple[str, str], ...] = (
 )
 
 
+INSTANCE_ROW_INDEX_COLUMNS: tuple[str, ...] = ("unit", "source")
+
+
+def has_instance_metric_row_schema(df: pd.DataFrame) -> bool:
+    """True when normalized instance metric rows can be filtered by unit and source."""
+    return all(column in df.columns for column in INSTANCE_ROW_INDEX_COLUMNS)
+
+
 def whole_section_instance_rows(df: pd.DataFrame) -> pd.DataFrame:
     """Held-out whole-section instance metric rows only."""
+    if not has_instance_metric_row_schema(df):
+        return df.iloc[0:0].copy()
     return df[(df["unit"] == "whole") & (df["source"] == "instance")].copy()
 
 

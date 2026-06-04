@@ -8,12 +8,17 @@ import pytest
 from analysis.build_report import SCOPE_NOTE
 from analysis.derived_tables import whole_section_pq_matrix_table
 from analysis.figures import (
+    COUNT_ERROR_BAR_CHART_TITLE,
     HEADLINE_PQ_TITLE,
     HeadlineFigureError,
     MODEL_AXIS_LABEL,
     MODEL_VARIANT_BARS_TITLE,
+    PARETO_PLOT_TITLE,
+    PATCH_TO_WHOLE_DIAGNOSTIC_HEATMAP_TITLE,
     PQ_DECOMPOSITION_GROUPED_BARS_TITLE,
     PPL_DELTA_PQ_TITLE,
+    PRECISION_RECALL_IOU75_TITLE,
+    STRICTNESS_DROP_PLOT_TITLE,
     ULTRALYTICS_VAL_PANEL_TITLE,
     figure_headline_heatmap,
     figure_pq_decomposition_grouped_bars,
@@ -39,6 +44,19 @@ def test_headline_figure_copy_uses_whole_section_pq() -> None:
     assert "PQ" in MODEL_VARIANT_BARS_TITLE
     assert "PQ" in PPL_DELTA_PQ_TITLE
     assert "AJI" not in MODEL_VARIANT_BARS_TITLE
+
+
+def test_threshold_diagnostic_figure_titles_are_not_headline() -> None:
+    for title in (
+        PATCH_TO_WHOLE_DIAGNOSTIC_HEATMAP_TITLE,
+        COUNT_ERROR_BAR_CHART_TITLE,
+        STRICTNESS_DROP_PLOT_TITLE,
+        PRECISION_RECALL_IOU75_TITLE,
+        PARETO_PLOT_TITLE,
+    ):
+        assert "Diagnostic" in title
+        assert "whole-section" in title.lower() or "patch-to-whole" in title.lower()
+        assert "Headline" not in title
 
 
 def test_ultralytics_panel_is_supporting_not_headline() -> None:

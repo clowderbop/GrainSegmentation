@@ -18,10 +18,20 @@ from analysis.derived_tables import (
     whole_section_pq_matrix_table,
 )
 from analysis.diagnostic_derivation import (
+    DIAGNOSTIC_ONLY_LABEL,
+    count_error_metrics_available,
     failure_mode_classification_table,
     failure_mode_metrics_available,
     failure_mode_rules_markdown,
+    paired_patch_whole_rows,
+    pareto_frontier_table,
+    pareto_metrics_available,
+    pareto_plot_informative,
+    patch_to_whole_gap_metrics_available,
+    patch_to_whole_gap_table,
     pq_decomposition_metrics_available,
+    precision_recall_iou75_informative,
+    strictness_drop_metrics_available,
 )
 from analysis.discover import discover_eval_runs, discover_ultralytics_val
 from analysis.figures import render_all_figures
@@ -55,6 +65,30 @@ FIGURE_NOT_GENERATED_SKIP_REASON = (
 NO_INSTANCE_ROWS_SKIP_REASON = "no instance metric rows were loaded"
 MISSING_DQ_SQ_SKIP_REASON = (
     "required whole-section DQ and SQ fields missing or non-finite"
+)
+MISSING_PATCH_WHOLE_PAIRS_SKIP_REASON = (
+    "no paired whole-section and patch instance metric rows for the same "
+    "producer and input configuration"
+)
+MISSING_PATCH_AGGREGATES_SKIP_REASON = (
+    "required patch grain-weighted aggregates missing or non-finite"
+)
+MISSING_F1_STRICTNESS_SKIP_REASON = (
+    "required whole-section F1@IoU0.50 and F1@IoU0.75 missing or non-finite"
+)
+PRECISION_RECALL_NOT_INFORMATIVE_SKIP_REASON = (
+    "precision and recall at IoU 0.75 are not sufficiently varied for a "
+    "diagnostic map"
+)
+MISSING_COUNT_RATIO_SKIP_REASON = (
+    "no whole-section rows with a finite predicted/GT instance ratio"
+)
+MISSING_PARETO_METRICS_SKIP_REASON = (
+    "required whole-section PQ or input image count unavailable"
+)
+PARETO_PLOT_NOT_INFORMATIVE_SKIP_REASON = (
+    "whole-section PQ versus input image count is not sufficiently varied "
+    "for a Pareto plot"
 )
 
 def _written_output_ids(
@@ -96,9 +130,27 @@ def _skip_reason_for_required_output(
     can_compare_models: bool,
     failure_mode_available: bool,
     pq_decomposition_available: bool,
+    patch_to_whole_available: bool,
+    has_patch_whole_pairs: bool,
+    strictness_drop_available: bool,
+    count_error_available: bool,
+    pareto_available: bool,
 ) -> str:
     if output_id in MODEL_COMPARISON_OUTPUT_IDS and not can_compare_models:
         return MODEL_COMPARISON_SKIP_REASON
+
+    if output_id in (
+        "patch_to_whole_gap_table",
+        "patch_to_whole_diagnostic_heatmap",
+    ):
+        if has_instance_rows and not has_patch_whole_pairs:
+            return MISSING_PATCH_WHOLE_PAIRS_SKIP_REASON
+        if has_instance_rows and has_patch_whole_pairs and not patch_to_whole_available:
+            return MISSING_PATCH_AGGREGATES_SKIP_REASON
+
+    if output_id == "strictness_drop_plot" and has_instance_rows:
+        if not strictness_drop_available:
+            return MISSING_F1_STRICTNESS_SKIP_REASON
 
     if output_id == "failure_mode_classification" and has_instance_rows:
         if not failure_mode_available:
@@ -107,6 +159,14 @@ def _skip_reason_for_required_output(
     if output_id == "pq_decomposition_grouped_bars" and has_instance_rows:
         if not pq_decomposition_available:
             return MISSING_DQ_SQ_SKIP_REASON
+
+    if output_id == "count_error_bar_chart" and has_instance_rows:
+        if not count_error_available:
+            return MISSING_COUNT_RATIO_SKIP_REASON
+
+    if output_id == "pareto_frontier_table" and has_instance_rows:
+        if not pareto_available:
+            return MISSING_PARETO_METRICS_SKIP_REASON
 
     patterns = item.get("filename_patterns", [])
     if not patterns:
@@ -130,6 +190,27 @@ def _skip_reason_for_required_output(
     return NOT_IMPLEMENTED_SKIP_REASON
 
 
+def _optional_output_skip_reason(
+    output_id: str,
+    *,
+    render_figures: bool,
+    has_instance_rows: bool,
+    precision_recall_informative: bool,
+    pareto_plot_informative_flag: bool,
+) -> str:
+    if output_id == "precision_recall_diagnostic_map_iou75":
+        if has_instance_rows and not precision_recall_informative:
+            return PRECISION_RECALL_NOT_INFORMATIVE_SKIP_REASON
+        if has_instance_rows and render_figures:
+            return FIGURE_NOT_GENERATED_SKIP_REASON
+    if output_id == "pareto_plot":
+        if has_instance_rows and not pareto_plot_informative_flag:
+            return PARETO_PLOT_NOT_INFORMATIVE_SKIP_REASON
+        if has_instance_rows and render_figures:
+            return FIGURE_NOT_GENERATED_SKIP_REASON
+    return "optional output not generated in this reporting run"
+
+
 def _skipped_required_outputs(
     written_ids: set[str],
     *,
@@ -138,6 +219,11 @@ def _skipped_required_outputs(
     can_compare_models: bool,
     failure_mode_available: bool,
     pq_decomposition_available: bool,
+    patch_to_whole_available: bool,
+    has_patch_whole_pairs: bool,
+    strictness_drop_available: bool,
+    count_error_available: bool,
+    pareto_available: bool,
 ) -> list[dict[str, str]]:
     """Required contract outputs that were not written, with reasons."""
     skipped: list[dict[str, str]] = []
@@ -157,6 +243,11 @@ def _skipped_required_outputs(
                     can_compare_models=can_compare_models,
                     failure_mode_available=failure_mode_available,
                     pq_decomposition_available=pq_decomposition_available,
+                    patch_to_whole_available=patch_to_whole_available,
+                    has_patch_whole_pairs=has_patch_whole_pairs,
+                    strictness_drop_available=strictness_drop_available,
+                    count_error_available=count_error_available,
+                    pareto_available=pareto_available,
                 ),
             }
         )
@@ -233,6 +324,16 @@ def build_reporting_bundle(
             rules_md.write_text(failure_mode_rules_markdown(), encoding="utf-8")
             derived_tables.append("failure_mode_classification_rules.md")
 
+        if patch_to_whole_gap_metrics_available(instance_df):
+            gap_csv = derived_dir / "patch_to_whole_gap.csv"
+            patch_to_whole_gap_table(instance_df).to_csv(gap_csv, index=False)
+            derived_tables.append("patch_to_whole_gap.csv")
+
+        if pareto_metrics_available(instance_df):
+            pareto_csv = derived_dir / "pareto_frontier.csv"
+            pareto_frontier_table(instance_df).to_csv(pareto_csv, index=False)
+            derived_tables.append("pareto_frontier.csv")
+
     if not val_df.empty:
         val_csv = derived_dir / "ultralytics_val.csv"
         val_df.to_csv(val_csv, index=False)
@@ -252,6 +353,14 @@ def build_reporting_bundle(
         not instance_df.empty
         and can_compare_yolo_and_unet_on_shared_inputs(instance_df)
     )
+    has_patch_whole_pairs = bool(paired_patch_whole_rows(instance_df))
+    patch_to_whole_available = patch_to_whole_gap_metrics_available(instance_df)
+    strictness_drop_available = strictness_drop_metrics_available(instance_df)
+    precision_recall_informative = precision_recall_iou75_informative(instance_df)
+    pareto_plot_informative_flag = pareto_plot_informative(instance_df)
+    count_error_available = count_error_metrics_available(instance_df)
+    pareto_available = pareto_metrics_available(instance_df)
+
     skipped_required = _skipped_required_outputs(
         written_ids,
         render_figures=render_figures,
@@ -259,6 +368,11 @@ def build_reporting_bundle(
         can_compare_models=can_compare_models,
         failure_mode_available=failure_mode_metrics_available(instance_df),
         pq_decomposition_available=pq_decomposition_metrics_available(instance_df),
+        patch_to_whole_available=patch_to_whole_available,
+        has_patch_whole_pairs=has_patch_whole_pairs,
+        strictness_drop_available=strictness_drop_available,
+        count_error_available=count_error_available,
+        pareto_available=pareto_available,
     )
     skipped_optional: list[dict[str, str]] = []
     for item in optional_wave1_outputs():
@@ -267,7 +381,13 @@ def build_reporting_bundle(
                 {
                     "id": item["id"],
                     "label": item["label"],
-                    "reason": "optional output not generated in this reporting run",
+                    "reason": _optional_output_skip_reason(
+                        item["id"],
+                        render_figures=render_figures,
+                        has_instance_rows=not instance_df.empty,
+                        precision_recall_informative=precision_recall_informative,
+                        pareto_plot_informative_flag=pareto_plot_informative_flag,
+                    ),
                 }
             )
 
@@ -275,6 +395,7 @@ def build_reporting_bundle(
         "grainseg_root": str(grainseg_root),
         "output_dir": str(output_dir),
         "scope_note": SCOPE_NOTE,
+        "diagnostic_tier_labeling": DIAGNOSTIC_ONLY_LABEL,
         "headline_policy": HEADLINE_POLICY,
         "reporting_contract": reporting_contract_metadata(),
         "missing_artifacts": missing,

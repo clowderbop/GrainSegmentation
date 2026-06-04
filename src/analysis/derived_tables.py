@@ -183,7 +183,7 @@ def available_ppl_relative_diagnostic_metrics(df: pd.DataFrame) -> list[str]:
 
 
 def model_family_comparison_matrix_table(df: pd.DataFrame) -> pd.DataFrame:
-    """YOLO minus U-Net deltas per paired input configuration for approved diagnostics."""
+    """YOLO minus U-Net deltas per paired input configuration for discussion diagnostics."""
     paired = yolo_unet_paired_input_configurations(df)
     if not paired:
         empty = pd.DataFrame()

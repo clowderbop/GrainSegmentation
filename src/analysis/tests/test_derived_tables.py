@@ -107,7 +107,7 @@ def test_whole_section_pq_matrix_uses_model_rows_and_thesis_input_columns() -> N
     assert table.loc["U-Net", "FullStack"] == pytest.approx(0.45)
 
 
-def test_thesis_ready_results_table_has_approved_columns_and_thesis_order() -> None:
+def test_thesis_ready_results_table_has_thesis_columns_and_order() -> None:
     table = thesis_ready_results_table(_four_combo_instance_df())
 
     assert table.columns[0] == MODEL_COL

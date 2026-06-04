@@ -20,6 +20,7 @@ from analysis.build_report import (
     PRECISION_RECALL_NOT_INFORMATIVE_SKIP_REASON,
     build_reporting_bundle,
 )
+from analysis.reporting_outputs import HEADLINE_POLICY
 from analysis.diagnostic_derivation import DIAGNOSTIC_ONLY_LABEL
 from analysis.derived_tables import WHOLE_SECTION_PQ_COL
 from analysis.tests.test_discover import MINIMAL_INSTANCE_METRICS, _write_json
@@ -61,8 +62,8 @@ def test_build_reporting_bundle_writes_derived_and_summary(tmp_path: Path) -> No
     assert "Headline whole-section PQ" in payload["scope_note"]
     assert "Headline AJI" not in payload["scope_note"]
     assert payload["written"]["figures"] == []
-    assert payload["headline_policy"]
-    assert payload["reporting_contract"]["wave1_approved"]
+    assert payload["headline_policy"] == HEADLINE_POLICY
+    assert "reporting_contract" not in payload
 
 
 def _figure_ready_eval_tree(root: Path) -> None:

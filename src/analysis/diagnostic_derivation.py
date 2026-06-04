@@ -254,7 +254,7 @@ def patch_to_whole_gap_metrics_available(df: pd.DataFrame) -> bool:
 
 
 def patch_to_whole_gap_table(df: pd.DataFrame) -> pd.DataFrame:
-    """Patch-to-whole gaps per Model × input configuration for approved diagnostics."""
+    """Patch-to-whole gaps per Model × input configuration for discussion diagnostics."""
     whole = whole_section_instance_rows(df)
     input_order = (
         thesis_ordered_display_names(whole["display_name"].unique())

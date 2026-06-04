@@ -41,13 +41,12 @@ from analysis.diagnostic_derivation import (
 from analysis.discover import discover_eval_runs, discover_ultralytics_val
 from analysis.figures import render_all_figures
 from analysis.load_metrics import metrics_table_from_runs, ultralytics_val_table
-from analysis.reporting_contract import (
+from analysis.reporting_outputs import (
     HEADLINE_POLICY,
+    REPORTING_OUTPUTS,
     ReportingOutput,
-    WAVE1_APPROVED_OUTPUTS,
-    optional_wave1_outputs,
-    reporting_contract_metadata,
-    required_wave1_outputs,
+    optional_reporting_outputs,
+    required_reporting_outputs,
 )
 
 MODEL_COMPARISON_OUTPUT_IDS = frozenset(
@@ -60,9 +59,7 @@ MODEL_COMPARISON_SKIP_REASON = (
     "YOLO and U-Net whole-section metrics are not both present for any "
     "shared input configuration"
 )
-NOT_IMPLEMENTED_SKIP_REASON = (
-    "output not implemented in this Wave 1 reporting bundle run"
-)
+NOT_IMPLEMENTED_SKIP_REASON = "output not implemented in this reporting bundle run"
 FIGURES_DISABLED_SKIP_REASON = "figure rendering disabled for this reporting run"
 FIGURE_NOT_GENERATED_SKIP_REASON = (
     "figure not generated: required data missing or renderer produced no file"
@@ -102,7 +99,7 @@ def _written_output_ids(
     audit_names: list[str],
     narrative_names: list[str],
 ) -> set[str]:
-    """Map written bundle filenames back to contract output ids when known."""
+    """Map written bundle filenames back to catalog output ids when known."""
     written_names = (
         set(derived_tables)
         | set(figure_names)
@@ -110,7 +107,7 @@ def _written_output_ids(
         | set(narrative_names)
     )
     matched: set[str] = set()
-    for item in WAVE1_APPROVED_OUTPUTS:
+    for item in REPORTING_OUTPUTS:
         patterns = item.get("filename_patterns", [])
         if any(pattern in name for name in written_names for pattern in patterns):
             matched.add(item["id"])
@@ -237,9 +234,9 @@ def _skipped_required_outputs(
     count_error_available: bool,
     pareto_available: bool,
 ) -> list[dict[str, str]]:
-    """Required contract outputs that were not written, with reasons."""
+    """Required catalog outputs that were not written, with reasons."""
     skipped: list[dict[str, str]] = []
-    for item in required_wave1_outputs():
+    for item in required_reporting_outputs():
         output_id = item["id"]
         if output_id in written_ids:
             continue
@@ -408,7 +405,7 @@ def build_reporting_bundle(
         pareto_available=pareto_available,
     )
     skipped_optional: list[dict[str, str]] = []
-    for item in optional_wave1_outputs():
+    for item in optional_reporting_outputs():
         if item["id"] not in written_ids:
             skipped_optional.append(
                 {
@@ -430,7 +427,6 @@ def build_reporting_bundle(
         "scope_note": SCOPE_NOTE,
         "diagnostic_tier_labeling": DIAGNOSTIC_ONLY_LABEL,
         "headline_policy": HEADLINE_POLICY,
-        "reporting_contract": reporting_contract_metadata(),
         "missing_artifacts": completeness_audit.loc[
             completeness_audit["Status"] == "missing",
             ["Variant", "Producer", "Artifact", "Path"],

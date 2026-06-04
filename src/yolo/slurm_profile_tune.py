@@ -7,15 +7,26 @@ from pathlib import Path
 from common.profile_tune_paths import PROFILE_TUNE_CACHE_DIR_NAME
 from common.variants import repo_root
 
+from yolo.inference_profile_tune import TuneGridSpec, detector_keys_per_variant
+
 # ADR 0005: detector jobs run as a throttled SLURM array (default max 6 concurrent).
 PROFILE_TUNE_DETECTOR_MAX_PARALLEL_DEFAULT = "6"
+PROFILE_TUNE_DETECTOR_WALLTIME_SHORT = "00:10:00"
+PROFILE_TUNE_DETECTOR_WALLTIME_LONG = "00:30:00"
 PROFILE_TUNE_DETECTOR_RESOURCES: dict[str, str] = {
     "job-name": "yolo_prof_det",
     "output": "logs/yolo_prof_det-%a-%j.log",
     "mem": "32G",
     "cpus-per-task": "8",
-    "time": "00:10:00",
+    "time": PROFILE_TUNE_DETECTOR_WALLTIME_SHORT,
 }
+
+
+def profile_tune_detector_walltime(spec: TuneGridSpec) -> str:
+    """Tier detector walltime from detector keys per variant (PRD profile-tune staging)."""
+    if detector_keys_per_variant(spec) <= 3:
+        return PROFILE_TUNE_DETECTOR_WALLTIME_SHORT
+    return PROFILE_TUNE_DETECTOR_WALLTIME_LONG
 
 # ADR 0005: candidate scoring is single-threaded; 50G interim after crop-local adapter fix.
 PROFILE_TUNE_CANDIDATE_RESOURCES: dict[str, str] = {

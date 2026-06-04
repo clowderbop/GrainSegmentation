@@ -5,10 +5,14 @@ from __future__ import annotations
 import subprocess
 
 from common.variants import repo_root
+from yolo.inference_profile_tune import load_tune_grid
 from yolo.slurm_profile_tune import (
     PROFILE_TUNE_CANDIDATE_RESOURCES,
     PROFILE_TUNE_DETECTOR_MAX_PARALLEL_DEFAULT,
     PROFILE_TUNE_DETECTOR_RESOURCES,
+    PROFILE_TUNE_DETECTOR_WALLTIME_LONG,
+    PROFILE_TUNE_DETECTOR_WALLTIME_SHORT,
+    profile_tune_detector_walltime,
     PROFILE_TUNE_GT_CACHE_COMMON_CD,
     PROFILE_TUNE_GT_CACHE_MODULE,
     PROFILE_TUNE_GT_CACHE_OUTPUT_REL,
@@ -45,6 +49,63 @@ def test_profile_tune_detector_slurm_uses_array_task_index() -> None:
     assert "SLURM_ARRAY_TASK_ID" in text
     assert "--array-index" in text
     assert f"#SBATCH --output={PROFILE_TUNE_DETECTOR_RESOURCES['output']}" in text
+
+
+def test_profile_tune_detector_stages_train_image_to_tmpdir() -> None:
+    text = run_profile_tune_detector_script_path().read_text(encoding="utf-8")
+    assert 'TMP_IMAGE_DIR="$TMPDIR/profile_tune_det_${SLURM_ARRAY_TASK_ID:-0}_${SLURM_JOB_ID:-local}"' in text
+    assert '--work-root "$WORK_ROOT"' in text
+    assert 'WORK_ROOT="${OUTPUT_DIR}/.cache"' in text
+    assert '--train-image-staging-dir "$TMP_IMAGE_DIR"' in text
+
+
+def test_profile_tune_detector_walltime_tiers_from_detector_key_count(
+    tmp_path: Path,
+) -> None:
+    import yaml
+
+    narrow = tmp_path / "narrow.yaml"
+    narrow.write_text(
+        yaml.safe_dump(
+            {
+                "grid": {
+                    "postprocess_type": ["GREEDYNMM"],
+                    "match_metric": ["IOS"],
+                    "match_threshold": [0.5],
+                    "conf": [0.2, 0.3],
+                    "mask_threshold": [0.45],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    wide = tmp_path / "wide.yaml"
+    wide.write_text(
+        yaml.safe_dump(
+            {
+                "grid": {
+                    "postprocess_type": ["GREEDYNMM"],
+                    "match_metric": ["IOS"],
+                    "match_threshold": [0.5],
+                    "conf": [0.2, 0.3],
+                    "mask_threshold": [0.45, 0.55],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert profile_tune_detector_walltime(load_tune_grid(narrow)) == (
+        PROFILE_TUNE_DETECTOR_WALLTIME_SHORT
+    )
+    assert profile_tune_detector_walltime(load_tune_grid(wide)) == (
+        PROFILE_TUNE_DETECTOR_WALLTIME_LONG
+    )
+
+
+def test_submit_profile_tune_passes_tiered_detector_walltime() -> None:
+    text = submit_inference_profile_tune_script_path().read_text(encoding="utf-8")
+    assert "profile_tune_detector_walltime" in text
+    assert '"--time=${detector_walltime}"' in text
 
 
 def test_profile_tune_candidate_stages_shared_venv_without_sync() -> None:

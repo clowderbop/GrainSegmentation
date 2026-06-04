@@ -216,6 +216,29 @@ def test_stage_candidate_work_returns_proposal_timing_breakdown(tmp_path: Path) 
     assert all(s >= 0.0 for s in timings.per_variant_proposals_s.values())
 
 
+def test_stage_detector_train_image_copies_only_train_mosaic(tmp_path: Path) -> None:
+    from common.variants import get_variant
+    from yolo.profile_tune_cache_stage import stage_detector_train_image
+
+    grainseg = tmp_path / "GrainSeg"
+    variant = "PPL"
+    spec = get_variant(variant)
+    mosaic = grainseg / spec.paths.train_mosaic_stacked
+    mosaic.parent.mkdir(parents=True)
+    mosaic.write_bytes(b"stacked-tiff-bytes")
+
+    tmp_dir = tmp_path / "tmpdir" / "det"
+    staged = stage_detector_train_image(
+        grainseg_root=grainseg, variant=variant, tmp_dir=tmp_dir
+    )
+
+    assert staged.sample_id == "train"
+    assert staged.image_path == tmp_dir / mosaic.name
+    assert staged.image_path.read_bytes() == b"stacked-tiff-bytes"
+    assert staged.copy_s >= 0.0
+    assert not (tmp_path / "staged").exists()
+
+
 def test_format_candidate_stage_timings_lists_aggregate_and_per_variant() -> None:
     from yolo.profile_tune_cache_stage import (
         CandidateStageTimings,

@@ -1,11 +1,11 @@
-"""CLI: print detector SLURM job parameters (variant, conf, mask_threshold) for submit."""
+"""CLI: print detector SLURM array variants (one input configuration per line) for submit."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from yolo.inference_profile_tune import iter_detector_jobs, load_tune_grid, tune_grid_path
+from yolo.inference_profile_tune import load_tune_grid, tune_grid_path
 from yolo.profile_tune_cli import parse_profile_tune_variants
 
 
@@ -29,8 +29,9 @@ def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
     spec = load_tune_grid(args.grid_config)
     variants = parse_profile_tune_variants(args.variants)
-    for variant, conf, mask_threshold in iter_detector_jobs(spec, variants):
-        print(f"{variant}\t{conf}\t{mask_threshold}")
+    del spec
+    for variant in variants:
+        print(variant)
 
 
 if __name__ == "__main__":

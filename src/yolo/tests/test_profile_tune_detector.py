@@ -34,12 +34,10 @@ def detector_tune_layout(tmp_path: Path) -> dict[str, Path]:
     weights.write_bytes(b"weights-bytes")
 
     work_root = tmp_path / "tune_out" / ".cache"
-    staged_manifest = work_root / variant / "staged" / "manifest.json"
-    staged_manifest.parent.mkdir(parents=True)
-    staged_manifest.write_text(
-        '{"samples": [{"id": "train", "image": "train.tif"}]}',
-        encoding="utf-8",
-    )
+    grainseg.mkdir(parents=True)
+    train_mosaic = grainseg / "dataset" / "train" / "train_PPL.tif"
+    train_mosaic.parent.mkdir(parents=True)
+    train_mosaic.write_bytes(b"mosaic")
 
     return {
         "output_dir": tmp_path / "tune_out",
@@ -49,7 +47,43 @@ def detector_tune_layout(tmp_path: Path) -> dict[str, Path]:
         "repo": tmp_path / "repo",
         "variant": variant,
         "weights": weights,
+        "train_mosaic": train_mosaic,
     }
+
+
+def test_write_detector_proposal_cache_does_not_create_staged_manifest_tree(
+    detector_tune_layout: dict[str, Path],
+) -> None:
+    """Profile tune detector reads a local train TIFF without persistent manifest staging."""
+    layout = detector_tune_layout
+    staging_dir = layout["output_dir"] / "tmpdir"
+    staged_root = layout["work_root"] / layout["variant"] / "staged"
+
+    with patch(
+        "yolo.profile_tune_detector_cache.collect_tiled_detector_proposals",
+        return_value=[],
+    ), patch(
+        "yolo.profile_tune_detector_cache.load_image_for_yolo",
+        return_value=np.zeros((8, 8, 3), dtype=np.uint8),
+    ), patch(
+        "yolo.profile_tune_detector_cache.AutoDetectionModel.from_pretrained",
+        return_value=MagicMock(),
+    ):
+        write_detector_proposal_cache(
+            variant=layout["variant"],
+            conf=0.25,
+            mask_threshold=0.5,
+            output_dir=layout["output_dir"],
+            grainseg_root=layout["grainseg_root"],
+            run_root=layout["run_root"],
+            work_root=layout["work_root"],
+            device="0",
+            repo=layout["repo"],
+            train_image_staging_dir=staging_dir,
+        )
+
+    assert not staged_root.exists()
+    assert (staging_dir / layout["train_mosaic"].name).is_file()
 
 
 def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
@@ -98,19 +132,18 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
 
     with (
         patch(
-            "yolo.profile_tune_detector.ensure_staged_train_manifest",
-            return_value=layout["work_root"] / layout["variant"] / "staged" / "manifest.json",
-        ),
-        patch(
-            "yolo.profile_tune_detector.collect_manifest_image_paths",
-            return_value=[(Path("/fake/train.tif"), "train")],
-        ),
-        patch(
-            "yolo.profile_tune_detector.collect_tiled_detector_proposals",
+            "yolo.profile_tune_detector_cache.collect_tiled_detector_proposals",
             side_effect=fake_sliced_detection,
         ),
+        patch(
+            "yolo.profile_tune_detector_cache.load_image_for_yolo",
+            return_value=np.zeros((16, 16, 3), dtype=np.uint8),
+        ),
     ):
-        write_detector_proposal_cache(**common_kwargs)
+        write_detector_proposal_cache(
+            **common_kwargs,
+            local_train_image=layout["train_mosaic"],
+        )
 
     assert detect_calls == []
 
@@ -140,24 +173,13 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
         device="0",
         repo=layout["repo"],
     )
-    train_tif = layout["work_root"] / "train.tif"
-    train_tif.write_bytes(b"\x00")
-
     with (
         patch(
-            "yolo.profile_tune_detector.ensure_staged_train_manifest",
-            return_value=layout["work_root"] / layout["variant"] / "staged" / "manifest.json",
-        ),
-        patch(
-            "yolo.profile_tune_detector.collect_manifest_image_paths",
-            return_value=[(train_tif, "train")],
-        ),
-        patch(
-            "yolo.profile_tune_detector.load_image_for_yolo",
+            "yolo.profile_tune_detector_cache.load_image_for_yolo",
             return_value=image,
         ),
         patch(
-            "yolo.profile_tune_detector.AutoDetectionModel.from_pretrained",
+            "yolo.profile_tune_detector_cache.AutoDetectionModel.from_pretrained",
             return_value=MagicMock(),
         ),
         patch(
@@ -165,7 +187,10 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
             side_effect=fake_iter,
         ),
     ):
-        cache_dir = write_detector_proposal_cache(**common_kwargs)
+        cache_dir = write_detector_proposal_cache(
+            **common_kwargs,
+            local_train_image=layout["train_mosaic"],
+        )
 
     expected = detector_cache_expected_record(
         variant=layout["variant"],
@@ -189,7 +214,7 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
     assert not any(isinstance(entry, np.ndarray) for entry in on_disk)
 
 
-def test_profile_tune_detector_main_resolves_array_index(
+def test_profile_tune_detector_main_runs_variant_bundle_for_array_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import yaml
@@ -214,11 +239,12 @@ def test_profile_tune_detector_main_resolves_array_index(
     output_dir = tmp_path / "run"
     captured: dict[str, object] = {}
 
-    def fake_write(**kwargs: object) -> Path:
+    def fake_bundle(**kwargs: object) -> None:
         captured.update(kwargs)
-        return output_dir / ".cache" / "PPL" / "cache"
 
-    monkeypatch.setattr("yolo.profile_tune_detector.write_detector_proposal_cache", fake_write)
+    monkeypatch.setattr(
+        "yolo.profile_tune_detector.run_detector_variant_bundle", fake_bundle
+    )
 
     main(
         [
@@ -227,7 +253,7 @@ def test_profile_tune_detector_main_resolves_array_index(
             "--grid-config",
             str(grid_path),
             "--array-index",
-            "2",
+            "1",
             "--variants",
             "PPL",
             "--grainseg-root",
@@ -238,5 +264,83 @@ def test_profile_tune_detector_main_resolves_array_index(
     )
 
     assert captured["variant"] == "PPL"
-    assert captured["conf"] == pytest.approx(0.2)
-    assert captured["mask_threshold"] == pytest.approx(0.55)
+
+
+def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
+    detector_tune_layout: dict[str, Path],
+) -> None:
+    from yolo.inference_profile_tune import load_tune_grid
+    from yolo.profile_tune_detector import run_detector_variant_bundle
+
+    layout = detector_tune_layout
+    grid_path = layout["repo"] / "grid.yaml"
+    grid_path.parent.mkdir(parents=True, exist_ok=True)
+    grid_path.write_text(
+        '{"grid": {"postprocess_type": ["GREEDYNMM"], "match_metric": ["IOS"], '
+        '"match_threshold": [0.5], "conf": [0.2, 0.3], "mask_threshold": [0.45]}}',
+        encoding="utf-8",
+    )
+    spec = load_tune_grid(grid_path)
+    conf, mask_threshold = 0.2, 0.45
+    cache_dir = proposal_cache_dir(
+        layout["work_root"] / layout["variant"], conf=conf, mask_threshold=mask_threshold
+    )
+    recipe = load_test_inference_recipe()
+    height, width = 8, 8
+    record = proposal_cache_record(
+        variant=layout["variant"],
+        weights_sha256=weights_sha256(layout["weights"]),
+        recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+        conf=conf,
+        mask_threshold=mask_threshold,
+        sample_id="train",
+        height=height,
+        width=width,
+    )
+    write_tiled_proposals(cache_dir, [], record)
+
+    compute_calls: list[tuple[float, float]] = []
+
+    class _FakeDetectionModel:
+        confidence_threshold: float = 0.0
+        mask_threshold: float = 0.0
+
+    def fake_from_pretrained(**kwargs: object) -> _FakeDetectionModel:
+        model = _FakeDetectionModel()
+        model.confidence_threshold = float(kwargs["confidence_threshold"])
+        model.mask_threshold = float(kwargs["mask_threshold"])
+        return model
+
+    def fake_collect(_image, model: _FakeDetectionModel, **kwargs: object) -> list:
+        compute_calls.append(
+            (float(model.confidence_threshold), float(kwargs["mask_threshold"]))
+        )
+        return []
+
+    with (
+        patch(
+            "yolo.profile_tune_detector_cache.load_image_for_yolo",
+            return_value=np.zeros((height, width, 3), dtype=np.uint8),
+        ),
+        patch(
+            "yolo.profile_tune_detector_cache.AutoDetectionModel.from_pretrained",
+            side_effect=fake_from_pretrained,
+        ),
+        patch(
+            "yolo.profile_tune_detector_cache.collect_tiled_detector_proposals",
+            side_effect=fake_collect,
+        ),
+    ):
+        run_detector_variant_bundle(
+            variant=layout["variant"],
+            spec=spec,
+            output_dir=layout["output_dir"],
+            grainseg_root=layout["grainseg_root"],
+            run_root=layout["run_root"],
+            work_root=layout["work_root"],
+            device="0",
+            repo=layout["repo"],
+            local_train_image=layout["train_mosaic"],
+        )
+
+    assert compute_calls == [(0.3, 0.45)]

@@ -1,42 +1,28 @@
-"""CLI: write tiled detector proposal cache for one (variant, conf, mask_threshold)."""
+"""CLI: write tiled detector proposal caches for profile selection (ADR 0005)."""
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable
 from pathlib import Path
 
 from common.profile_tune_paths import profile_tune_cache_root
-
-from sahi import AutoDetectionModel
-
-from common.manifest_io import collect_manifest_image_paths
-from common.test_inference import load_test_inference_recipe
 from common.variants import repo_root
-from yolo.predict import device_for_sahi, load_image_for_yolo
-from yolo.profile_tune_work import (
-    default_grainseg_and_run_roots,
-    ensure_staged_train_manifest,
-    sahi_window_kwargs,
-    weights_path,
-)
 from yolo.inference_profile_tune import (
     TuneGridSpec,
-    detector_job_at_index,
+    detector_keys_per_variant,
+    iter_detector_keys,
     load_tune_grid,
     tune_grid_path,
+    variant_at_detector_array_index,
 )
 from yolo.profile_tune_cli import parse_profile_tune_variants
-from yolo.tiled_proposal_cache import (
-    collect_tiled_detector_proposals,
-    detector_cache_expected_record,
-    load_or_write_tiled_proposals,
-    load_tiled_proposals,
-    proposal_cache_dir,
-    proposal_cache_record,
-    recipe_whole_window_fingerprint,
-    weights_sha256,
+from yolo.profile_tune_detector_cache import (
+    format_scratch_cache_label,
+    prepare_detector_variant,
+    write_detector_key_proposals_if_needed,
 )
-from yolo.train import _parse_device
+from yolo.profile_tune_work import default_grainseg_and_run_roots
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -55,7 +41,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--array-index",
         type=int,
         default=None,
-        help="SLURM array task id (1-based) selecting variant/conf/mask_threshold.",
+        help="SLURM array task id (1-based) selecting an input configuration (variant).",
     )
     parser.add_argument(
         "--variants",
@@ -71,30 +57,49 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Profile tune durable cache root (default: output-dir/.cache).",
     )
+    parser.add_argument(
+        "--local-train-image",
+        type=Path,
+        default=None,
+        help="Pre-staged train whole stacked TIFF (e.g. copied to $TMPDIR by SLURM).",
+    )
+    parser.add_argument(
+        "--train-image-staging-dir",
+        type=Path,
+        default=None,
+        help="Copy the train whole stacked TIFF into this directory before inference.",
+    )
     return parser.parse_args(argv)
 
 
-def resolve_detector_job(
+def resolve_detector_variant(
     *,
-    spec: TuneGridSpec,
     variants: tuple[str, ...],
     variant: str | None,
     conf: float | None,
     mask_threshold: float | None,
     array_index: int | None,
-) -> tuple[str, float, float]:
-    explicit = (variant, conf, mask_threshold)
-    if array_index is not None and any(v is not None for v in explicit):
+) -> str:
+    explicit_variant = variant
+    explicit_keys = (conf, mask_threshold)
+    if array_index is not None and (
+        explicit_variant is not None or any(v is not None for v in explicit_keys)
+    ):
         raise ValueError(
             "Specify either --array-index or --variant/--conf/--mask-threshold, not both"
         )
     if array_index is not None:
-        return detector_job_at_index(spec, variants, array_index)
-    if None in explicit:
+        return variant_at_detector_array_index(variants, array_index)
+    if explicit_variant is None:
         raise ValueError(
-            "One of --array-index or all of --variant, --conf, --mask-threshold is required"
+            "One of --array-index or --variant is required for profile tune detector"
         )
-    return variant, conf, mask_threshold
+    if any(v is not None for v in explicit_keys) and any(v is None for v in explicit_keys):
+        raise ValueError(
+            "Specify both --conf and --mask-threshold for a single detector key, or neither "
+            "to run all detector keys for the variant"
+        )
+    return explicit_variant
 
 
 def write_detector_proposal_cache(
@@ -108,89 +113,98 @@ def write_detector_proposal_cache(
     work_root: Path,
     device: str,
     repo: Path,
+    local_train_image: Path | None = None,
+    train_image_staging_dir: Path | None = None,
 ) -> Path:
-    weights = weights_path(grainseg_root, variant, run_root)
-    if not weights.is_file():
-        raise FileNotFoundError(f"Missing YOLO weights for {variant}: {weights}")
-
-    staged_manifest = ensure_staged_train_manifest(
+    del output_dir, repo  # retained for CLI compatibility
+    prepared, staging_note = prepare_detector_variant(
+        variant=variant,
         grainseg_root=grainseg_root,
+        run_root=run_root,
+        device=device,
+        local_train_image=local_train_image,
+        train_image_staging_dir=train_image_staging_dir,
+    )
+    if staging_note:
+        print(staging_note, flush=True)
+    cache_dir, _model, _wrote = write_detector_key_proposals_if_needed(
+        prepared,
         variant=variant,
+        conf=conf,
+        mask_threshold=mask_threshold,
         work_root=work_root,
-        repo=repo,
-    )
-    pairs = collect_manifest_image_paths(staged_manifest)
-    if len(pairs) != 1:
-        raise ValueError(
-            f"Profile tune detector expects one train whole sample, got {len(pairs)}"
-        )
-    image_path, sample_id = pairs[0]
-    cache_dir = proposal_cache_dir(work_root / variant, conf=conf, mask_threshold=mask_threshold)
-    recipe = load_test_inference_recipe()
-    expected = detector_cache_expected_record(
-        variant=variant,
-        weights_path=weights,
-        conf=conf,
-        mask_threshold=mask_threshold,
-        sample_id=sample_id,
-        recipe=recipe,
-    )
-    try:
-        load_tiled_proposals(cache_dir, expected=expected)
-        return cache_dir
-    except (FileNotFoundError, ValueError):
-        pass
-
-    image = load_image_for_yolo(image_path)
-    height, width = int(image.shape[0]), int(image.shape[1])
-    record = proposal_cache_record(
-        variant=variant,
-        weights_sha256=weights_sha256(weights),
-        recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
-        conf=conf,
-        mask_threshold=mask_threshold,
-        sample_id=sample_id,
-        height=height,
-        width=width,
-    )
-
-    def compute_proposals():
-        sahi_device = device_for_sahi(_parse_device(device))
-        detection_model = AutoDetectionModel.from_pretrained(
-            model_type="ultralytics",
-            model_path=str(weights.resolve()),
-            confidence_threshold=conf,
-            mask_threshold=mask_threshold,
-            device=sahi_device,
-            image_size=recipe.whole.window,
-        )
-        window_kwargs = sahi_window_kwargs()
-        return collect_tiled_detector_proposals(
-            image,
-            detection_model,
-            slice_height=int(window_kwargs["slice_height"]),
-            slice_width=int(window_kwargs["slice_width"]),
-            overlap_height_ratio=float(window_kwargs["overlap_height_ratio"]),
-            overlap_width_ratio=float(window_kwargs["overlap_width_ratio"]),
-            mask_threshold=mask_threshold,
-        )
-
-    load_or_write_tiled_proposals(
-        cache_dir,
-        expected=expected,
-        meta=record,
-        compute_fn=compute_proposals,
+        log_skip=False,
     )
     return cache_dir
 
 
+def run_detector_variant_bundle(
+    *,
+    variant: str,
+    spec: TuneGridSpec,
+    output_dir: Path,
+    grainseg_root: Path,
+    run_root: Path,
+    work_root: Path,
+    device: str,
+    repo: Path,
+    local_train_image: Path | None = None,
+    train_image_staging_dir: Path | None = None,
+    detector_keys: Iterable[tuple[float, float]] | None = None,
+) -> None:
+    """Stage train image once, load YOLO once, write all detector-key caches for a variant."""
+    del repo
+    scratch_cache = profile_tune_cache_root(output_dir)
+    prepared, staging_note = prepare_detector_variant(
+        variant=variant,
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        device=device,
+        local_train_image=local_train_image,
+        train_image_staging_dir=train_image_staging_dir,
+    )
+    if staging_note:
+        print(staging_note, flush=True)
+
+    detection_model = None
+    keys = (
+        list(detector_keys)
+        if detector_keys is not None
+        else list(iter_detector_keys(spec))
+    )
+
+    for conf, mask_threshold in keys:
+        try:
+            cache_dir, detection_model, wrote = write_detector_key_proposals_if_needed(
+                prepared,
+                variant=variant,
+                conf=conf,
+                mask_threshold=mask_threshold,
+                work_root=work_root,
+                detection_model=detection_model,
+                log_skip=True,
+            )
+        except Exception:
+            print(
+                f"Detector key failed: variant={variant} conf={conf:g} "
+                f"mask_threshold={mask_threshold:g}",
+                flush=True,
+            )
+            raise
+
+        if wrote:
+            label = format_scratch_cache_label(cache_dir, scratch_cache)
+            print(
+                f"Tiled detector proposals written to {label} → {cache_dir}",
+                flush=True,
+            )
+
+
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
-    repo = repo_root()
     variants = parse_profile_tune_variants(args.variants)
     spec = load_tune_grid(args.grid_config)
-    variant, conf, mask_threshold = resolve_detector_job(
-        spec=spec,
+    variant = resolve_detector_variant(
         variants=variants,
         variant=args.variant,
         conf=args.conf,
@@ -201,23 +215,46 @@ def main(argv: list[str] | None = None) -> None:
         args.grainseg_root, args.run_root
     )
     work_root = args.work_root or profile_tune_cache_root(args.output_dir)
+    scratch_cache = profile_tune_cache_root(args.output_dir)
+
     if args.array_index is not None:
         print(
-            f"Detector array task {args.array_index}: "
-            f"variant={variant} conf={conf:g} mask_threshold={mask_threshold:g}"
+            f"Detector array task {args.array_index}: variant={variant} "
+            f"({detector_keys_per_variant(spec)} detector keys)",
+            flush=True,
         )
-    cache_dir = write_detector_proposal_cache(
+
+    single_key = args.conf is not None and args.mask_threshold is not None
+    if single_key:
+        cache_dir = write_detector_proposal_cache(
+            variant=variant,
+            conf=args.conf,
+            mask_threshold=args.mask_threshold,
+            output_dir=args.output_dir,
+            grainseg_root=grainseg_root,
+            run_root=run_root,
+            work_root=work_root,
+            device=args.device,
+            repo=repo_root(),
+            local_train_image=args.local_train_image,
+            train_image_staging_dir=args.train_image_staging_dir,
+        )
+        label = format_scratch_cache_label(cache_dir, scratch_cache)
+        print(f"Tiled detector proposals written to {label} → {cache_dir}")
+        return
+
+    run_detector_variant_bundle(
         variant=variant,
-        conf=conf,
-        mask_threshold=mask_threshold,
+        spec=spec,
         output_dir=args.output_dir,
         grainseg_root=grainseg_root,
         run_root=run_root,
         work_root=work_root,
         device=args.device,
-        repo=repo,
+        repo=repo_root(),
+        local_train_image=args.local_train_image,
+        train_image_staging_dir=args.train_image_staging_dir,
     )
-    print(f"Tiled detector proposals ready → {cache_dir}")
 
 
 if __name__ == "__main__":

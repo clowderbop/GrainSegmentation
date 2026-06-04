@@ -106,9 +106,19 @@ if [ "$SKIP_DETECTORS" != "1" ]; then
         exit 1
     fi
 
+    detector_walltime="$(
+        uv run --directory "$REPO_ROOT/src/yolo" python -c "
+from pathlib import Path
+from yolo.inference_profile_tune import load_tune_grid
+from yolo.slurm_profile_tune import profile_tune_detector_walltime
+print(profile_tune_detector_walltime(load_tune_grid(Path('${GRID_CONFIG}'))))
+"
+    )"
+    detector_walltime="${detector_walltime//[[:space:]]/}"
     det_export="ALL,OUTPUT_DIR=${OUTPUT_DIR},GRID_CONFIG=${GRID_CONFIG}"
     det_cmd=(
         sbatch
+        "--time=${detector_walltime}"
         "--export=${det_export}"
         "--array=1-${detector_count}%${detector_max_parallel}"
         "$REPO_ROOT/SLURM/yolo/run_profile_tune_detector.sh"

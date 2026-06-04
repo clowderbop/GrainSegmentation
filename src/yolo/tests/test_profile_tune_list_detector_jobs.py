@@ -34,9 +34,4 @@ def test_list_detector_jobs_prints_tsv_rows(
     _write_minimal_grid(grid_path)
     main(["--grid-config", str(grid_path), "--variants", "PPL"])
     lines = [line for line in capsys.readouterr().out.strip().splitlines() if line]
-    assert lines == [
-        "PPL\t0.2\t0.45",
-        "PPL\t0.2\t0.55",
-        "PPL\t0.3\t0.45",
-        "PPL\t0.3\t0.55",
-    ]
+    assert lines == ["PPL"]

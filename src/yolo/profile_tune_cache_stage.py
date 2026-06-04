@@ -20,6 +20,44 @@ class CandidateStageTimings:
     per_variant_proposals_s: dict[str, float]
 
 
+@dataclass(frozen=True)
+class StagedDetectorTrainImage:
+    image_path: Path
+    sample_id: str
+    copy_s: float
+
+
+def resolve_train_whole_image_path(*, grainseg_root: Path, variant: str) -> tuple[Path, str]:
+    """Scratch path and sample id for the variant train whole stacked TIFF."""
+    from common.manifest_io import build_yolo_whole_manifest, resolve_row_path
+
+    manifest = build_yolo_whole_manifest(
+        split="train", variant=variant, grainseg_root=grainseg_root
+    )
+    row = manifest.samples[0]
+    if row.image is None:
+        raise ValueError(f"YOLO whole train manifest row has no image for {variant}")
+    return resolve_row_path(manifest, row.image), row.sample_id
+
+
+def stage_detector_train_image(
+    *,
+    grainseg_root: Path,
+    variant: str,
+    tmp_dir: Path,
+) -> StagedDetectorTrainImage:
+    """Copy only the train whole stacked TIFF into a job-local directory."""
+    src, sample_id = resolve_train_whole_image_path(
+        grainseg_root=grainseg_root, variant=variant
+    )
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    dst = tmp_dir / src.name
+    t0 = time.perf_counter()
+    shutil.copy2(src, dst)
+    copy_s = time.perf_counter() - t0
+    return StagedDetectorTrainImage(image_path=dst, sample_id=sample_id, copy_s=copy_s)
+
+
 def copy_tree_timed(src: Path, dst: Path) -> float:
     """Copy a directory tree and return elapsed seconds."""
     t0 = time.perf_counter()

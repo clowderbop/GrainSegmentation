@@ -26,11 +26,16 @@ cd "$REPO_ROOT/src/yolo"
 uv sync
 export YOLO_DISABLE_TQDM=True
 
-echo "Detector array task ${SLURM_ARRAY_TASK_ID} → $OUTPUT_DIR"
+WORK_ROOT="${OUTPUT_DIR}/.cache"
+TMP_IMAGE_DIR="$TMPDIR/profile_tune_det_${SLURM_ARRAY_TASK_ID:-0}_${SLURM_JOB_ID:-local}"
+
+echo "Detector array task ${SLURM_ARRAY_TASK_ID} → $OUTPUT_DIR (proposals → ${WORK_ROOT})"
 uv run python -u -m yolo.profile_tune_detector \
     --output-dir "$OUTPUT_DIR" \
     --grid-config "$GRID_CONFIG" \
     --array-index "$SLURM_ARRAY_TASK_ID" \
     --grainseg-root "$GRAINSEG_ROOT" \
     --run-root "$RUN_ROOT" \
+    --work-root "$WORK_ROOT" \
+    --train-image-staging-dir "$TMP_IMAGE_DIR" \
     --device "$DEVICE"

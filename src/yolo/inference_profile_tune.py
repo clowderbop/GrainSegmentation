@@ -94,23 +94,44 @@ def count_grid_candidates(spec: TuneGridSpec) -> int:
 
 
 def count_detector_jobs(spec: TuneGridSpec, variant_count: int) -> int:
-    """GPU detector jobs: one per (variant, conf, mask_threshold)."""
+    """GPU detector array tasks: one per input configuration (variant)."""
+    del spec  # grid shape does not change variant task count
+    return variant_count
+
+
+def detector_keys_per_variant(spec: TuneGridSpec) -> int:
     grid = spec.grid
-    return variant_count * len(grid.conf) * len(grid.mask_threshold)
+    return len(grid.conf) * len(grid.mask_threshold)
+
+
+def iter_detector_keys(spec: TuneGridSpec) -> Iterable[tuple[float, float]]:
+    """Detector knob pairs processed inside one variant GPU task."""
+    yield from itertools.product(spec.grid.conf, spec.grid.mask_threshold)
+
+
+def variant_at_detector_array_index(variants: tuple[str, ...], array_index: int) -> str:
+    if array_index < 1:
+        raise ValueError(f"array index must be >= 1, got {array_index}")
+    if array_index > len(variants):
+        raise ValueError(
+            f"array index {array_index} out of range for {len(variants)} variants"
+        )
+    return variants[array_index - 1]
 
 
 def iter_detector_jobs(
     spec: TuneGridSpec, variants: tuple[str, ...]
 ) -> Iterable[tuple[str, float, float]]:
-    """One GPU detector job per (variant, conf, mask_threshold)."""
+    """Flat detector grid: every (variant, conf, mask_threshold) cache key."""
     for variant in variants:
-        for conf, mask_threshold in itertools.product(spec.grid.conf, spec.grid.mask_threshold):
+        for conf, mask_threshold in iter_detector_keys(spec):
             yield variant, conf, mask_threshold
 
 
 def detector_job_at_index(
     spec: TuneGridSpec, variants: tuple[str, ...], array_index: int
 ) -> tuple[str, float, float]:
+    """Resolve a flat detector grid index (tests, legacy callers)."""
     if array_index < 1:
         raise ValueError(f"array index must be >= 1, got {array_index}")
     jobs = list(iter_detector_jobs(spec, variants))

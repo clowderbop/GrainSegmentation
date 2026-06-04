@@ -21,8 +21,10 @@ from yolo.inference_profile_tune import (
     PROFILE_SELECTION_OBJECTIVE,
     append_grid_result_row,
     count_detector_jobs,
+    detector_keys_per_variant,
     count_grid_candidates,
     detector_job_at_index,
+    variant_at_detector_array_index,
     extract_mean_pq_from_report,
     grid_result_row_from_candidate_scoring,
     grid_results_fieldnames,
@@ -80,11 +82,25 @@ def test_load_tune_grid_reads_full_factorial_search_space(tmp_path: Path) -> Non
     assert spec.grid.mask_threshold == (0.45, 0.55)
 
 
-def test_iter_detector_jobs_one_per_variant_and_detector_key(tmp_path: Path) -> None:
+def test_count_detector_jobs_is_variant_count(tmp_path: Path) -> None:
     _write_grid(tmp_path / "grid.yaml")
     spec = load_tune_grid(tmp_path / "grid.yaml")
-    jobs = list(iter_detector_jobs(spec, ("PPL", "PPL+AllPPX")))
-    assert len(jobs) == 2 * 2 * 2  # variants × conf × mask_threshold
+    variants = ("PPL", "PPL+AllPPX")
+    assert count_detector_jobs(spec, len(variants)) == len(variants)
+
+
+def test_iter_detector_jobs_lists_flat_detector_grid(tmp_path: Path) -> None:
+    _write_grid(tmp_path / "grid.yaml")
+    spec = load_tune_grid(tmp_path / "grid.yaml")
+    variants = ("PPL", "PPL+AllPPX")
+    jobs = list(iter_detector_jobs(spec, variants))
+    assert len(jobs) == len(variants) * detector_keys_per_variant(spec)
+
+
+def test_variant_at_detector_array_index_selects_variant(tmp_path: Path) -> None:
+    variants = ("PPL", "PPL+AllPPX")
+    assert variant_at_detector_array_index(variants, 1) == "PPL"
+    assert variant_at_detector_array_index(variants, 2) == "PPL+AllPPX"
 
 
 def test_detector_job_at_index_matches_iter_detector_jobs_order(tmp_path: Path) -> None:
@@ -360,8 +376,9 @@ def test_committed_tune_grid_is_well_formed_factorial() -> None:
     assert len({c.candidate_id() for c in candidates}) == len(candidates)
 
     variants = ("PPL", "PPL+AllPPX")
-    assert len(list(iter_detector_jobs(spec, variants))) == count_detector_jobs(
-        spec, len(variants)
+    assert count_detector_jobs(spec, len(variants)) == len(variants)
+    assert len(list(iter_detector_jobs(spec, variants))) == (
+        len(variants) * detector_keys_per_variant(spec)
     )
 
 

@@ -15,6 +15,7 @@ from typing import Any, Iterable
 import yaml
 
 from common import yaml_validate as yv
+from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
@@ -139,32 +140,70 @@ def iter_grid_candidates(spec: TuneGridSpec) -> Iterable[YoloInferenceProfileCan
         )
 
 
-def extract_mean_aji_from_report(report: dict[str, Any]) -> float:
-    mean = report.get("mean")
-    if isinstance(mean, dict) and "aji" in mean:
-        return float(mean["aji"])
+PROFILE_SELECTION_OBJECTIVE = "pq"
+
+
+def variant_metric_column(metric_key: str, variant: str) -> str:
+    return f"{metric_key}__{variant}"
+
+
+def _metric_values_from_report_samples(
+    report: dict[str, Any], metric_key: str
+) -> list[float]:
     samples = report.get("samples")
-    if isinstance(samples, list) and samples:
-        aji_values = [
-            float(row["aji"])
-            for row in samples
-            if isinstance(row, dict) and "aji" in row
-        ]
-        if aji_values:
-            return float(sum(aji_values) / len(aji_values))
-    raise ValueError("instance metrics report has no AJI in mean or samples")
+    if not isinstance(samples, list):
+        return []
+    return [
+        float(row[metric_key])
+        for row in samples
+        if isinstance(row, dict) and metric_key in row
+    ]
 
 
-def mean_aji_across_variants(variant_scores: dict[str, float]) -> float:
-    if not variant_scores:
-        raise ValueError("variant_scores must not be empty")
-    return float(sum(variant_scores.values()) / len(variant_scores))
+def extract_metric_from_report(report: dict[str, Any], metric_key: str) -> float:
+    mean = report.get("mean")
+    if isinstance(mean, dict) and metric_key in mean:
+        return float(mean[metric_key])
+    values = _metric_values_from_report_samples(report, metric_key)
+    if values:
+        return float(sum(values) / len(values))
+    raise ValueError(
+        f"instance metrics report has no {metric_key!r} in mean or samples"
+    )
+
+
+def extract_mean_pq_from_report(report: dict[str, Any]) -> float:
+    return extract_metric_from_report(report, PROFILE_SELECTION_OBJECTIVE)
+
+
+def extract_instance_metric_bundle_from_report(
+    report: dict[str, Any],
+) -> dict[str, float]:
+    return {
+        key: extract_metric_from_report(report, key) for key in INSTANCE_METRIC_BUNDLE_KEYS
+    }
+
+
+def mean_pq_across_variants(variant_pq: dict[str, float]) -> float:
+    if not variant_pq:
+        raise ValueError("variant_pq must not be empty")
+    return float(sum(variant_pq.values()) / len(variant_pq))
 
 
 def select_best_candidate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     if not rows:
         raise ValueError("rows must not be empty")
-    return max(rows, key=lambda row: float(row["mean_aji"]))
+    return max(rows, key=lambda row: float(row["mean_pq"]))
+
+
+def flatten_per_variant_bundles(
+    per_variant_bundles: dict[str, dict[str, float]],
+) -> dict[str, float]:
+    flat: dict[str, float] = {}
+    for variant, bundle in per_variant_bundles.items():
+        for key, value in bundle.items():
+            flat[variant_metric_column(key, variant)] = float(value)
+    return flat
 
 
 def load_instance_metrics_report(path: Path) -> dict[str, Any]:
@@ -173,25 +212,50 @@ def load_instance_metrics_report(path: Path) -> dict[str, Any]:
 
 def score_candidate_across_variants(
     variant_reports: dict[str, Path],
-) -> tuple[float, dict[str, float]]:
-    per_variant: dict[str, float] = {}
+) -> tuple[float, dict[str, dict[str, float]]]:
+    per_variant_bundles: dict[str, dict[str, float]] = {}
     for variant, report_path in variant_reports.items():
-        per_variant[variant] = extract_mean_aji_from_report(
+        per_variant_bundles[variant] = extract_instance_metric_bundle_from_report(
             load_instance_metrics_report(report_path)
         )
-    return mean_aji_across_variants(per_variant), per_variant
+    per_variant_pq = {
+        variant: bundle[PROFILE_SELECTION_OBJECTIVE]
+        for variant, bundle in per_variant_bundles.items()
+    }
+    return mean_pq_across_variants(per_variant_pq), per_variant_bundles
 
 
 def grid_results_fieldnames(variant_names: tuple[str, ...]) -> list[str]:
-    return [
+    base = [
         "candidate_id",
         "postprocess_type",
         "match_metric",
         "match_threshold",
         "conf",
         "mask_threshold",
-        "mean_aji",
-    ] + [f"aji__{variant}" for variant in variant_names]
+        "mean_pq",
+    ]
+    metric_columns = [
+        variant_metric_column(key, variant)
+        for variant in variant_names
+        for key in INSTANCE_METRIC_BUNDLE_KEYS
+    ]
+    return base + metric_columns
+
+
+def grid_result_row_from_candidate_scoring(
+    *,
+    candidate: YoloInferenceProfileCandidate,
+    mean_pq: float,
+    per_variant_bundles: dict[str, dict[str, float]],
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "candidate_id": candidate.candidate_id(),
+        **candidate.to_dict(),
+        "mean_pq": mean_pq,
+        **flatten_per_variant_bundles(per_variant_bundles),
+    }
+    return row
 
 
 def write_grid_results_csv(
@@ -326,9 +390,10 @@ def finalize_grid_winner(
     write_grid_winner_json(
         grid_dir / "winner.json",
         candidate=winner,
-        mean_aji=float(best_row["mean_aji"]),
-        per_variant={
-            variant: float(best_row[f"aji__{variant}"]) for variant in variant_names
+        mean_pq=float(best_row["mean_pq"]),
+        per_variant_pq={
+            variant: float(best_row[variant_metric_column(PROFILE_SELECTION_OBJECTIVE, variant)])
+            for variant in variant_names
         },
     )
     return winner
@@ -383,18 +448,16 @@ def run_grid_search(
                     write_variant_eval_resume_meta(metrics_path, fingerprint)
             if on_variant_scored is not None:
                 on_variant_scored(candidate, variant, variant_reports[variant])
-        mean_aji, per_variant = score_candidate_across_variants(variant_reports)
-        row: dict[str, object] = {
-            "candidate_id": candidate.candidate_id(),
-            **candidate.to_dict(),
-            "mean_aji": mean_aji,
-        }
-        for variant, aji in per_variant.items():
-            row[f"aji__{variant}"] = aji
+        mean_pq, per_variant_bundles = score_candidate_across_variants(variant_reports)
+        row = grid_result_row_from_candidate_scoring(
+            candidate=candidate,
+            mean_pq=mean_pq,
+            per_variant_bundles=per_variant_bundles,
+        )
         rows.append(row)
         write_grid_results_csv(results_csv, rows, variant_names=variants)
         print(
-            f"grid {candidate.candidate_id()}: mean_aji={mean_aji:.6f}",
+            f"grid {candidate.candidate_id()}: mean_pq={mean_pq:.6f}",
             flush=True,
         )
 
@@ -408,14 +471,15 @@ def write_grid_winner_json(
     path: Path,
     *,
     candidate: YoloInferenceProfileCandidate,
-    mean_aji: float,
-    per_variant: dict[str, float],
+    mean_pq: float,
+    per_variant_pq: dict[str, float],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "mean_aji": mean_aji,
+        "selection_objective": PROFILE_SELECTION_OBJECTIVE,
+        "mean_pq": mean_pq,
         "profile": candidate.to_dict(),
-        "per_variant_aji": per_variant,
+        "per_variant_pq": per_variant_pq,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -464,10 +528,12 @@ def rows_to_grid_results(
             "match_threshold": row["match_threshold"],
             "conf": row["conf"],
             "mask_threshold": row["mask_threshold"],
-            "mean_aji": row["mean_aji"],
+            "mean_pq": row["mean_pq"],
         }
         for variant in variant_names:
-            csv_row[f"aji__{variant}"] = row[f"aji__{variant}"]
+            for key in INSTANCE_METRIC_BUNDLE_KEYS:
+                column = variant_metric_column(key, variant)
+                csv_row[column] = row[column]
         normalized.append(csv_row)
     return normalized
 

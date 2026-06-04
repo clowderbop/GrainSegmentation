@@ -1,4 +1,4 @@
-"""AJI parity: profile selection scoring vs evaluate_instances (ADR 0005)."""
+"""PQ bundle parity: profile selection scoring vs evaluate_instances (ADR 0005)."""
 
 from __future__ import annotations
 
@@ -8,10 +8,13 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from common.test_inference import YoloInferenceProfileCandidate
 from common.variants import all_variant_names
+from yolo.inference_profile_tune import extract_instance_metric_bundle_from_report
 from yolo.tests.profile_tune_fixtures import (
     candidate_for_variant,
+    constant_metric_bundle,
     disjoint_sahi_proposals,
     overlapping_sahi_proposals,
     tiny_train_gt_map,
@@ -20,7 +23,7 @@ from yolo.tests.profile_tune_fixtures import (
 )
 
 
-def _train_aji_via_evaluate_instances(
+def _train_bundle_via_evaluate_instances(
     gt_instance_map: np.ndarray,
     proposals: list,
     *,
@@ -30,10 +33,9 @@ def _train_aji_via_evaluate_instances(
     variant: str,
     image_path: Path,
     prediction_set_path: Path,
-) -> float:
+) -> dict[str, float]:
     """Canonical path: materialize prediction set, then ``evaluate_instance_samples``."""
     from common.evaluate_instances import InstanceEvalSample, evaluate_instance_samples
-    from yolo.inference_profile_tune import extract_mean_aji_from_report
     from yolo.profile_tune_scoring import materialize_score_merged_prediction_set
 
     materialize_score_merged_prediction_set(
@@ -69,15 +71,22 @@ def _train_aji_via_evaluate_instances(
             variant=variant,
             unit="whole",
         )
-    return extract_mean_aji_from_report(report)
+    return extract_instance_metric_bundle_from_report(report)
+
+
+def _assert_bundles_equal(
+    fast: dict[str, float], canonical: dict[str, float]
+) -> None:
+    for key in INSTANCE_METRIC_BUNDLE_KEYS:
+        assert fast[key] == pytest.approx(canonical[key], rel=0.0, abs=1e-9), key
 
 
 @pytest.mark.parametrize("variant", all_variant_names())
-def test_profile_selection_scoring_aji_matches_evaluate_instances(
+def test_profile_selection_scoring_bundle_matches_evaluate_instances(
     tmp_path: Path, variant: str
 ) -> None:
-    """In-process scoring AJI matches evaluate_instances on the same materialized set."""
-    from yolo.profile_tune_scoring import compute_train_aji
+    """In-process scoring bundle matches evaluate_instances on the same materialized set."""
+    from yolo.profile_tune_scoring import compute_train_instance_metric_bundle
 
     height, width = 16, 16
     gt_map = tiny_train_gt_map(height, width)
@@ -89,14 +98,14 @@ def test_profile_selection_scoring_aji_matches_evaluate_instances(
     image_path.write_bytes(b"\x00")
     pred_path = variant_dir / "prediction_sets" / "train.json"
 
-    fast_aji = compute_train_aji(
+    fast_bundle = compute_train_instance_metric_bundle(
         gt_map,
         proposals,
         candidate=candidate,
         height=height,
         width=width,
     )
-    canonical_aji = _train_aji_via_evaluate_instances(
+    canonical_bundle = _train_bundle_via_evaluate_instances(
         gt_map,
         proposals,
         candidate=candidate,
@@ -106,19 +115,19 @@ def test_profile_selection_scoring_aji_matches_evaluate_instances(
         image_path=image_path,
         prediction_set_path=pred_path,
     )
-    assert fast_aji == pytest.approx(canonical_aji, rel=0.0, abs=1e-9)
+    _assert_bundles_equal(fast_bundle, canonical_bundle)
     assert pred_path.is_file()
 
 
 @pytest.mark.parametrize("proposals_fn", [disjoint_sahi_proposals])
-def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
+def test_v2_tiled_proposal_cache_scoring_bundle_matches_legacy(
     tmp_path: Path,
     proposals_fn,
 ) -> None:
-    """ADR 0005 parity on on-disk v2 caches: direct paint AJI == legacy round-trip."""
-    from common.metrics import compute_aji
+    """ADR 0005 parity on on-disk v2 caches: direct paint bundle == legacy round-trip."""
+    from common.instance_metric_bundle import compute_instance_metric_bundle
     from common.test_inference import load_test_inference_recipe
-    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
     from yolo.tests.profile_tune_legacy_scoring import legacy_merged_instance_view_from_proposals
     from yolo.tiled_proposal_cache import (
         proposal_cache_dir,
@@ -177,7 +186,7 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
         records, height=int(meta["height"]), width=int(meta["width"])
     )
 
-    fast_aji = score_variant_train_aji_from_cache(
+    fast_bundle = score_variant_train_metrics_from_cache(
         variant="PPL",
         candidate=candidate,
         grainseg_root=grainseg_root,
@@ -192,17 +201,17 @@ def test_v2_tiled_proposal_cache_scoring_aji_matches_legacy(
         height=height,
         width=width,
     )
-    legacy_aji = float(compute_aji(gt_map, legacy_map))
-    assert fast_aji == pytest.approx(legacy_aji, rel=0.0, abs=1e-9)
+    legacy_bundle = compute_instance_metric_bundle(gt_map, legacy_map)
+    _assert_bundles_equal(fast_bundle, legacy_bundle)
 
 
-def test_v2_overlapping_tiled_proposal_cache_scoring_aji_matches_legacy(
+def test_v2_overlapping_tiled_proposal_cache_scoring_bundle_matches_legacy(
     tmp_path: Path,
 ) -> None:
     """ADR 0005: overlapping v2 records exercise slice-merge mask union (crop-local adapter)."""
-    from common.metrics import compute_aji
+    from common.instance_metric_bundle import compute_instance_metric_bundle
     from common.test_inference import load_test_inference_recipe
-    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
     from yolo.tests.profile_tune_legacy_scoring import legacy_merged_instance_view_from_proposals
     from yolo.tiled_proposal_cache import (
         detector_cache_expected_record,
@@ -243,7 +252,7 @@ def test_v2_overlapping_tiled_proposal_cache_scoring_aji_matches_legacy(
         ),
     )
 
-    fast_aji = score_variant_train_aji_from_cache(
+    fast_bundle = score_variant_train_metrics_from_cache(
         variant="PPL",
         candidate=candidate,
         grainseg_root=grainseg_root,
@@ -273,16 +282,19 @@ def test_v2_overlapping_tiled_proposal_cache_scoring_aji_matches_legacy(
         height=height,
         width=width,
     )
-    legacy_aji = float(compute_aji(gt_map, legacy_map))
-    assert fast_aji == pytest.approx(legacy_aji, rel=0.0, abs=1e-9)
+    legacy_bundle = compute_instance_metric_bundle(gt_map, legacy_map)
+    _assert_bundles_equal(fast_bundle, legacy_bundle)
 
 
 @pytest.mark.parametrize("variant", all_variant_names())
-def test_overlapping_score_merge_aji_matches_evaluate_instances(
+def test_overlapping_score_merge_bundle_matches_evaluate_instances(
     tmp_path: Path, variant: str
 ) -> None:
     """Score-merge parity when slice-merge is a no-op (overlapping fixture masks)."""
-    from yolo.profile_tune_scoring import compute_train_aji, merge_sliced_object_predictions
+    from yolo.profile_tune_scoring import (
+        compute_train_instance_metric_bundle,
+        merge_sliced_object_predictions,
+    )
 
     height, width = 16, 16
     gt_map = tiny_train_gt_map(height, width)
@@ -301,14 +313,14 @@ def test_overlapping_score_merge_aji_matches_evaluate_instances(
         "yolo.profile_tune_scoring.merge_sliced_object_predictions",
         side_effect=_identity_merge,
     ):
-        fast_aji = compute_train_aji(
+        fast_bundle = compute_train_instance_metric_bundle(
             gt_map,
             proposals,
             candidate=candidate,
             height=height,
             width=width,
         )
-        canonical_aji = _train_aji_via_evaluate_instances(
+        canonical_bundle = _train_bundle_via_evaluate_instances(
             gt_map,
             proposals,
             candidate=candidate,
@@ -318,4 +330,28 @@ def test_overlapping_score_merge_aji_matches_evaluate_instances(
             image_path=image_path,
             prediction_set_path=pred_path,
         )
-    assert fast_aji == pytest.approx(canonical_aji, rel=0.0, abs=1e-9)
+    _assert_bundles_equal(fast_bundle, canonical_bundle)
+
+
+def _train_pq_via_evaluate_instances(
+    gt_instance_map: np.ndarray,
+    proposals: list,
+    *,
+    candidate: YoloInferenceProfileCandidate,
+    height: int,
+    width: int,
+    variant: str,
+    image_path: Path,
+    prediction_set_path: Path,
+) -> float:
+    bundle = _train_bundle_via_evaluate_instances(
+        gt_instance_map,
+        proposals,
+        candidate=candidate,
+        height=height,
+        width=width,
+        variant=variant,
+        image_path=image_path,
+        prediction_set_path=prediction_set_path,
+    )
+    return float(bundle["pq"])

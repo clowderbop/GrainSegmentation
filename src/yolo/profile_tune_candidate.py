@@ -22,17 +22,20 @@ from common.reporting import count_instances
 from common.test_inference import YoloInferenceProfileCandidate
 from common.variants import repo_root
 from yolo.inference_profile_tune import (
+    PROFILE_SELECTION_OBJECTIVE,
     TuneGridSpec,
     candidate_at_grid_index,
+    flatten_per_variant_bundles,
     iter_grid_candidates,
     load_profile_selection_row,
     load_tune_grid,
+    mean_pq_across_variants,
     profile_selection_row_path,
     tune_grid_fingerprint,
     write_profile_selection_row,
 )
 from yolo.profile_tune_cli import parse_profile_tune_variants
-from yolo.profile_tune_scoring import compute_train_aji
+from yolo.profile_tune_scoring import compute_train_instance_metric_bundle
 from yolo.profile_tune_work import (
     default_grainseg_and_run_roots,
     weights_path,
@@ -165,7 +168,7 @@ def load_shared_train_gt_map(
     return gt_map
 
 
-def score_variant_train_aji_from_cache(
+def score_variant_train_metrics_from_cache(
     *,
     variant: str,
     candidate: YoloInferenceProfileCandidate,
@@ -175,7 +178,7 @@ def score_variant_train_aji_from_cache(
     gt_map: np.ndarray,
     variant_index: int | None = None,
     variant_count: int | None = None,
-) -> float:
+) -> dict[str, float]:
     prefix = ""
     if variant_index is not None and variant_count is not None:
         prefix = f"[{variant_index}/{variant_count}] "
@@ -208,7 +211,7 @@ def score_variant_train_aji_from_cache(
         f"({len(proposals)} from v{TILED_PROPOSAL_CACHE_SCHEMA_VERSION} cache), "
         f"GT {height}×{width} ({gt_n} instances)"
     )
-    aji = compute_train_aji(
+    bundle = compute_train_instance_metric_bundle(
         gt_map,
         proposals,
         candidate=candidate,
@@ -216,26 +219,29 @@ def score_variant_train_aji_from_cache(
         width=width,
         log_timings=True,
     )
+    pq = float(bundle[PROFILE_SELECTION_OBJECTIVE])
     elapsed = time.perf_counter() - t0
-    _log(f"{prefix}  {variant}: train AJI={aji:.6f} ({elapsed:.1f}s)")
-    return aji
+    _log(f"{prefix}  {variant}: train PQ={pq:.6f} ({elapsed:.1f}s)")
+    return dict(bundle)
 
 
 def build_profile_selection_row(
     *,
     candidate: YoloInferenceProfileCandidate,
-    per_variant_aji: dict[str, float],
+    per_variant_bundles: dict[str, dict[str, float]],
     fingerprint: dict[str, Any],
 ) -> dict[str, Any]:
-    mean_aji = float(sum(per_variant_aji.values()) / len(per_variant_aji))
+    per_variant_pq = {
+        variant: float(bundle[PROFILE_SELECTION_OBJECTIVE])
+        for variant, bundle in per_variant_bundles.items()
+    }
     row: dict[str, Any] = {
         "candidate_id": candidate.candidate_id(),
         **candidate.to_dict(),
-        "mean_aji": mean_aji,
+        "mean_pq": mean_pq_across_variants(per_variant_pq),
         "fingerprint": fingerprint,
+        **flatten_per_variant_bundles(per_variant_bundles),
     }
-    for variant, aji in per_variant_aji.items():
-        row[f"aji__{variant}"] = aji
     return row
 
 
@@ -266,9 +272,11 @@ def score_profile_selection_candidate(
             _log(
                 f"Resume: skipping score — row exists with matching fingerprint → {row_path}"
             )
+            from yolo.inference_profile_tune import variant_metric_column
+
             _log(
-                f"  stored mean_aji={float(stored['mean_aji']):.6f} "
-                f"({', '.join(f'{v}={float(stored[f'aji__{v}']):.4f}' for v in variants)})"
+                f"  stored mean_pq={float(stored['mean_pq']):.6f} "
+                f"({', '.join(f'{v}={float(stored[variant_metric_column(PROFILE_SELECTION_OBJECTIVE, v)]):.4f}' for v in variants)})"
             )
             return row_path
         _log(
@@ -283,10 +291,10 @@ def score_profile_selection_candidate(
     )
     t_all = time.perf_counter()
     gt_map = load_shared_train_gt_map(work_root=work_root, grainseg_root=grainseg_root)
-    per_variant_aji: dict[str, float] = {}
+    per_variant_bundles: dict[str, dict[str, float]] = {}
     n_variants = len(variants)
     for idx, variant in enumerate(variants, start=1):
-        per_variant_aji[variant] = score_variant_train_aji_from_cache(
+        per_variant_bundles[variant] = score_variant_train_metrics_from_cache(
             variant=variant,
             candidate=candidate,
             grainseg_root=grainseg_root,
@@ -296,14 +304,18 @@ def score_profile_selection_candidate(
             variant_index=idx,
             variant_count=n_variants,
         )
-    mean_aji = float(sum(per_variant_aji.values()) / len(per_variant_aji))
+    per_variant_pq = {
+        variant: float(bundle[PROFILE_SELECTION_OBJECTIVE])
+        for variant, bundle in per_variant_bundles.items()
+    }
+    mean_pq = mean_pq_across_variants(per_variant_pq)
     _log(
-        f"Candidate {candidate.candidate_id()}: mean_aji={mean_aji:.6f} "
+        f"Candidate {candidate.candidate_id()}: mean_pq={mean_pq:.6f} "
         f"(total {time.perf_counter() - t_all:.1f}s)"
     )
     row = build_profile_selection_row(
         candidate=candidate,
-        per_variant_aji=per_variant_aji,
+        per_variant_bundles=per_variant_bundles,
         fingerprint=fingerprint,
     )
     write_profile_selection_row(row_path, row)

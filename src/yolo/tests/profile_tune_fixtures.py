@@ -9,7 +9,16 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
+from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from common.test_inference import YoloInferenceProfileCandidate
+
+
+def constant_metric_bundle(value: float) -> dict[str, float]:
+    return {key: float(value) for key in INSTANCE_METRIC_BUNDLE_KEYS}
+
+
+def instance_metrics_report_for_pq(pq: float) -> dict[str, object]:
+    return {"samples": [{"sample_id": "train", **constant_metric_bundle(pq)}]}
 from common.tests.profile_tune_fixtures import (  # noqa: F401
     FakeBbox,
     FakeSahiPrediction,

@@ -8,14 +8,18 @@ from pathlib import Path
 import pytest
 import yaml
 
+from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from common.test_inference import YoloInferenceProfileCandidate
 from yolo.inference_profile_tune import (
+    grid_result_row_from_candidate_scoring,
+    grid_results_fieldnames,
     load_grid_results_csv,
     load_grid_winner,
     profile_selection_row_path,
     write_profile_selection_row,
 )
 from yolo.profile_tune_finalize import collect_profile_selection_rows, main
+from yolo.tests.profile_tune_fixtures import constant_metric_bundle
 
 
 def _write_mini_grid(path: Path) -> None:
@@ -53,14 +57,15 @@ def test_finalize_merges_rows_into_results_csv_and_winner(tmp_path: Path) -> Non
         conf=0.25,
         mask_threshold=0.5,
     )
-    for candidate, aji in ((better, 0.9), (worse, 0.4)):
+    for candidate, pq in ((better, 0.9), (worse, 0.4)):
         write_profile_selection_row(
             profile_selection_row_path(grid_dir, candidate.candidate_id()),
             {
-                "candidate_id": candidate.candidate_id(),
-                **candidate.to_dict(),
-                "mean_aji": aji,
-                "aji__PPL": aji,
+                **grid_result_row_from_candidate_scoring(
+                    candidate=candidate,
+                    mean_pq=pq,
+                    per_variant_bundles={"PPL": constant_metric_bundle(pq)},
+                ),
                 "fingerprint": {},
             },
         )
@@ -82,6 +87,9 @@ def test_finalize_merges_rows_into_results_csv_and_winner(tmp_path: Path) -> Non
     assert len(rows) == 2
     winner = load_grid_winner(grid_dir / "winner.json")
     assert winner == better
+    payload = json.loads((grid_dir / "winner.json").read_text(encoding="utf-8"))
+    assert payload["mean_pq"] == pytest.approx(0.9)
+    assert payload["selection_objective"] == "pq"
 
 
 def test_collect_profile_selection_rows_sorted_by_filename(tmp_path: Path) -> None:
@@ -97,9 +105,12 @@ def test_collect_profile_selection_rows_sorted_by_filename(tmp_path: Path) -> No
 def test_finalize_recompute_winner_from_csv(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     grid_dir = tmp_path / "grid"
     grid_dir.mkdir(parents=True)
+    fieldnames = grid_results_fieldnames(("PPL",))
     (grid_dir / "results.csv").write_text(
-        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_aji,aji__PPL\n"
-        "winner,GREEDYNMM,IOS,0.5,0.2,0.45,0.95,0.95\n",
+        ",".join(fieldnames) + "\n"
+        "winner,GREEDYNMM,IOS,0.5,0.2,0.45,0.95,"
+        + ",".join("0.95" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
+        + "\n",
         encoding="utf-8",
     )
     main(

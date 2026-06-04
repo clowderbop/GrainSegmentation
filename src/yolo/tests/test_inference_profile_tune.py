@@ -15,19 +15,23 @@ from common.test_inference import (
     load_test_inference_recipe,
 )
 
+from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from yolo.inference_profile_tune import (
     GridResumeContext,
+    PROFILE_SELECTION_OBJECTIVE,
     append_grid_result_row,
     count_detector_jobs,
     count_grid_candidates,
     detector_job_at_index,
-    extract_mean_aji_from_report,
+    extract_mean_pq_from_report,
+    grid_result_row_from_candidate_scoring,
+    grid_results_fieldnames,
     iter_detector_jobs,
     iter_grid_candidates,
     load_grid_results_csv,
     load_grid_winner,
     load_tune_grid,
-    mean_aji_across_variants,
+    mean_pq_across_variants,
     metrics_resume_valid,
     promote_profile_to_recipe,
     run_grid_search,
@@ -36,8 +40,13 @@ from yolo.inference_profile_tune import (
     should_skip_variant_eval,
     tune_grid_path,
     variant_eval_fingerprint,
+    variant_metric_column,
     write_grid_winner_json,
     write_variant_eval_resume_meta,
+)
+from yolo.tests.profile_tune_fixtures import (
+    constant_metric_bundle,
+    instance_metrics_report_for_pq,
 )
 from yolo.profile_tune_dry_run import dry_run_scorer
 from yolo.profile_tune_cli import validate_detector_caches
@@ -112,41 +121,42 @@ def test_iter_grid_candidates_full_factorial_product(tmp_path: Path) -> None:
     assert len({c.candidate_id() for c in candidates}) == len(candidates)
 
 
-def test_mean_aji_across_variants_equal_weights_per_variant() -> None:
+def test_mean_pq_across_variants_equal_weights_per_variant() -> None:
     scores = {"PPL": 0.8, "PPL+AllPPX": 0.6}
-    assert mean_aji_across_variants(scores) == pytest.approx(0.7)
+    assert mean_pq_across_variants(scores) == pytest.approx(0.7)
 
 
-def test_extract_mean_aji_from_single_sample_report() -> None:
-    report = {
-        "samples": [{"sample_id": "train", "aji": 0.42}],
-    }
-    assert extract_mean_aji_from_report(report) == pytest.approx(0.42)
+def test_extract_mean_pq_from_single_sample_report() -> None:
+    report = instance_metrics_report_for_pq(0.42)
+    assert extract_mean_pq_from_report(report) == pytest.approx(0.42)
 
 
-def test_extract_mean_aji_prefers_report_mean_when_present() -> None:
-    report = {
-        "samples": [{"sample_id": "a", "aji": 0.1}, {"sample_id": "b", "aji": 0.9}],
-        "mean": {"aji": 0.5},
-    }
-    assert extract_mean_aji_from_report(report) == pytest.approx(0.5)
-
-
-def test_extract_mean_aji_averages_samples_when_mean_absent() -> None:
+def test_extract_mean_pq_prefers_report_mean_when_present() -> None:
     report = {
         "samples": [
-            {"sample_id": "a", "aji": 0.2},
-            {"sample_id": "b", "aji": 0.8},
+            {"sample_id": "a", **constant_metric_bundle(0.1)},
+            {"sample_id": "b", **constant_metric_bundle(0.9)},
+        ],
+        "mean": constant_metric_bundle(0.5),
+    }
+    assert extract_mean_pq_from_report(report) == pytest.approx(0.5)
+
+
+def test_extract_mean_pq_averages_samples_when_mean_absent() -> None:
+    report = {
+        "samples": [
+            {"sample_id": "a", **constant_metric_bundle(0.2)},
+            {"sample_id": "b", **constant_metric_bundle(0.8)},
         ],
     }
-    assert extract_mean_aji_from_report(report) == pytest.approx(0.5)
+    assert extract_mean_pq_from_report(report) == pytest.approx(0.5)
 
 
-def test_select_best_candidate_maximizes_mean_train_aji() -> None:
+def test_select_best_candidate_maximizes_mean_train_pq() -> None:
     rows = [
-        {"candidate_id": "a", "mean_aji": 0.71},
-        {"candidate_id": "b", "mean_aji": 0.82},
-        {"candidate_id": "c", "mean_aji": 0.80},
+        {"candidate_id": "a", "mean_pq": 0.71},
+        {"candidate_id": "b", "mean_pq": 0.82},
+        {"candidate_id": "c", "mean_pq": 0.80},
     ]
     best = select_best_candidate(rows)
     assert best["candidate_id"] == "b"
@@ -365,16 +375,19 @@ def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:
     )
     winner_path = tmp_path / "grid" / "winner.json"
     write_grid_winner_json(
-        winner_path, candidate=profile, mean_aji=0.7, per_variant={"PPL": 0.7}
+        winner_path, candidate=profile, mean_pq=0.7, per_variant_pq={"PPL": 0.7}
     )
+    payload = json.loads(winner_path.read_text(encoding="utf-8"))
+    assert payload["selection_objective"] == PROFILE_SELECTION_OBJECTIVE
+    assert payload["mean_pq"] == pytest.approx(0.7)
     loaded = load_grid_winner(winner_path)
     assert loaded == profile
 
 
 def test_score_candidate_across_variants_reads_variant_reports(tmp_path: Path) -> None:
-    def _write_report(path: Path, aji: float) -> None:
+    def _write_report(path: Path, pq: float) -> None:
         path.write_text(
-            json.dumps({"samples": [{"sample_id": "train", "aji": aji}]}),
+            json.dumps(instance_metrics_report_for_pq(pq)),
             encoding="utf-8",
         )
 
@@ -382,12 +395,14 @@ def test_score_candidate_across_variants_reads_variant_reports(tmp_path: Path) -
     ppx_report = tmp_path / "ppx.json"
     _write_report(ppl_report, 0.8)
     _write_report(ppx_report, 0.6)
-    mean_aji, per_variant = score_candidate_across_variants(
+    mean_pq, per_variant_bundles = score_candidate_across_variants(
         {"PPL": ppl_report, "PPL+AllPPX": ppx_report}
     )
-    assert mean_aji == pytest.approx(0.7)
-    assert per_variant["PPL"] == pytest.approx(0.8)
-    assert per_variant["PPL+AllPPX"] == pytest.approx(0.6)
+    assert mean_pq == pytest.approx(0.7)
+    assert per_variant_bundles["PPL"]["pq"] == pytest.approx(0.8)
+    assert per_variant_bundles["PPL+AllPPX"]["pq"] == pytest.approx(0.6)
+    for key in INSTANCE_METRIC_BUNDLE_KEYS:
+        assert key in per_variant_bundles["PPL"]
 
 
 def test_uv_run_cmd_uses_uv_directory_for_each_project() -> None:
@@ -432,7 +447,7 @@ def test_evaluate_variant_predictions_runs_write_eval_and_evaluate(
 
 
 
-def test_extract_mean_aji_from_evaluate_instances_report_shape() -> None:
+def test_extract_mean_pq_from_evaluate_instances_report_shape() -> None:
     from common.reporting import build_instance_eval_report
 
     report = build_instance_eval_report(
@@ -442,15 +457,17 @@ def test_extract_mean_aji_from_evaluate_instances_report_shape() -> None:
         samples=[
             {
                 "sample_id": "train",
-                "aji": 0.42,
+                "pq": 0.42,
+                "dq": 0.5,
+                "sq": 0.84,
                 "f1_iou50": 0.5,
-                "gt_instances": 1,
-                "predicted_grain_count": 1,
+                "gt_instance_count": 1,
+                "pred_instance_count": 1,
                 "empty_gt": False,
             }
         ],
     )
-    assert extract_mean_aji_from_report(report) == pytest.approx(0.42)
+    assert extract_mean_pq_from_report(report) == pytest.approx(0.42)
 
 
 def test_run_grid_search_dry_run_picks_best_across_all_registry_variants(
@@ -525,7 +542,7 @@ def test_run_grid_search_no_resume_does_not_delete_existing_csv_at_start(
     grid_dir.mkdir(parents=True)
     csv_path = grid_dir / "results.csv"
     csv_path.write_text(
-        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_aji,aji__PPL\n"
+        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_pq,pq__PPL\n"
         "stale,GREEDYNMM,IOS,0.5,0.25,0.5,0.1,0.1\n",
         encoding="utf-8",
     )
@@ -537,7 +554,7 @@ def test_run_grid_search_no_resume_does_not_delete_existing_csv_at_start(
         out_dir.mkdir(parents=True, exist_ok=True)
         metrics = out_dir / "instance_metrics.json"
         metrics.write_text(
-            json.dumps({"samples": [{"sample_id": "train", "aji": 0.55}]}),
+            json.dumps(instance_metrics_report_for_pq(0.55)),
             encoding="utf-8",
         )
         return metrics
@@ -554,27 +571,35 @@ def test_run_grid_search_no_resume_does_not_delete_existing_csv_at_start(
     loaded = load_grid_results_csv(csv_path)
     assert len(loaded) == 1
     assert loaded[0]["candidate_id"] == candidate.candidate_id()
-    assert float(loaded[0]["mean_aji"]) == pytest.approx(0.55)
+    assert float(loaded[0]["mean_pq"]) == pytest.approx(0.55)
 
 
 def test_append_grid_result_row_writes_incrementally(tmp_path: Path) -> None:
     csv_path = tmp_path / "grid" / "results.csv"
-    row_a = {
-        "candidate_id": "a",
-        "postprocess_type": "GREEDYNMM",
-        "match_metric": "IOS",
-        "match_threshold": 0.5,
-        "conf": 0.25,
-        "mask_threshold": 0.5,
-        "mean_aji": 0.7,
-        "aji__PPL": 0.7,
-    }
+    profile = YoloInferenceProfileCandidate(
+        postprocess_type="GREEDYNMM",
+        match_metric="IOS",
+        match_threshold=0.5,
+        conf=0.25,
+        mask_threshold=0.5,
+    )
+    row_a = grid_result_row_from_candidate_scoring(
+        candidate=profile,
+        mean_pq=0.7,
+        per_variant_bundles={"PPL": constant_metric_bundle(0.7)},
+    )
+    row_a["candidate_id"] = "a"
     append_grid_result_row(csv_path, row_a, variant_names=("PPL",))
     loaded = load_grid_results_csv(csv_path)
     assert len(loaded) == 1
     assert loaded[0]["candidate_id"] == "a"
-    assert float(loaded[0]["mean_aji"]) == pytest.approx(0.7)
-    row_b = {**row_a, "candidate_id": "b", "mean_aji": 0.8, "aji__PPL": 0.8}
+    assert float(loaded[0]["mean_pq"]) == pytest.approx(0.7)
+    row_b = {
+        **row_a,
+        "candidate_id": "b",
+        "mean_pq": 0.8,
+        variant_metric_column("pq", "PPL"): 0.8,
+    }
     append_grid_result_row(csv_path, row_b, variant_names=("PPL",))
     assert len(load_grid_results_csv(csv_path)) == 2
 
@@ -610,7 +635,7 @@ def test_run_grid_search_resume_skips_when_fingerprint_matches(tmp_path: Path) -
     existing.mkdir(parents=True)
     metrics = existing / "instance_metrics.json"
     metrics.write_text(
-        json.dumps({"samples": [{"sample_id": "train", "aji": 0.88}]}),
+        json.dumps(instance_metrics_report_for_pq(0.88)),
         encoding="utf-8",
     )
     resume_context = GridResumeContext(
@@ -648,15 +673,20 @@ def test_run_grid_search_resume_skips_when_fingerprint_matches(tmp_path: Path) -
     )
 
 
-def test_recompute_winner_from_csv_picks_highest_mean_aji(tmp_path: Path) -> None:
+def test_recompute_winner_from_csv_picks_highest_mean_pq(tmp_path: Path) -> None:
     from yolo.inference_profile_tune import load_grid_winner, recompute_winner_from_csv
 
     grid_dir = tmp_path / "grid"
     grid_dir.mkdir(parents=True)
+    fieldnames = grid_results_fieldnames(("PPL",))
     (grid_dir / "results.csv").write_text(
-        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_aji,aji__PPL\n"
-        "low,GREEDYNMM,IOS,0.5,0.25,0.5,0.4,0.4\n"
-        "high,NMM,IOU,0.6,0.35,0.6,0.9,0.9\n",
+        ",".join(fieldnames) + "\n"
+        "low,GREEDYNMM,IOS,0.5,0.25,0.5,0.4,"
+        + ",".join("0.4" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
+        + "\n"
+        "high,NMM,IOU,0.6,0.35,0.6,0.9,"
+        + ",".join("0.9" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
+        + "\n",
         encoding="utf-8",
     )
     winner = recompute_winner_from_csv(tmp_path, variant_names=("PPL",))
@@ -673,9 +703,12 @@ def test_profile_tune_finalize_cli_recompute_winner_from_csv(
 
     grid_dir = tmp_path / "grid"
     grid_dir.mkdir(parents=True)
+    fieldnames = grid_results_fieldnames(("PPL",))
     (grid_dir / "results.csv").write_text(
-        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_aji,aji__PPL\n"
-        "winner,GREEDYNMM,IOS,0.5,0.2,0.45,0.95,0.95\n",
+        ",".join(fieldnames) + "\n"
+        "winner,GREEDYNMM,IOS,0.5,0.2,0.45,0.95,"
+        + ",".join("0.95" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
+        + "\n",
         encoding="utf-8",
     )
     main(
@@ -712,19 +745,19 @@ def test_grid_coordinator_cache_miss_fails_validation(tmp_path: Path) -> None:
 def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     tmp_path: Path,
 ) -> None:
-    """Disk tiled-proposal cache + GT cache → in-process AJI matches evaluate_instances."""
+    """Disk tiled-proposal cache + GT cache → in-process PQ matches evaluate_instances."""
     from common.test_inference import load_test_inference_recipe
     from common.profile_tune_gt_cache import (
         build_gt_fingerprint,
         gt_cache_dir,
         write_gt_instance_map_cache,
     )
-    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
     from yolo.tests.profile_tune_fixtures import (
         tiny_train_gt_map,
         v2_records_from_disjoint_via_collector,
     )
-    from yolo.tests.test_profile_tune_scoring import _train_aji_via_evaluate_instances
+    from yolo.tests.test_profile_tune_scoring import _train_pq_via_evaluate_instances
     from yolo.tiled_proposal_cache import (
         detector_cache_expected_record,
         load_tiled_proposals,
@@ -806,7 +839,7 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
         records, height=int(meta["height"]), width=int(meta["width"])
     )
 
-    fast_aji = score_variant_train_aji_from_cache(
+    fast_bundle = score_variant_train_metrics_from_cache(
         variant="PPL",
         candidate=candidate,
         grainseg_root=grainseg_root,
@@ -814,7 +847,7 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
         work_root=work_root,
         gt_map=gt_map,
     )
-    canonical_aji = _train_aji_via_evaluate_instances(
+    canonical_pq = _train_pq_via_evaluate_instances(
         gt_map,
         proposals,
         candidate=candidate,
@@ -824,7 +857,7 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
         image_path=image_path,
         prediction_set_path=pred_path,
     )
-    assert fast_aji == pytest.approx(canonical_aji, rel=0.0, abs=1e-9)
+    assert fast_bundle["pq"] == pytest.approx(canonical_pq, rel=0.0, abs=1e-9)
 
 
 def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None:
@@ -840,7 +873,7 @@ def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None
         load_gt_instance_map_cache,
         train_labels_gpkg_path,
     )
-    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
     from yolo.tiled_proposal_cache import (
         proposal_cache_dir,
         proposal_cache_record,
@@ -931,7 +964,7 @@ def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None
             height=height,
         ),
     )
-    aji = score_variant_train_aji_from_cache(
+    bundle = score_variant_train_metrics_from_cache(
         variant="PPL",
         candidate=candidate,
         grainseg_root=grainseg_root,
@@ -939,7 +972,7 @@ def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None
         work_root=work_root,
         gt_map=gt_map,
     )
-    assert 0.0 <= aji <= 1.0
+    assert 0.0 <= bundle["pq"] <= 1.0
 
 
 def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
@@ -954,7 +987,7 @@ def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
 
     from yolo.profile_tune_candidate import (
         load_shared_train_gt_map,
-        score_variant_train_aji_from_cache,
+        score_variant_train_metrics_from_cache,
     )
     from yolo.tiled_proposal_cache import (
         proposal_cache_dir,
@@ -1038,7 +1071,7 @@ def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
 
     t0 = time.perf_counter()
     gt_map = load_shared_train_gt_map(work_root=work_root, grainseg_root=grainseg_root)
-    aji = score_variant_train_aji_from_cache(
+    bundle = score_variant_train_metrics_from_cache(
         variant="PPL",
         candidate=candidate,
         grainseg_root=grainseg_root,
@@ -1051,12 +1084,12 @@ def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
         f"on-disk GT + v2 proposal cache scoring took {elapsed:.1f}s "
         "(expected sub-minute, not hours)"
     )
-    assert 0.0 <= aji <= 1.0
+    assert 0.0 <= bundle["pq"] <= 1.0
 
 
 def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
     from common.test_inference import load_test_inference_recipe
-    from yolo.profile_tune_candidate import score_variant_train_aji_from_cache
+    from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
     import numpy as np
 
     from yolo.tiled_proposal_cache import (
@@ -1100,7 +1133,7 @@ def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
         mask_threshold=0.45,
     )
     with pytest.raises(FileNotFoundError):
-        score_variant_train_aji_from_cache(
+        score_variant_train_metrics_from_cache(
             variant="PPL",
             candidate=candidate,
             grainseg_root=grainseg_root,

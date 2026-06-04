@@ -9,20 +9,23 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from common.test_inference import YoloInferenceProfileCandidate
 from yolo.inference_profile_tune import (
     load_profile_selection_row,
     profile_selection_row_path,
     tune_grid_fingerprint,
+    variant_metric_column,
 )
 from yolo.profile_tune_candidate import (
     build_profile_selection_row,
     row_fingerprint_matches,
     score_profile_selection_candidate,
 )
+from yolo.tests.profile_tune_fixtures import constant_metric_bundle
 
 
-def test_build_profile_selection_row_includes_per_variant_aji() -> None:
+def test_build_profile_selection_row_includes_per_variant_bundle() -> None:
     candidate = YoloInferenceProfileCandidate(
         postprocess_type="GREEDYNMM",
         match_metric="IOS",
@@ -32,12 +35,18 @@ def test_build_profile_selection_row_includes_per_variant_aji() -> None:
     )
     row = build_profile_selection_row(
         candidate=candidate,
-        per_variant_aji={"PPL": 0.8, "PPL+AllPPX": 0.6},
+        per_variant_bundles={
+            "PPL": constant_metric_bundle(0.8),
+            "PPL+AllPPX": constant_metric_bundle(0.6),
+        },
         fingerprint={"candidate_id": candidate.candidate_id()},
     )
-    assert row["mean_aji"] == pytest.approx(0.7)
-    assert row["aji__PPL"] == pytest.approx(0.8)
+    assert row["mean_pq"] == pytest.approx(0.7)
+    assert row[variant_metric_column("pq", "PPL")] == pytest.approx(0.8)
+    assert row[variant_metric_column("dq", "PPL+AllPPX")] == pytest.approx(0.6)
     assert row["candidate_id"] == candidate.candidate_id()
+    for key in INSTANCE_METRIC_BUNDLE_KEYS:
+        assert variant_metric_column(key, "PPL") in row
 
 
 def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> None:
@@ -63,8 +72,10 @@ def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> No
             return_value=np.zeros((16, 16), dtype=np.int32),
         ),
         patch(
-            "yolo.profile_tune_candidate.score_variant_train_aji_from_cache",
-            side_effect=lambda **kwargs: 0.9 if kwargs["variant"] == "PPL" else 0.5,
+            "yolo.profile_tune_candidate.score_variant_train_metrics_from_cache",
+            side_effect=lambda **kwargs: constant_metric_bundle(
+                0.9 if kwargs["variant"] == "PPL" else 0.5
+            ),
         ),
     ):
         row_path = score_profile_selection_candidate(
@@ -80,8 +91,8 @@ def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> No
 
     assert row_path == profile_selection_row_path(output_dir / "grid", candidate.candidate_id())
     row = load_profile_selection_row(row_path)
-    assert row["mean_aji"] == pytest.approx(0.7)
-    assert row["aji__PPL"] == pytest.approx(0.9)
+    assert row["mean_pq"] == pytest.approx(0.7)
+    assert row[variant_metric_column("pq", "PPL")] == pytest.approx(0.9)
 
 
 def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
@@ -104,8 +115,8 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
             {
                 "candidate_id": candidate.candidate_id(),
                 **candidate.to_dict(),
-                "mean_aji": 0.99,
-                "aji__PPL": 0.99,
+                "mean_pq": 0.99,
+                variant_metric_column("pq", "PPL"): 0.99,
                 "fingerprint": fingerprint,
             }
         ),
@@ -113,9 +124,9 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
     )
     calls: list[str] = []
 
-    def _fake_score(**kwargs) -> float:
+    def _fake_score(**kwargs) -> dict[str, float]:
         calls.append(kwargs["variant"])
-        return 0.1
+        return constant_metric_bundle(0.1)
 
     with (
         patch(
@@ -123,7 +134,7 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
             return_value=fingerprint,
         ),
         patch(
-            "yolo.profile_tune_candidate.score_variant_train_aji_from_cache",
+            "yolo.profile_tune_candidate.score_variant_train_metrics_from_cache",
             side_effect=_fake_score,
         ),
     ):
@@ -139,7 +150,7 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
         )
 
     assert calls == []
-    assert load_profile_selection_row(row_path)["mean_aji"] == pytest.approx(0.99)
+    assert load_profile_selection_row(row_path)["mean_pq"] == pytest.approx(0.99)
 
 
 def test_row_fingerprint_matches_requires_exact_equality() -> None:
@@ -148,8 +159,6 @@ def test_row_fingerprint_matches_requires_exact_equality() -> None:
 
 
 def test_score_profile_selection_candidate_loads_gt_once(tmp_path: Path) -> None:
-    import numpy as np
-
     candidate = YoloInferenceProfileCandidate(
         postprocess_type="GREEDYNMM",
         match_metric="IOS",
@@ -175,8 +184,8 @@ def test_score_profile_selection_candidate_loads_gt_once(tmp_path: Path) -> None
             side_effect=_track_gt_load,
         ),
         patch(
-            "yolo.profile_tune_candidate.score_variant_train_aji_from_cache",
-            side_effect=lambda **kwargs: 0.8,
+            "yolo.profile_tune_candidate.score_variant_train_metrics_from_cache",
+            side_effect=lambda **kwargs: constant_metric_bundle(0.8),
         ),
     ):
         score_profile_selection_candidate(
@@ -234,7 +243,6 @@ def test_candidate_row_fingerprint_includes_proposal_schema_v2(
 
 
 def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> None:
-    import numpy as np
     import tifffile
 
     from yolo.tiled_proposal_cache import weights_sha256
@@ -283,8 +291,8 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
             {
                 "candidate_id": candidate.candidate_id(),
                 **candidate.to_dict(),
-                "mean_aji": 0.99,
-                "aji__PPL": 0.99,
+                "mean_pq": 0.99,
+                variant_metric_column("pq", "PPL"): 0.99,
                 "fingerprint": legacy_fingerprint,
             }
         ),
@@ -292,9 +300,9 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
     )
     score_calls: list[str] = []
 
-    def _fake_score(**kwargs: object) -> float:
+    def _fake_score(**kwargs: object) -> dict[str, float]:
         score_calls.append(str(kwargs["variant"]))
-        return 0.42
+        return constant_metric_bundle(0.42)
 
     with (
         patch(
@@ -302,7 +310,7 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
             return_value=np.zeros((16, 16), dtype=np.int32),
         ),
         patch(
-            "yolo.profile_tune_candidate.score_variant_train_aji_from_cache",
+            "yolo.profile_tune_candidate.score_variant_train_metrics_from_cache",
             side_effect=_fake_score,
         ),
     ):
@@ -319,6 +327,6 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
 
     assert score_calls == ["PPL"]
     row = load_profile_selection_row(row_path)
-    assert row["mean_aji"] == pytest.approx(0.42)
+    assert row["mean_pq"] == pytest.approx(0.42)
     assert "gt_cache_fingerprint" in row["fingerprint"]
     assert row["fingerprint"]["gt_cache_fingerprint"]["schema_version"] == 2

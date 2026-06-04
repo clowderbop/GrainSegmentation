@@ -1,4 +1,4 @@
-"""In-process train AJI for YOLO profile selection scoring (ADR 0005, 0007)."""
+"""In-process train instance metrics for YOLO profile selection scoring (ADR 0005, 0007)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,10 @@ from typing import Any
 import numpy as np
 
 from common.instance_maps import score_merged_instance_map_from_sahi_predictions
-from common.metrics import compute_aji
+from common.instance_metric_bundle import (
+    InstanceMetricBundle,
+    compute_instance_metric_bundle,
+)
 from common.prediction_set import (
     build_yolo_prediction_set_from_sahi_predictions,
     merge_yolo_proposals_by_score,
@@ -24,11 +27,11 @@ from yolo.sliced_detection import merge_sliced_object_predictions
 class ProfileSelectionScoringTimings:
     slice_merge_s: float = 0.0
     score_merge_s: float = 0.0
-    aji_s: float = 0.0
+    metrics_s: float = 0.0
 
     @property
     def total_s(self) -> float:
-        return self.slice_merge_s + self.score_merge_s + self.aji_s
+        return self.slice_merge_s + self.score_merge_s + self.metrics_s
 
 
 def _log_timing(phase: str, elapsed_s: float) -> None:
@@ -75,7 +78,7 @@ def merged_instance_view_from_proposals(
     return pred_map
 
 
-def compute_train_aji(
+def compute_train_instance_metric_bundle(
     gt_instance_map: np.ndarray,
     proposals: list[Any],
     *,
@@ -83,8 +86,8 @@ def compute_train_aji(
     height: int,
     width: int,
     log_timings: bool = False,
-) -> float:
-    """Train AJI for one variant and grid point without persisting a prediction set."""
+) -> InstanceMetricBundle:
+    """Train whole-section bundle for one variant/grid point without a prediction set."""
     timings = ProfileSelectionScoringTimings() if log_timings else None
     pred_map = merged_instance_view_from_proposals(
         proposals,
@@ -99,13 +102,33 @@ def compute_train_aji(
         raise ValueError(
             f"GT shape {gt.shape} does not match prediction shape {pred_map.shape}"
         )
-    aji = float(compute_aji(gt, pred_map))
+    bundle = compute_instance_metric_bundle(gt, pred_map)
     if timings is not None:
-        timings.aji_s = time.perf_counter() - t0
+        timings.metrics_s = time.perf_counter() - t0
         _log_timing("slice-merge", timings.slice_merge_s)
         _log_timing("score-merge", timings.score_merge_s)
-        _log_timing("AJI", timings.aji_s)
-    return aji
+        _log_timing("metrics", timings.metrics_s)
+    return bundle
+
+
+def compute_train_pq(
+    gt_instance_map: np.ndarray,
+    proposals: list[Any],
+    *,
+    candidate: YoloInferenceProfileCandidate,
+    height: int,
+    width: int,
+    log_timings: bool = False,
+) -> float:
+    bundle = compute_train_instance_metric_bundle(
+        gt_instance_map,
+        proposals,
+        candidate=candidate,
+        height=height,
+        width=width,
+        log_timings=log_timings,
+    )
+    return float(bundle["pq"])
 
 
 def materialize_score_merged_prediction_set(

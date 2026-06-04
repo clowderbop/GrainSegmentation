@@ -135,16 +135,19 @@ WAVE1_APPROVED_OUTPUTS: list[ReportingOutput] = [
         "id": "completeness_artifact_audit",
         "label": "Completeness / Artifact Audit",
         "tier": "qa-writing",
+        "filename_patterns": ["completeness_artifact_audit.csv"],
     },
     {
         "id": "outlier_anomaly_report",
         "label": "Outlier / Anomaly Report",
         "tier": "qa-writing",
+        "filename_patterns": ["outlier_anomaly_report.csv"],
     },
     {
         "id": "narrative_summary_generator",
         "label": "Narrative Summary Generator",
         "tier": "qa-writing",
+        "filename_patterns": ["narrative_summary.md"],
     },
     # Existing supporting derived table (pre-expansion; not headline evidence)
     {

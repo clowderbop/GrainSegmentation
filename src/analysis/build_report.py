@@ -8,6 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from analysis.artifact_qa import (
+    anomaly_report_table,
+    completeness_artifact_audit_table,
+    narrative_summary_markdown,
+)
 from analysis.derived_tables import (
     can_compare_yolo_and_unet_on_shared_inputs,
     headline_ranking_table,
@@ -94,9 +99,16 @@ PARETO_PLOT_NOT_INFORMATIVE_SKIP_REASON = (
 def _written_output_ids(
     derived_tables: list[str],
     figure_names: list[str],
+    audit_names: list[str],
+    narrative_names: list[str],
 ) -> set[str]:
     """Map written bundle filenames back to contract output ids when known."""
-    written_names = set(derived_tables) | set(figure_names)
+    written_names = (
+        set(derived_tables)
+        | set(figure_names)
+        | set(audit_names)
+        | set(narrative_names)
+    )
     matched: set[str] = set()
     for item in WAVE1_APPROVED_OUTPUTS:
         patterns = item.get("filename_patterns", [])
@@ -274,11 +286,13 @@ def build_reporting_bundle(
     output_dir = output_dir.resolve()
     derived_dir = output_dir / "derived"
     figures_dir = output_dir / "figures"
+    audits_dir = output_dir / "audits"
+    narratives_dir = output_dir / "narratives"
     derived_dir.mkdir(parents=True, exist_ok=True)
+    audits_dir.mkdir(parents=True, exist_ok=True)
+    narratives_dir.mkdir(parents=True, exist_ok=True)
 
     runs = discover_eval_runs(grainseg_root, strict=strict)
-    missing: list[str] = []
-
     val_refs = discover_ultralytics_val(grainseg_root)
     instance_df = metrics_table_from_runs(runs)
     val_df = ultralytics_val_table(val_refs)
@@ -339,6 +353,23 @@ def build_reporting_bundle(
         val_df.to_csv(val_csv, index=False)
         derived_tables.append("ultralytics_val.csv")
 
+    completeness_audit = completeness_artifact_audit_table(
+        grainseg_root, runs=runs, val_refs=val_refs
+    )
+    completeness_csv = audits_dir / "completeness_artifact_audit.csv"
+    completeness_audit.to_csv(completeness_csv, index=False)
+    audits = ["completeness_artifact_audit.csv"]
+
+    anomaly_csv = audits_dir / "outlier_anomaly_report.csv"
+    anomaly_report_table(instance_df).to_csv(anomaly_csv, index=False)
+    audits.append("outlier_anomaly_report.csv")
+
+    narrative_path = narratives_dir / "narrative_summary.md"
+    narrative_path.write_text(
+        narrative_summary_markdown(instance_df), encoding="utf-8"
+    )
+    narratives = ["narrative_summary.md"]
+
     figure_names: list[str] = []
     if render_figures:
         if instance_df.empty:
@@ -348,7 +379,9 @@ def build_reporting_bundle(
         figure_names = render_all_figures(instance_df, val_df, figures_dir)
 
     written_figure_names = list(figure_names)
-    written_ids = _written_output_ids(derived_tables, written_figure_names)
+    written_ids = _written_output_ids(
+        derived_tables, written_figure_names, audits, narratives
+    )
     can_compare_models = (
         not instance_df.empty
         and can_compare_yolo_and_unet_on_shared_inputs(instance_df)
@@ -398,14 +431,17 @@ def build_reporting_bundle(
         "diagnostic_tier_labeling": DIAGNOSTIC_ONLY_LABEL,
         "headline_policy": HEADLINE_POLICY,
         "reporting_contract": reporting_contract_metadata(),
-        "missing_artifacts": missing,
+        "missing_artifacts": completeness_audit.loc[
+            completeness_audit["Status"] == "missing",
+            ["Variant", "Producer", "Artifact", "Path"],
+        ].to_dict(orient="records"),
         "n_instance_rows": int(len(instance_df)),
         "n_ultralytics_val_rows": int(len(val_df)),
         "written": {
             "derived_tables": derived_tables,
             "figures": written_figure_names,
-            "audits": [],
-            "narratives": [],
+            "audits": audits,
+            "narratives": narratives,
         },
         "skipped": skipped_required,
         "skipped_optional": skipped_optional,

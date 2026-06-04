@@ -62,6 +62,17 @@ Runs on the **train** whole section after **all registry** variant weights exist
 
 ADR: [0005](../adr/0005-yolo-inference-profile-train-selection.md). PQ policy and stale-output rules: [`docs/metrics.md`](../metrics.md#pq-centered-rerun-policy). Glossary: **Profile selection** in [`CONTEXT.md`](../../CONTEXT.md).
 
+### On-disk layout
+
+| Path under `OUTPUT_DIR` | Role |
+|-------------------------|------|
+| `.cache/` | Durable scratch caches only: `gt_cache/train/` and `{variant}/tiled_proposals/c{conf}_t{mask}/` |
+| `grid/` | **Profile selection** rows, `results.csv`, `winner.json` (parallel resume; stays on scratch) |
+
+Candidate jobs **stage** required `.cache/` subtrees into job-unique `$TMPDIR` before scoring ([staging exception](../reference/staging.md#profile-selection)). Detector jobs stage only the variant train whole stacked TIFF to `$TMPDIR`, write proposals back to `.cache/`, and read weights from `runs/yolo26-seg/{variant}/weights/best.pt` on scratch (not copied per task).
+
+Runs that used the legacy `_work/` cache root are incompatible; start a new `RUN_ID` after upgrading.
+
 Each grid candidate is scored by **profile selection scoring**: slice-merge and **score merge** on cached **tiled detector proposals**, compared to the shared **profile selection ground truth cache**, using the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) (including [PQ diagnostics](../metrics.md#pq-diagnostics)).
 
 | Field | Role |
@@ -76,11 +87,13 @@ Each grid candidate is scored by **profile selection scoring**: slice-merge and 
 
 **Script:** `run_profile_tune_detector.sh` (array)
 
+One SLURM task per registry **input configuration** (variant), not per `(conf, mask_threshold)` detector key. Each task copies the train whole stacked TIFF to `$TMPDIR`, loads YOLO once, loops all `conf × mask_threshold` keys for that variant, and writes one **tiled detector proposals** cache per key under scratch `.cache/` (same per-key paths and fingerprints as before). Submit uses `profile_tune_list_detector_jobs` for array size (four tasks when all registry variants run).
+
 | Resource | Default |
 |----------|---------|
 | Memory | 32G GPU |
-| Parallelism | 36 tasks, max **6** concurrent (`DETECTOR_MAX_PARALLEL`) |
-| Time | 00:10:00 |
+| Parallelism | one task per variant, max **6** concurrent (`DETECTOR_MAX_PARALLEL`) |
+| Time | tiered from detector-key count per variant (`00:10:00` or `00:30:00`) |
 
 Writes **tiled detector proposals** (`schema_version` 2) under `.cache/{variant}/tiled_proposals/c{conf}_t{mask}/`.
 
@@ -119,7 +132,7 @@ One `uv sync` to `$SCRATCH/.venvs/yolo-profile-tune/<lockfile-hash>/`.
 | Time | 08:00:00 |
 | Depends on | `afterok` venv prep |
 
-Copies shared venv to `$TMPDIR/.venv`, `uv run --no-sync`. Writes `grid/rows/{candidate_id}.json`.
+Copies shared venv to `$TMPDIR/.venv`, then runs `yolo.profile_tune_cache_stage` to copy this candidate’s required `.cache/` subtrees (shared `gt_cache/train/` plus four variant proposal trees for its `conf` and `mask_threshold`) into a job-unique `$TMPDIR` work root. Scoring uses `uv run --no-sync` with `--work-root` pointing at that local tree so GT and proposals are not read from scratch during the job. Writes `grid/rows/{candidate_id}.json` on scratch only.
 
 ### 5. Finalize
 

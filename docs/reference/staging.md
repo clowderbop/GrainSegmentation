@@ -35,3 +35,14 @@ sbatch SLURM/unet/submit_cc_vs_watershed_train_eval.sh
 ```
 
 Both jobs evaluate all four variants via staged whole manifests. Outputs: `eval/instance_val_cc/` and `eval/instance_val_watershed/`.
+
+## Profile selection
+
+YOLO **profile selection** follows the same principle—jobs must not read large tune caches from scratch during scoring—but uses a different layout than manifest `stage_manifest run`:
+
+| Artifact | Where it lives | Staging |
+|----------|----------------|---------|
+| Durable caches (`gt_cache/train/`, `{variant}/tiled_proposals/...`) | `OUTPUT_DIR/.cache/` on scratch | Copied per job into job-unique `$TMPDIR` (candidates via `yolo.profile_tune_cache_stage`; detectors stage only the train whole stacked TIFF) |
+| Grid rows, `results.csv`, `winner.json` | `OUTPUT_DIR/grid/` on scratch | **Not** staged; written and resumed directly on scratch for parallel array tasks and audit |
+
+Candidate scoring therefore uses `--work-root` under `$TMPDIR` while detector jobs still write canonical per-key proposal caches back to scratch `.cache/`. See [`docs/runbooks/yolo.md`](../runbooks/yolo.md#profile-selection) and [ADR 0005](../adr/0005-yolo-inference-profile-train-selection.md).

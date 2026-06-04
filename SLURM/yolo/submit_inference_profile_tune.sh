@@ -21,6 +21,14 @@ Usage: submit_inference_profile_tune.sh [--dry-run] [--output-dir PATH] [--run-i
 Submit parallel YOLO inference profile selection on the train whole section.
 Cluster workflow, resources, and promotion: docs/runbooks/yolo.md#profile-selection
 
+Layout under OUTPUT_DIR:
+  .cache/   durable gt_cache/ and tiled_proposals/ on scratch (detector writes; candidate reads)
+  grid/     profile selection rows and PQ winner on scratch (not staged to $TMPDIR)
+
+Detector array: one task per registry input configuration (variant), throttled; each task
+stages the train whole TIFF to $TMPDIR and writes per-key proposals to .cache/.
+Candidate array: each task stages required .cache/ subtrees to $TMPDIR before scoring.
+
 Requires all registry variant weights under runs/yolo26-seg/{variant}/weights/best.pt
 when running detectors.
 
@@ -123,10 +131,11 @@ print(profile_tune_detector_walltime(load_tune_grid(Path('${GRID_CONFIG}'))))
         "--array=1-${detector_count}%${detector_max_parallel}"
         "$REPO_ROOT/SLURM/yolo/run_profile_tune_detector.sh"
     )
-    if [ "$DRY_RUN" = true ]; then
-        printf '%q ' "${det_cmd[@]}"
-        echo
-    else
+if [ "$DRY_RUN" = true ]; then
+    echo "DRY-RUN detector array: ${detector_count} input-configuration tasks (max ${detector_max_parallel} parallel) → .cache/" >&2
+    printf '%q ' "${det_cmd[@]}"
+    echo
+else
         detector_job_id="$("${det_cmd[@]}" | awk '{print $NF}')"
         if [ -z "${detector_job_id:-}" ]; then
             echo "Detector array sbatch did not return a job id" >&2
@@ -150,6 +159,7 @@ fi
 gt_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_gt_cache.sh")
 
 if [ "$DRY_RUN" = true ]; then
+    echo "DRY-RUN GT cache → ${OUTPUT_DIR}/.cache/gt_cache/train/" >&2
     printf '%q ' "${gt_cmd[@]}"
     echo
 else
@@ -182,6 +192,7 @@ fi
 venv_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_venv_prep.sh")
 
 if [ "$DRY_RUN" = true ]; then
+    echo "DRY-RUN venv prep (unchanged shared env under \$SCRATCH/.venvs/yolo-profile-tune/)" >&2
     printf '%q ' "${venv_cmd[@]}"
     echo
 else
@@ -208,6 +219,7 @@ fi
 cand_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_candidate.sh")
 
 if [ "$DRY_RUN" = true ]; then
+    echo "DRY-RUN candidate array: ${candidate_count} tasks (stage .cache/ → \$TMPDIR per task; grid/ on scratch)" >&2
     printf '%q ' "${cand_cmd[@]}"
     echo
 else
@@ -222,6 +234,7 @@ fi
 fin_cmd+=("$REPO_ROOT/SLURM/yolo/run_profile_tune_finalize.sh")
 
 if [ "$DRY_RUN" = true ]; then
+    echo "DRY-RUN finalize → grid/results.csv and grid/winner.json (mean_pq)" >&2
     printf '%q ' "${fin_cmd[@]}"
     echo
 else

@@ -188,6 +188,31 @@ def test_submit_profile_tune_usage_points_at_runbook() -> None:
     assert "pre-fix" not in usage
 
 
+def test_submit_profile_tune_dry_run_echoes_staging_summary() -> None:
+    text = submit_inference_profile_tune_script_path().read_text(encoding="utf-8")
+    assert "DRY-RUN detector array" in text
+    assert "input-configuration tasks" in text
+    assert "DRY-RUN candidate array" in text
+    assert "$TMPDIR" in text
+    assert "DRY-RUN finalize" in text
+    assert "mean_pq" in text
+
+
+def test_submit_profile_tune_usage_documents_layout_and_staging() -> None:
+    result = subprocess.run(
+        ["bash", str(submit_inference_profile_tune_script_path()), "--help"],
+        cwd=repo_root(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    usage = result.stderr
+    assert ".cache/" in usage
+    assert "$TMPDIR" in usage or "TMPDIR" in usage
+    assert "input configuration" in usage.lower() or "per variant" in usage.lower()
+    assert "grid/" in usage
+
+
 def test_submit_profile_tune_usage_documents_skip_detectors() -> None:
     result = subprocess.run(
         ["bash", str(submit_inference_profile_tune_script_path()), "--help"],
@@ -210,3 +235,36 @@ def test_profile_tune_runbook_exists() -> None:
     text = path.read_text(encoding="utf-8")
     assert "## Profile selection" in text
     assert "submit_inference_profile_tune.sh" in text
+
+
+def test_staging_reference_documents_profile_tune_exception() -> None:
+    path = repo_root() / "docs/reference/staging.md"
+    text = path.read_text(encoding="utf-8")
+    assert "## Profile selection" in text
+    assert ".cache/" in text
+    assert "grid/" in text
+    assert "$TMPDIR" in text
+
+
+def test_profile_tune_adr_documents_cache_staging_and_detector_bundling() -> None:
+    adr = repo_root() / "docs/adr/0005-yolo-inference-profile-train-selection.md"
+    text = adr.read_text(encoding="utf-8")
+    assert ".cache/" in text
+    assert "$TMPDIR" in text
+    assert "input configuration" in text.lower()
+    assert "tiled_proposals" in text
+    assert "gt_cache/train" in text
+    assert "_work/" in text
+
+
+def test_profile_tune_runbook_documents_cache_staging_and_detector_array() -> None:
+    text = profile_tune_runbook_path().read_text(encoding="utf-8")
+    profile_section = text.split("## Profile selection", 1)[1].split("## Test evaluations", 1)[0]
+    assert ".cache/" in profile_section
+    assert "grid/" in profile_section
+    assert "$TMPDIR" in profile_section
+    assert "input configuration" in profile_section.lower()
+    assert "profile_tune_cache_stage" in profile_section
+    assert "gt_cache/train" in profile_section
+    assert "mean_pq" in profile_section
+    assert "_work/" in profile_section

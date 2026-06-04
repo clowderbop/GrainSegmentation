@@ -54,6 +54,14 @@ def test_profile_tune_candidate_stages_shared_venv_without_sync() -> None:
     assert "uv run --no-sync" in text
 
 
+def test_profile_tune_candidate_stages_caches_to_tmpdir_before_scoring() -> None:
+    text = run_profile_tune_candidate_script_path().read_text(encoding="utf-8")
+    assert 'WORK_ROOT="$TMPDIR/profile_tune_cand_${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-local}}_${SLURM_ARRAY_TASK_ID}"' in text
+    assert "yolo.profile_tune_cache_stage" in text
+    assert '--work-root "$WORK_ROOT"' in text
+    assert "${OUTPUT_DIR}/.cache" in text
+
+
 def test_profile_tune_finalize_stages_shared_venv_without_sync() -> None:
     text = run_profile_tune_finalize_script_path().read_text(encoding="utf-8")
     assert "uv sync" not in text

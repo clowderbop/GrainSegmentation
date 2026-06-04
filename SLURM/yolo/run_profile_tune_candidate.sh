@@ -26,17 +26,32 @@ yolo_venv_stage_local
 cd "$REPO_ROOT/src/yolo"
 export YOLO_DISABLE_TQDM=True
 
+WORK_ROOT="$TMPDIR/profile_tune_cand_${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID:-local}}_${SLURM_ARRAY_TASK_ID}"
+rm -rf "$WORK_ROOT"
+mkdir -p "$WORK_ROOT"
+
+echo "Staging candidate caches from ${OUTPUT_DIR}/.cache to TMPDIR..."
+stage_args=(
+    candidate
+    --output-dir "$OUTPUT_DIR"
+    --tmp-work-root "$WORK_ROOT"
+    --grid-config "$GRID_CONFIG"
+    --array-index "$SLURM_ARRAY_TASK_ID"
+)
+uv run --no-sync python -u -m yolo.profile_tune_cache_stage "${stage_args[@]}"
+
 candidate_args=(
     --output-dir "$OUTPUT_DIR"
     --grainseg-root "$GRAINSEG_ROOT"
     --run-root "$RUN_ROOT"
     --grid-config "$GRID_CONFIG"
     --array-index "$SLURM_ARRAY_TASK_ID"
+    --work-root "$WORK_ROOT"
 )
 
 if [ "${NO_RESUME:-0}" = "1" ]; then
     candidate_args+=(--no-resume)
 fi
 
-echo "Candidate array task ${SLURM_ARRAY_TASK_ID} → $OUTPUT_DIR"
+echo "Candidate array task ${SLURM_ARRAY_TASK_ID} → $OUTPUT_DIR (work_root=$WORK_ROOT)"
 uv run --no-sync python -u -m yolo.profile_tune_candidate "${candidate_args[@]}"

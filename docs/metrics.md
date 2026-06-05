@@ -14,7 +14,7 @@ Definitions for evaluation numbers produced by SLURM eval jobs and **post-eval r
 
 ### PQ diagnostics
 
-Required companion fields whenever PQ is reported (train selection, held-out eval, **post-eval reporting**). Same strict IoU > threshold matching as PQ. Glossary: **PQ diagnostics** in [`CONTEXT.md`](../CONTEXT.md).
+Required companion fields whenever PQ is reported on held-out **eval** or in **post-eval reporting** (`compute_instance_metric_bundle`). Same strict IoU > threshold matching as PQ. Glossary: **PQ diagnostics** in [`CONTEXT.md`](../CONTEXT.md).
 
 | Field group | Contents |
 |-------------|----------|
@@ -24,7 +24,18 @@ Required companion fields whenever PQ is reported (train selection, held-out eva
 | Instance counts | Predicted count, ground-truth count, predicted/ground-truth ratio |
 | Overlap diagnostic | **AJI+** (supporting; not headline) |
 
-Together with **PQ**, these form the **instance metric bundle** for each evaluated sample unit.
+Together with **PQ**, these form the **instance metric bundle** for each evaluated sample unit on the eval path.
+
+### Tune-path vs eval-path diagnostics
+
+Train-side grid scoring (YOLO **profile selection**, U-Net watershed tune, CC-vs-watershed train pick) and held-out **eval** share the same **PQ** definition (greedy one-to-one match, strict IoU > 0.5). They differ in which fields are computed and persisted.
+
+| Path | Entry point | Persisted record | Selection uses |
+|------|-------------|------------------|----------------|
+| **Tune** | `compute_merged_view_pq` | **`MergedViewPqResult`** — PQ/DQ/SQ, IoU50 P/R/F1, TP/FP/FN, instance counts, matched-IoU spread, overlap forensics | `pq` / `mean_pq` only |
+| **Eval** | `compute_instance_metric_bundle` | Full **instance metric bundle** — above plus IoU75 P/R/F1, mP/mR/mF1 0.5:0.95, **AJI+** | Headline **PQ**; full **PQ diagnostics** in reports |
+
+Implementation: [`src/common/merged_view_pq.py`](../src/common/merged_view_pq.py), [`src/common/instance_metric_bundle.py`](../src/common/instance_metric_bundle.py). YOLO profile selection calls `compute_train_pq` → `compute_merged_view_pq` after cross-tile association.
 
 ## YOLO-only
 
@@ -41,15 +52,16 @@ Together with **PQ**, these form the **instance metric bundle** for each evaluat
 
 ## PQ-centered rerun policy
 
-Authoritative policy for train-side selection, held-out ranking, and reporting. Decision record: [ADR 0003](adr/0003-test-evaluation-policy.md). YOLO profile-selection architecture: [ADR 0005](adr/0005-yolo-inference-profile-train-selection.md). Vocabulary: [instance metrics](#instance-metrics-all-producers), [PQ diagnostics](#pq-diagnostics), [`CONTEXT.md`](../CONTEXT.md).
+Authoritative policy for train-side selection, held-out ranking, and reporting. Decision record: [ADR 0003](adr/0003-test-evaluation-policy.md). YOLO profile-selection architecture: [ADR 0005](adr/0005-yolo-inference-profile-train-selection.md). Vocabulary: [instance metrics](#instance-metrics-all-producers), [PQ diagnostics](#pq-diagnostics), [tune-path vs eval-path](#tune-path-vs-eval-path-diagnostics), [`CONTEXT.md`](../CONTEXT.md).
 
-| Stage | PQ objective | Runbook |
-|-------|----------------|---------|
-| YOLO **profile selection** | Maximize `mean_pq` on train whole section | [`runbooks/yolo.md`](runbooks/yolo.md#profile-selection) |
-| **Profile promotion** | Install PQ winner into `config/test_inference.yaml` | [`runbooks/yolo.md`](runbooks/yolo.md#promotion) |
-| U-Net watershed tune | `best_mean_pq` per variant | [`runbooks/unet.md`](runbooks/unet.md#watershed-tuning) |
-| CC vs watershed (train) | Mean train PQ in `eval/extraction_method_selection.json` | [`runbooks/unet.md`](runbooks/unet.md#cc-vs-watershed-train-section) |
-| **Post-eval reporting** | Headline **whole-section PQ** + [PQ diagnostics](#pq-diagnostics); AP/mAP in YOLO-only patch panel | [`runbooks/analysis.md`](runbooks/analysis.md) |
+| Stage | PQ objective | Diagnostics persisted | Runbook |
+|-------|----------------|----------------------|---------|
+| YOLO **profile selection** | Maximize `mean_pq` on train whole section | **`MergedViewPqResult`** per variant | [`runbooks/yolo.md`](runbooks/yolo.md#profile-selection) |
+| **Profile promotion** | Install PQ winner into `config/test_inference.yaml` | — | [`runbooks/yolo.md`](runbooks/yolo.md#promotion) |
+| U-Net watershed tune | `best_mean_pq` per variant | **`MergedViewPqResult`** | [`runbooks/unet.md`](runbooks/unet.md#watershed-tuning) |
+| CC vs watershed (train) | Mean train PQ in `eval/extraction_method_selection.json` | **`MergedViewPqResult`** | [`runbooks/unet.md`](runbooks/unet.md#cc-vs-watershed-train-section) |
+| Held-out **eval** / predict metrics | Headline **whole-section PQ** | Full **instance metric bundle** | YOLO / U-Net runbooks (test eval) |
+| **Post-eval reporting** | Headline **whole-section PQ** + [PQ diagnostics](#pq-diagnostics); AP/mAP in YOLO-only patch panel | From eval artifacts | [`runbooks/analysis.md`](runbooks/analysis.md) |
 
 ### Stale AJI-selected scratch outputs
 

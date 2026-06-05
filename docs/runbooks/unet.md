@@ -95,7 +95,7 @@ Two jobs compare connected components vs tuned watershed on **train** using `who
 
 `submit_cc_vs_watershed_train_eval.sh` submits both eval jobs and a follow-up selection job (`run_cc_vs_watershed_selection.sh`) that picks the method by mean train whole-section **PQ** across registry variants. Overlays remain supporting evidence for failure-mode review, not the selection criterion.
 
-`eval/extraction_method_selection.json` records the PQ winner and per-variant [PQ diagnostics](../metrics.md#pq-diagnostics). Use that file when choosing `--instance-method` for held-out whole test. Stale AJI-driven selection: [`metrics.md`](../metrics.md#stale-aji-selected-scratch-outputs).
+`eval/extraction_method_selection.json` records the PQ winner and per-variant [**`MergedViewPqResult`**](../metrics.md#tune-path-vs-eval-path-diagnostics) fields from train scoring. Use that file when choosing `--instance-method` for held-out whole test. Stale AJI-driven selection: [`metrics.md`](../metrics.md#stale-aji-selected-scratch-outputs).
 
 ## Whole test eval
 

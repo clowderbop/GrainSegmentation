@@ -73,13 +73,13 @@ Candidate jobs **stage** required `.cache/` subtrees into job-unique `$TMPDIR` b
 
 Runs that used the legacy `_work/` cache root are incompatible; start a new `RUN_ID` after upgrading.
 
-Each grid candidate is scored by **profile selection scoring**: **cross-tile association** on cached **tiled detector proposals**, compared to the shared **profile selection ground truth cache**, using the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) (including [PQ diagnostics](../metrics.md#pq-diagnostics)).
+Each grid candidate is scored by **profile selection scoring**: **cross-tile association** on cached **tiled detector proposals**, compared to the shared **profile selection ground truth cache**, then `compute_train_pq` → [`compute_merged_view_pq`](../src/common/merged_view_pq.py) for a per-variant [**`MergedViewPqResult`**](../metrics.md#tune-path-vs-eval-path-diagnostics) (PQ/DQ/SQ, IoU50 P/R/F1, instance counts, matched-IoU spread, overlap forensics). This is not the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers); held-out test **eval** still computes that bundle.
 
 | Field | Role |
 |-------|------|
 | `mean_pq` | Selection objective: mean train **whole-section PQ** across all registry variants |
 | `pq__{variant}` | Per-variant train PQ for audit |
-| Other bundle fields in each row | Full diagnostic record per variant (see metrics doc) |
+| Other `MergedViewPqResult` keys in each row | Tune-path diagnostic record per variant ([metrics doc](../metrics.md#tune-path-vs-eval-path-diagnostics)) |
 
 **Finalize** (`run_profile_tune_finalize.sh` / `yolo.profile_tune_finalize`) picks the highest `mean_pq` and writes `grid/winner.json` with `selection_objective`, `mean_pq`, promoted `conf` / fixed `mask_threshold`, `profile_selection_axes`, `removed_grid_axes`, and `per_variant_pq_results` (per-variant **`MergedViewPqResult`** objects with every tune-path PQ field). **Profile promotion** reads only `conf` from that file and must use the PQ-centered winner. Pre-merge proposal counts, patch metrics, and legacy `mean_aji` on old rows are audit-only ([stale AJI-selected outputs](../metrics.md#stale-aji-selected-scratch-outputs)).
 

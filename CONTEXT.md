@@ -132,12 +132,16 @@ The headline held-out test metric for **individual grain instance recovery**: Pa
 _Avoid:_ area-only overlap headlines, patch-level PQ as the primary rank
 
 **PQ diagnostics**:
-Required companion metrics for PQ on the evaluated sample unit: detection quality (**DQ**), segmentation quality (**SQ**), precision/recall/F1 at IoU50 and IoU75, mean precision/recall/F1 over IoU50:95 (`mP_iou50_95`, `mR_iou50_95`, `mF1_iou50_95`), predicted instance count, ground-truth instance count, predicted/ground-truth instance ratio, and **AJI+**. Thresholded matching diagnostics use the same strict IoU > threshold convention as PQ.
-_Avoid:_ reporting PQ without explaining whether failures come from missed/duplicate grains, poor mask boundaries, or object-count inflation
+Required companion metrics for PQ on held-out **eval** and **post-eval reporting**: detection quality (**DQ**), segmentation quality (**SQ**), precision/recall/F1 at IoU50 and IoU75, mean precision/recall/F1 over IoU50:95 (`mP_iou50_95`, `mR_iou50_95`, `mF1_iou50_95`), predicted instance count, ground-truth instance count, predicted/ground-truth instance ratio, and **AJI+**. Thresholded matching diagnostics use the same strict IoU > threshold convention as PQ. **PQ**, **DQ**, **SQ**, and IoU50 precision/recall/F1 use the same greedy match and strict IoU > 0.5 definition as tune-path scoring; tune paths do not recompute IoU75, mP/mR/mF1 0.5:0.95, or **AJI+**.
+_Avoid:_ reporting PQ without explaining whether failures come from missed/duplicate grains, poor mask boundaries, or object-count inflation; treating tune-path artifacts as if they contained the full eval diagnostic set
+
+**MergedViewPqResult**:
+The tune-path diagnostic record from `compute_merged_view_pq` on a **merged instance view**: **PQ**, **DQ**, **SQ**, IoU50 precision/recall/F1, TP/FP/FN, instance counts, matched-IoU spread (`min`/`max`/`median`), and overlap forensics (co-occurring pairs, near-miss counts, unmatched-prediction IoU summary). Persisted by **profile selection scoring**, U-Net watershed tune, and CC-vs-watershed train selection. Selection objectives use **`pq` / `mean_pq` only**; other fields are audit diagnostics. Not the **instance metric bundle** (no IoU75, mP/mR/mF1 0.5:0.95, **AJI+**).
+_Avoid:_ calling this the full **PQ diagnostics** set, recomputing the eval bundle inside tune hot paths
 
 **Instance metric bundle**:
-The standard metric set computed for every instance evaluation whenever the producer artifacts support it: PQ on the evaluated sample unit, **PQ diagnostics**, and supporting overlap/count metrics. **Whole-section PQ** is reserved for headline/ranking/profile-selection contexts; patch evaluations compute patch-level PQ as diagnostics. AP/mAP metrics are outside this bundle.
-_Avoid:_ maintaining separate metric subsets for train/test, patch/whole-section, or YOLO/U-Net unless a metric is impossible for that artifact
+The standard metric set from `compute_instance_metric_bundle` on held-out **eval** and predict-time metric jobs whenever producer artifacts support it: PQ on the evaluated sample unit, full **PQ diagnostics**, and supporting overlap/count metrics. **Whole-section PQ** is the headline for ranking and reporting; patch evaluations compute patch-level bundle fields as supporting diagnostics. Train-side tune paths (**profile selection scoring**, watershed tune) score via **`MergedViewPqResult`** instead — same **PQ** definition, narrower persisted fields. AP/mAP metrics are outside this bundle.
+_Avoid:_ maintaining separate PQ definitions for tune vs eval; implying YOLO profile selection or watershed tune wrote the full bundle
 
 **AJI+**:
 Supporting microscopy-style instance overlap metric using unique instance pairing. Useful as an overlap diagnostic but not the headline for **individual grain instance recovery**.
@@ -174,16 +178,16 @@ The train-selected detector minimum **score** (`conf`) plus the fixed **mask thr
 _Avoid:_ per-variant profiles (confounds **variant test ranking**), tuning on overlapping **detector proposals** as the primary objective, multi-axis SAHI merge grids on whole-section output
 
 **Profile selection**:
-Train-side search for the shared **YOLO inference profile** on the whole **train** section, maximizing mean **whole-section PQ** averaged across input variants. Winner feeds **profile promotion**; audit trail on scratch records the **PQ diagnostics** for each candidate (ADR 0005).
-_Avoid:_ tuning on overlapping **detector proposals** as the headline objective
+Train-side search for the shared **YOLO inference profile** on the whole **train** section, maximizing mean **whole-section PQ** averaged across input variants. Winner feeds **profile promotion**; audit trail on scratch records per-variant **`MergedViewPqResult`** diagnostics for each candidate (ADR 0005).
+_Avoid:_ tuning on overlapping **detector proposals** as the headline objective, scoring with the full **instance metric bundle**
 
 **Profile selection result row**:
-One grid candidate’s audit record: `conf`, fixed `mask_threshold`, per-variant and mean train **whole-section PQ**, **PQ diagnostics**, and what inputs the score depended on. Rows assemble into the tune-run audit table (ADR 0005).
-_Avoid:_ treating a stale row as valid after labels or weights change
+One grid candidate’s audit record: `conf`, fixed `mask_threshold`, per-variant and mean train **whole-section PQ**, per-variant **`MergedViewPqResult`** fields, and what inputs the score depended on. Rows assemble into the tune-run audit table (ADR 0005).
+_Avoid:_ treating a stale row as valid after labels or weights change, expecting IoU75 / mP/mR/mF1 / **AJI+** on the row
 
 **Profile selection scoring**:
-Computing train **whole-section PQ** and **PQ diagnostics** for one grid point from **tiled detector proposals** through **cross-tile association** to a **merged instance view**, without persisting a full **instance prediction set** for that point. Held-out whole predict uses the same postprocess module (ADR 0005).
-_Avoid:_ SAHI slice-merge + score-paint on the production path, requiring prediction-set JSON equality on every grid point
+Computing train **whole-section PQ** via `compute_merged_view_pq` (`compute_train_pq` in YOLO code) for one grid point: **tiled detector proposals** → **cross-tile association** → **merged instance view** → **`MergedViewPqResult`**, without persisting a full **instance prediction set** or the **instance metric bundle**. Held-out whole predict uses the same postprocess module; held-out **eval** computes the full bundle (ADR 0005).
+_Avoid:_ SAHI slice-merge + score-paint on the production path, requiring prediction-set JSON equality on every grid point, `compute_instance_metric_bundle` on the tune hot path
 
 **Profile selection ground truth cache**:
 The canonical train ground-truth **merged instance view** for a tune run, built once from vector labels and reused by all **profile selection scoring** tasks across input variants (label geometry is shared; channels are not). ADR 0005.

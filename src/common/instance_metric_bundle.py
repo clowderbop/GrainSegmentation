@@ -6,6 +6,10 @@ from typing import TypedDict
 
 import numpy as np
 
+from common.instance_pq_core import (
+    pq_from_match_counts,
+    pred_gt_instance_ratio as compute_pred_gt_instance_ratio,
+)
 from common.metrics import (
     IOU_THRESHOLDS_50_95,
     PQ_MATCH_IOU,
@@ -54,23 +58,6 @@ class InstanceMetricBundle(TypedDict):
     pred_instance_count: int
     pred_gt_instance_ratio: float
     aji_plus: float
-
-
-def _pred_gt_instance_ratio(gt_count: int, pred_count: int) -> float:
-    if gt_count > 0:
-        return float(pred_count) / float(gt_count)
-    if pred_count == 0:
-        return 1.0
-    return float("inf")
-
-
-def _pq_from_counts(tp: int, fp: int, fn: int, matched_ious: list[float]) -> tuple[float, float, float]:
-    if tp == 0 and fp == 0 and fn == 0:
-        return 1.0, 1.0, 1.0
-    denom = tp + 0.5 * fp + 0.5 * fn
-    dq = float(tp) / float(denom) if denom > 0 else 0.0
-    sq = float(sum(matched_ious)) / float(tp) if tp > 0 else 0.0
-    return dq * sq, dq, sq
 
 
 def _thresholded_prf_bundle(
@@ -129,14 +116,18 @@ def _thresholded_prf_bundle(
 def compute_instance_metric_bundle(
     true_instances: np.ndarray, pred_instances: np.ndarray
 ) -> InstanceMetricBundle:
-    """Compute the standard instance metric bundle for merged instance views."""
+    """Compute the standard instance metric bundle for merged instance views.
+
+    Use this for eval and reporting (multi-threshold PR/F1, AJI+). For tune-path
+    whole-section PQ scoring only, use ``compute_merged_view_pq`` instead.
+    """
     true_ids = _instance_ids(true_instances)
     pred_ids = _instance_ids(pred_instances)
     nt, np_ = len(true_ids), len(pred_ids)
 
     gt_instance_count = nt
     pred_instance_count = np_
-    pred_gt_instance_ratio = _pred_gt_instance_ratio(nt, np_)
+    pred_gt_instance_ratio = compute_pred_gt_instance_ratio(nt, np_)
 
     if nt == 0 and np_ == 0:
         pq, dq, sq = 1.0, 1.0, 1.0
@@ -151,7 +142,7 @@ def compute_instance_metric_bundle(
         fp = np_ - tp
         fn = nt - tp
         matched_ious = [float(iou_matrix[i, j]) for i, j in matched]
-        pq, dq, sq = _pq_from_counts(tp, fp, fn, matched_ious)
+        pq, dq, sq = pq_from_match_counts(tp, fp, fn, matched_ious)
         aji_plus = float(compute_aji_plus(true_instances, pred_instances))
 
     bundle: InstanceMetricBundle = {

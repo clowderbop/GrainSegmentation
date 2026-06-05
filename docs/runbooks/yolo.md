@@ -58,7 +58,7 @@ bash SLURM/yolo/submit_tune_or_train_variants.sh --all
 
 **Submit:** `bash SLURM/yolo/submit_inference_profile_tune.sh`
 
-Runs on the **train** whole section after **all registry** variant weights exist and **score merge** at predict is in use. Submit sets `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/`. Re-run when train labels or weights change materially—not after every single-variant job.
+Runs on the **train** whole section after **all registry** variant weights exist and **cross-tile association** is the whole-section postprocess path. Submit sets `OUTPUT_DIR=runs/yolo_inference_profile_tune/<run_id>/`. Re-run when train labels or weights change materially—not after every single-variant job.
 
 ADR: [0005](../adr/0005-yolo-inference-profile-train-selection.md). PQ policy and stale-output rules: [`docs/metrics.md`](../metrics.md#pq-centered-rerun-policy). Glossary: **Profile selection** in [`CONTEXT.md`](../../CONTEXT.md).
 
@@ -73,7 +73,7 @@ Candidate jobs **stage** required `.cache/` subtrees into job-unique `$TMPDIR` b
 
 Runs that used the legacy `_work/` cache root are incompatible; start a new `RUN_ID` after upgrading.
 
-Each grid candidate is scored by **profile selection scoring**: slice-merge and **score merge** on cached **tiled detector proposals**, compared to the shared **profile selection ground truth cache**, using the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) (including [PQ diagnostics](../metrics.md#pq-diagnostics)).
+Each grid candidate is scored by **profile selection scoring**: **cross-tile association** on cached **tiled detector proposals**, compared to the shared **profile selection ground truth cache**, using the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) (including [PQ diagnostics](../metrics.md#pq-diagnostics)).
 
 | Field | Role |
 |-------|------|
@@ -95,7 +95,7 @@ One SLURM task per registry **input configuration** (variant), not per `(conf, m
 | Parallelism | one task per variant, max **6** concurrent (`DETECTOR_MAX_PARALLEL`) |
 | Time | tiered from detector-key count per variant (`00:10:00` or `00:30:00`) |
 
-Writes **tiled detector proposals** (`schema_version` 2) under `.cache/{variant}/tiled_proposals/c{conf}_t{mask}/`.
+Writes **tiled detector proposals** (`schema_version` 3, with source tile bounds) under `.cache/{variant}/tiled_proposals/c{conf}_t{mask}/`.
 
 ### 2. Ground-truth cache
 
@@ -159,7 +159,7 @@ Commit `config/test_inference.yaml` after promotion. The five **YOLO inference p
 
 ### Rerun without detectors
 
-`--skip-detectors` (or `SKIP_DETECTORS=1`) skips the detector array when this `OUTPUT_DIR` already has valid v2 tiled proposals under `.cache/`. Submit still runs GT cache, venv prep, the candidate array, and finalize. Use only when detectors already finished in **this** run directory with compatible caches—not when reusing another run id, stale grid rows, bumped cache schemas, or the legacy `_work/` layout ([ADR 0005](../adr/0005-yolo-inference-profile-train-selection.md)); start a fresh `RUN_ID` when those no longer match.
+`--skip-detectors` (or `SKIP_DETECTORS=1`) skips the detector array when this `OUTPUT_DIR` already has valid v3 tiled proposals under `.cache/`. Submit still runs GT cache, venv prep, the candidate array, and finalize. Use only when detectors already finished in **this** run directory with compatible caches—not when reusing another run id, stale grid rows, bumped cache schemas, or the legacy `_work/` layout ([ADR 0005](../adr/0005-yolo-inference-profile-train-selection.md)); start a fresh `RUN_ID` when those no longer match.
 
 ### Finalize recovery
 
@@ -183,7 +183,7 @@ Per registry variant, submits patch eval and whole SAHI eval. Requires promoted 
 
 ### Test job resources
 
-Peak RSS ~12–15G on current test mosaic for SAHI whole; **score merge** decodes one proposal mask at a time.
+Peak RSS ~12–15G on current test mosaic for whole sliding-window predict; cross-tile association decodes one proposal mask at a time during fusion.
 
 | Job | `sbatch --mem` | `sbatch --time` |
 |-----|----------------|-----------------|
@@ -205,8 +205,8 @@ sbatch --export=ALL,VARIANT SLURM/yolo/run_sahi_test_eval.sh
 
 ### Artifacts
 
-- **`prediction_sets/{sample_id}.json`:** canonical **instance prediction set** (non-overlapping grains after **score merge**, each with **score**).
-- **`run_provenance.json`:** `score_merge_at_predict: true`, resolved **YOLO inference profile** (`conf`, `mask_threshold`; whole adds SAHI merge and slice geometry).
+- **`prediction_sets/{sample_id}.json`:** canonical **instance prediction set** (non-overlapping grains after **cross-tile association** on whole sections, each with **score**).
+- **`run_provenance.json`:** `cross_tile_association_at_predict: true` on whole runs (`score_merge_at_predict: true` on patch), resolved **YOLO inference profile** (`conf`, `mask_threshold`) and slice geometry.
 - Optional AP/mAP diagnostics come from Ultralytics patch val, not whole-section eval.
 - Eval uses `stage_manifest write-eval` → `eval_manifest.json`; no second merge at eval.
 

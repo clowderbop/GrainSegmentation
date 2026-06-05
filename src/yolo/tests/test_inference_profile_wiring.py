@@ -23,9 +23,6 @@ def _resolved_defaults(recipe_path: Path | None = None) -> dict[str, object]:
             imgsz=None,
             conf=None,
             mask_threshold=None,
-            postprocess_type=None,
-            match_metric=None,
-            match_threshold=None,
             slice_height=None,
             slice_width=None,
             overlap_height_ratio=None,
@@ -36,9 +33,6 @@ def _resolved_defaults(recipe_path: Path | None = None) -> dict[str, object]:
     return {
         "conf": args.conf,
         "mask_threshold": args.mask_threshold,
-        "postprocess_type": args.postprocess_type,
-        "match_metric": args.match_metric,
-        "match_threshold": args.match_threshold,
         "slice_height": args.slice_height,
         "slice_width": args.slice_width,
         "overlap_height_ratio": args.overlap_height_ratio,
@@ -52,9 +46,6 @@ def test_predict_cli_defaults_match_test_inference_recipe() -> None:
     defaults = _resolved_defaults()
     assert defaults["conf"] == recipe.yolo.conf
     assert defaults["mask_threshold"] == profile.mask_threshold
-    assert defaults["postprocess_type"] == profile.postprocess_type
-    assert defaults["match_metric"] == profile.match_metric
-    assert defaults["match_threshold"] == profile.match_threshold
     assert defaults["slice_height"] == recipe.whole.window
     assert defaults["slice_width"] == recipe.whole.window
     overlap = sahi_overlap_ratio(window=recipe.whole.window, stride=recipe.whole.stride)
@@ -96,24 +87,28 @@ unet:
     defaults = _resolved_defaults(recipe_path)
     assert defaults["conf"] == pytest.approx(0.11)
     assert defaults["mask_threshold"] == pytest.approx(0.22)
-    assert defaults["match_threshold"] == pytest.approx(0.33)
     load_test_inference_recipe.cache_clear()
 
 
-@patch("yolo.predict._load_whole_predict_pairs", return_value=[])
+@patch("yolo.predict.collect_tiled_detector_proposals", return_value=[])
+@patch("yolo.predict.load_image_for_yolo")
+@patch("yolo.predict._load_whole_predict_pairs")
 @patch("sahi.AutoDetectionModel.from_pretrained")
-def test_whole_predict_applies_inference_profile_to_sahi(
+def test_whole_predict_applies_conf_and_mask_threshold_to_detector(
     mock_from_pretrained: MagicMock,
     mock_pairs: MagicMock,
+    mock_load_image: MagicMock,
+    mock_collect: MagicMock,
     tmp_path: Path,
 ) -> None:
+    image_path = tmp_path / "train.tif"
+    image_path.write_bytes(b"\x00" * 64)
+    mock_pairs.return_value = [(image_path, "train")]
+    mock_load_image.return_value = np.zeros((8, 8, 3), dtype=np.uint8)
     weights = tmp_path / "best.pt"
     weights.write_text("", encoding="utf-8")
     out_dir = tmp_path / "out"
     mock_from_pretrained.return_value = MagicMock()
-
-    mock_postprocess_cls = MagicMock()
-    mock_postprocess_cls.return_value = MagicMock(side_effect=lambda preds: preds)
 
     args = Namespace(
         weights=weights,
@@ -122,28 +117,21 @@ def test_whole_predict_applies_inference_profile_to_sahi(
         imgsz=1024,
         conf=0.4,
         mask_threshold=0.6,
-        postprocess_type="NMM",
-        match_metric="IOU",
-        match_threshold=0.7,
         device="cpu",
         slice_height=1024,
         slice_width=1024,
         overlap_height_ratio=0.5,
         overlap_width_ratio=0.5,
         manifest=None,
-        image=None,
+        image=image_path,
     )
-
-    with patch.dict(
-        "sahi.predict.POSTPROCESS_NAME_TO_CLASS",
-        {"NMM": mock_postprocess_cls},
-        clear=False,
-    ):
-        predict_module.run_whole_predict(args)
+    predict_module.run_whole_predict(args)
 
     mock_from_pretrained.assert_called_once()
     assert mock_from_pretrained.call_args.kwargs["confidence_threshold"] == 0.4
     assert mock_from_pretrained.call_args.kwargs["mask_threshold"] == 0.6
+    mock_collect.assert_called_once()
+    assert mock_collect.call_args.kwargs["mask_threshold"] == 0.6
 
 
 def test_whole_sliced_prediction_uses_profile_postprocess() -> None:
@@ -285,9 +273,6 @@ def test_whole_run_provenance_records_inference_profile(
         imgsz=1024,
         conf=0.4,
         mask_threshold=0.6,
-        postprocess_type="NMM",
-        match_metric="IOU",
-        match_threshold=0.7,
         device="cpu",
         slice_height=1024,
         slice_width=1024,
@@ -300,32 +285,25 @@ def test_whole_run_provenance_records_inference_profile(
     provenance = load_run_provenance(out_dir)
     assert provenance["conf"] == 0.4
     assert provenance["mask_threshold"] == 0.6
-    assert provenance["postprocess_type"] == "NMM"
-    assert provenance["match_metric"] == "IOU"
-    assert provenance["match_threshold"] == 0.7
+    assert provenance.get("cross_tile_association_at_predict") is True
 
 
-@patch("yolo.predict._save_merged_yolo_prediction_set")
-@patch("yolo.predict.build_yolo_prediction_set_from_sahi_predictions")
-@patch("yolo.predict.get_sliced_prediction_preserve_channels")
+@patch("yolo.predict.prediction_set_from_tiled_proposal_records")
+@patch("yolo.predict.collect_tiled_detector_proposals", return_value=[])
 @patch("yolo.predict._load_whole_predict_pairs")
 @patch("sahi.AutoDetectionModel.from_pretrained")
-def test_whole_predict_passes_mask_threshold_to_prediction_set_builder(
+def test_whole_predict_collects_tiled_proposals_with_mask_threshold(
     mock_from_pretrained: MagicMock,
     mock_pairs: MagicMock,
-    mock_sliced: MagicMock,
-    mock_build: MagicMock,
-    mock_save: MagicMock,
+    mock_collect: MagicMock,
+    mock_pred_set: MagicMock,
     tmp_path: Path,
 ) -> None:
     image_path = tmp_path / "train.tif"
     image_path.write_bytes(b"\x00" * 64)
     mock_pairs.return_value = [(image_path, "train")]
     mock_from_pretrained.return_value = MagicMock()
-    mock_result = MagicMock()
-    mock_result.object_prediction_list = []
-    mock_sliced.return_value = mock_result
-    mock_build.return_value = PredictionSet(
+    mock_pred_set.return_value = PredictionSet(
         schema_version=1,
         height=8,
         width=8,
@@ -341,9 +319,6 @@ def test_whole_predict_passes_mask_threshold_to_prediction_set_builder(
         imgsz=1024,
         conf=0.4,
         mask_threshold=0.6,
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
         device="cpu",
         slice_height=1024,
         slice_width=1024,
@@ -354,7 +329,7 @@ def test_whole_predict_passes_mask_threshold_to_prediction_set_builder(
     )
     with patch("yolo.predict.load_image_for_yolo", return_value=np.zeros((8, 8, 3), dtype=np.uint8)):
         predict_module.run_whole_predict(args)
-    assert mock_build.call_args.kwargs["mask_threshold"] == 0.6
+    assert mock_collect.call_args.kwargs["mask_threshold"] == 0.6
 
 
 def test_patch_run_provenance_records_inference_profile(tmp_path: Path) -> None:

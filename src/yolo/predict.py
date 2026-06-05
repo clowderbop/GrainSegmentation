@@ -13,12 +13,13 @@ from tifffile import TiffFile
 from common.prediction_set import (
     PredictionSet,
     assert_yolo_grains_non_overlapping,
-    build_yolo_prediction_set_from_sahi_predictions,
     build_yolo_prediction_set_from_ultralytics,
     merge_yolo_proposals_by_score,
     prediction_set_path,
     save_prediction_set,
 )
+from yolo.cross_tile_postprocess import prediction_set_from_tiled_proposal_records
+from yolo.tiled_proposal_cache import collect_tiled_detector_proposals
 from common.run_provenance import write_run_provenance
 from common.test_inference import load_test_inference_recipe, sahi_overlap_ratio
 from common.manifest_io import (
@@ -29,7 +30,6 @@ from common.manifest_io import (
 from yolo.config import default_scratch_root, variant_choices
 from yolo.dataset_yaml import load_yaml_dataset_config, resolve_split_dir
 from yolo.pipeline import resolve_variant_paths
-from yolo.sliced_detection import get_sliced_prediction_preserve_channels
 from yolo.train import _parse_device
 
 _PATCH_IMAGE_SUFFIXES = {".tif", ".tiff"}
@@ -95,22 +95,11 @@ def _load_whole_predict_pairs(args: argparse.Namespace) -> list[tuple[Path, str]
     return [(image_path, image_path.stem)]
 
 
-def _yolo_inference_profile_provenance(
-    args: argparse.Namespace, *, include_sahi_merge: bool = False
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
+def _yolo_inference_profile_provenance(args: argparse.Namespace) -> dict[str, Any]:
+    return {
         "conf": float(args.conf),
         "mask_threshold": float(args.mask_threshold),
     }
-    if include_sahi_merge:
-        payload.update(
-            {
-                "postprocess_type": str(args.postprocess_type),
-                "match_metric": str(args.match_metric),
-                "match_threshold": float(args.match_threshold),
-            }
-        )
-    return payload
 
 
 def _save_merged_yolo_prediction_set(
@@ -145,16 +134,20 @@ def _write_whole_prediction_set(
     *,
     output_dir: Path,
     sample_id: str,
-    predictions: list[Any],
+    records: list[Any],
     height: int,
     width: int,
-    mask_threshold: float,
 ) -> None:
     path = prediction_set_path(output_dir, sample_id)
-    proposals = build_yolo_prediction_set_from_sahi_predictions(
-        predictions, height=height, width=width, mask_threshold=mask_threshold
+    pred_set = prediction_set_from_tiled_proposal_records(
+        records, height=height, width=width
     )
-    _save_merged_yolo_prediction_set(path, proposals, sample_id=sample_id)
+    assert_yolo_grains_non_overlapping(pred_set)
+    save_prediction_set(path, pred_set)
+    print(
+        f"Wrote {path} ({len(pred_set.detections)} grains after cross-tile association "
+        f"for {sample_id})"
+    )
 
 
 def device_for_sahi(device: int | str | list[int]) -> str:
@@ -318,7 +311,7 @@ def run_whole_predict(args: argparse.Namespace) -> None:
     device = device_for_sahi(_parse_device(args.device))
     weights_path = Path(args.weights).resolve()
     print(
-        f"YOLO whole predict (SAHI): {n_samples} image(s), "
+        f"YOLO whole predict (sliding window + cross-tile association): {n_samples} image(s), "
         f"slice={args.slice_height}x{args.slice_width}, "
         f"overlap=({args.overlap_height_ratio}, {args.overlap_width_ratio})",
         flush=True,
@@ -345,8 +338,8 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             "overlap_height_ratio": float(args.overlap_height_ratio),
             "overlap_width_ratio": float(args.overlap_width_ratio),
             "variant": args.variant,
-            "score_merge_at_predict": True,
-            **_yolo_inference_profile_provenance(args, include_sahi_merge=True),
+            "cross_tile_association_at_predict": True,
+            **_yolo_inference_profile_provenance(args),
         },
     )
 
@@ -356,24 +349,21 @@ def run_whole_predict(args: argparse.Namespace) -> None:
         print(f"Predicting {sample_id} ({idx + 1}/{n_samples})...", flush=True)
         image = load_image_for_yolo(tiff_path)
         height, width = image.shape[:2]
-        result = get_sliced_prediction_preserve_channels(
+        records = collect_tiled_detector_proposals(
             image,
             detection_model,
             slice_height=args.slice_height,
             slice_width=args.slice_width,
             overlap_height_ratio=args.overlap_height_ratio,
             overlap_width_ratio=args.overlap_width_ratio,
-            postprocess_type=args.postprocess_type,
-            match_metric=args.match_metric,
-            match_threshold=args.match_threshold,
+            mask_threshold=float(args.mask_threshold),
         )
         _write_whole_prediction_set(
             output_dir=args.output_dir,
             sample_id=sample_id,
-            predictions=result.object_prediction_list,
+            records=records,
             height=height,
             width=width,
-            mask_threshold=float(args.mask_threshold),
         )
 
 
@@ -393,9 +383,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--imgsz", type=int, default=None)
     parser.add_argument("--conf", type=float, default=None)
     parser.add_argument("--mask-threshold", type=float, default=None)
-    parser.add_argument("--postprocess-type", default=None)
-    parser.add_argument("--match-metric", default=None)
-    parser.add_argument("--match-threshold", type=float, default=None)
     parser.add_argument("--device", default="0")
     parser.add_argument("--slice-height", type=int, default=None)
     parser.add_argument("--slice-width", type=int, default=None)
@@ -417,12 +404,6 @@ def resolve_predict_inference_defaults(
         args.conf = recipe.yolo.conf
     if args.mask_threshold is None:
         args.mask_threshold = profile.mask_threshold
-    if args.postprocess_type is None:
-        args.postprocess_type = profile.postprocess_type
-    if args.match_metric is None:
-        args.match_metric = profile.match_metric
-    if args.match_threshold is None:
-        args.match_threshold = profile.match_threshold
     if args.slice_height is None:
         args.slice_height = recipe.whole.window
     if args.slice_width is None:

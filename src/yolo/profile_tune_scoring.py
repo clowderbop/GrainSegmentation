@@ -3,84 +3,58 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
-from common.instance_maps import score_merged_instance_map_from_sahi_predictions
 from common.instance_metric_bundle import (
     InstanceMetricBundle,
     compute_instance_metric_bundle,
 )
-from common.prediction_set import (
-    build_yolo_prediction_set_from_sahi_predictions,
-    merge_yolo_proposals_by_score,
-    save_prediction_set,
-)
 from common.test_inference import YoloInferenceProfileCandidate
-from yolo.sliced_detection import merge_sliced_object_predictions
+from yolo.cross_tile_postprocess import (
+    materialize_cross_tile_prediction_set,
+    merged_instance_view_from_tiled_proposal_records,
+)
+from yolo.tiled_proposal_cache import TiledProposalRecord
 
 
 @dataclass
 class ProfileSelectionScoringTimings:
-    slice_merge_s: float = 0.0
-    score_merge_s: float = 0.0
+    cross_tile_association_s: float = 0.0
     metrics_s: float = 0.0
 
     @property
     def total_s(self) -> float:
-        return self.slice_merge_s + self.score_merge_s + self.metrics_s
+        return self.cross_tile_association_s + self.metrics_s
 
 
 def _log_timing(phase: str, elapsed_s: float) -> None:
     print(f"    {phase} {elapsed_s:.1f}s", flush=True)
 
 
-def slice_merge_proposals(
-    proposals: list[Any],
+def merged_instance_view_from_tiled_records(
+    records: Sequence[TiledProposalRecord],
     *,
-    candidate: YoloInferenceProfileCandidate,
-) -> list[Any]:
-    """SAHI slice-merge for one grid point (shared by scoring and audit materialization)."""
-    return merge_sliced_object_predictions(
-        proposals,
-        postprocess_type=candidate.postprocess_type,
-        match_metric=candidate.match_metric,
-        match_threshold=candidate.match_threshold,
-    )
-
-
-def merged_instance_view_from_proposals(
-    proposals: list[Any],
-    *,
-    candidate: YoloInferenceProfileCandidate,
     height: int,
     width: int,
     timings: ProfileSelectionScoringTimings | None = None,
 ) -> np.ndarray:
-    """SAHI proposals → slice-merge → direct score-merge paint (ADR 0005)."""
+    """Tiled proposals → cross-tile association → merged instance view (ADR 0005)."""
     t0 = time.perf_counter()
-    merged_predictions = slice_merge_proposals(proposals, candidate=candidate)
-    slice_merge_s = time.perf_counter() - t0
-    t1 = time.perf_counter()
-    pred_map = score_merged_instance_map_from_sahi_predictions(
-        merged_predictions,
-        height=height,
-        width=width,
-        mask_threshold=candidate.mask_threshold,
+    pred_map = merged_instance_view_from_tiled_proposal_records(
+        records, height=height, width=width
     )
-    score_merge_s = time.perf_counter() - t1
     if timings is not None:
-        timings.slice_merge_s = slice_merge_s
-        timings.score_merge_s = score_merge_s
+        timings.cross_tile_association_s = time.perf_counter() - t0
     return pred_map
 
 
 def compute_train_instance_metric_bundle(
     gt_instance_map: np.ndarray,
-    proposals: list[Any],
+    records: Sequence[TiledProposalRecord],
     *,
     candidate: YoloInferenceProfileCandidate,
     height: int,
@@ -88,10 +62,10 @@ def compute_train_instance_metric_bundle(
     log_timings: bool = False,
 ) -> InstanceMetricBundle:
     """Train whole-section bundle for one variant/grid point without a prediction set."""
+    del candidate  # cross-tile thresholds are fixed; conf/mask_threshold affect detector cache only
     timings = ProfileSelectionScoringTimings() if log_timings else None
-    pred_map = merged_instance_view_from_proposals(
-        proposals,
-        candidate=candidate,
+    pred_map = merged_instance_view_from_tiled_records(
+        records,
         height=height,
         width=width,
         timings=timings,
@@ -105,15 +79,14 @@ def compute_train_instance_metric_bundle(
     bundle = compute_instance_metric_bundle(gt, pred_map)
     if timings is not None:
         timings.metrics_s = time.perf_counter() - t0
-        _log_timing("slice-merge", timings.slice_merge_s)
-        _log_timing("score-merge", timings.score_merge_s)
+        _log_timing("cross-tile association", timings.cross_tile_association_s)
         _log_timing("metrics", timings.metrics_s)
     return bundle
 
 
 def compute_train_pq(
     gt_instance_map: np.ndarray,
-    proposals: list[Any],
+    records: Sequence[TiledProposalRecord],
     *,
     candidate: YoloInferenceProfileCandidate,
     height: int,
@@ -122,7 +95,7 @@ def compute_train_pq(
 ) -> float:
     bundle = compute_train_instance_metric_bundle(
         gt_instance_map,
-        proposals,
+        records,
         candidate=candidate,
         height=height,
         width=width,
@@ -131,23 +104,14 @@ def compute_train_pq(
     return float(bundle["pq"])
 
 
-def materialize_score_merged_prediction_set(
-    proposals: list[Any],
+def materialize_cross_tile_prediction_set_from_records(
+    records: Sequence[TiledProposalRecord],
     *,
-    candidate: YoloInferenceProfileCandidate,
     height: int,
     width: int,
     path: Path,
 ) -> Path:
-    """Write score-merged canonical prediction set (coordinator / evaluate_instances path)."""
-    merged_predictions = slice_merge_proposals(proposals, candidate=candidate)
-    pred_set = build_yolo_prediction_set_from_sahi_predictions(
-        merged_predictions,
-        height=height,
-        width=width,
-        mask_threshold=candidate.mask_threshold,
+    """Write canonical prediction set after cross-tile association."""
+    return materialize_cross_tile_prediction_set(
+        records, height=height, width=width, path=path
     )
-    merged_set = merge_yolo_proposals_by_score(pred_set)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    save_prediction_set(path, merged_set)
-    return path

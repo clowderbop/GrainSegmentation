@@ -200,7 +200,7 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
         sample_id="train",
     )
     loaded, meta = load_tiled_proposals(cache_dir, expected=expected)
-    assert meta["schema_version"] == 2
+    assert meta["schema_version"] == 3
     assert len(loaded) == 2
     for record in loaded:
         crop_h, crop_w = record["segmentation"]["size"]

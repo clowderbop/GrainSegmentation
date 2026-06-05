@@ -7,7 +7,7 @@ Research codebase comparing U-Net (semantic segmentation + instance extraction) 
 ### Instance outputs & geometry
 
 **Instance prediction set**:
-The canonical per-sample model output: a list of non-overlapping grain instances, each with encoded mask geometry. YOLO entries also carry **score** (winning proposal after **score merge** at predict time); U-Net entries do not. On-disk layout: ADR 0001.
+The canonical per-sample model output: a list of non-overlapping grain instances, each with encoded mask geometry. YOLO entries also carry **score** (winning proposal after **cross-tile association** on whole sections, or **score merge** on patch predict); U-Net entries do not. On-disk layout: ADR 0001.
 _Avoid:_ handover file, predictions JSON, NPZ (format names, not the concept)
 
 **Instance label map**:
@@ -22,7 +22,7 @@ The single object category for instance segmentation in this project. All entrie
 _Avoid:_ category, label id (ambiguous with instance ids)
 
 **Merged instance view**:
-A single raster where each pixel has one instance id (or background). For YOLO, rasterizing the canonical **instance prediction set** after **score merge**; for U-Net, rasterizing **extracted grains**. Vector ground truth is painted into this form for metrics and for **profile selection ground truth cache**. Built transiently when a label map is required.
+A single raster where each pixel has one instance id (or background). For YOLO, rasterizing the canonical **instance prediction set** after **cross-tile association** (whole) or **score merge** (patch); for U-Net, rasterizing **extracted grains**. Vector ground truth is painted into this form for metrics and for **profile selection ground truth cache**. Built transiently when a label map is required.
 _Avoid:_ pred map, prediction raster (too vague)
 
 **Prediction overlay**:
@@ -40,19 +40,23 @@ A detected grain mask and **score** from the YOLO instance segmentation model be
 _Avoid:_ detection, prediction row (too generic), canonical YOLO output (use **instance prediction set**)
 
 **Tiled detector proposals**:
-The full set of **detector proposals** from every **sliding window** slice, in whole-image coordinates, before slice-merge into non-overlapping grains. Overlapping; not the canonical **instance prediction set**. **Profile selection** may persist and reuse them when only merge knobs change (ADR 0005–0007).
+The full set of **detector proposals** from every **sliding window** slice, in whole-image coordinates, with source tile bounds metadata, before **cross-tile association** into non-overlapping grains. Overlapping; not the canonical **instance prediction set**. **Profile selection** persists and reuses them per detector key (ADR 0005–0007).
 _Avoid:_ pre-merge cache, SAHI pickle (implementation paths)
+
+**Cross-tile association**:
+YOLO whole-section post-processing that fuses **tiled detector proposals** into non-overlapping grains using mask overlap, tile-centrality, and border-partial rules (not SAHI slice-merge or score-paint). Shared by **profile selection scoring** and held-out whole predict. Produces the canonical **instance prediction set** on whole sections.
+_Avoid:_ slice-merge, score merge (whole-section path), NMS (legacy)
 
 **Score**:
 A detector-assigned value for how likely a YOLO **detector proposal** is a true grain instance. Required on YOLO grains in the canonical **instance prediction set**; must be absent on U-Net **extracted grains**.
 _Avoid:_ confidence, probability (unless explicitly calibrated)
 
 **Score merge**:
-YOLO post-processing that resolves overlapping **detector proposals** into non-overlapping grains by painting higher-**score** masks over lower-score ones. Runs at predict time for both whole and patch **sample unit**; each surviving grain keeps the **score** of its winning proposal. Produces the canonical **instance prediction set**.
-_Avoid:_ NMS, confidence merge (legacy name), instance map from masks (implementation)
+YOLO patch post-processing that resolves overlapping **detector proposals** into non-overlapping grains by painting higher-**score** masks over lower-score ones. Runs at patch predict time only; each surviving grain keeps the **score** of its winning proposal.
+_Avoid:_ NMS, confidence merge (legacy name), using score merge for whole-section output (use **cross-tile association**)
 
 **Slice-boundary duplicate**:
-Two or more YOLO grains in the canonical **instance prediction set** that correspond to one ground-truth grain, often when adjacent **sliding window** tiles each detect part of the same grain and **score merge** cannot fuse them (no overlapping masks). Treated as a known limitation of the current YOLO system, not a separate post-processing stage.
+Two or more YOLO grains in the canonical **instance prediction set** that correspond to one ground-truth grain, often when adjacent **sliding window** tiles each detect part of the same grain and neither **cross-tile association** nor legacy score-paint could fuse them. Target failure mode for **cross-tile association** improvements.
 _Avoid:_ split grain, tile artifact (informal only)
 
 **Mask threshold**:
@@ -144,7 +148,7 @@ The primary ordering of **input configuration**s on held-out test: whole-section
 _Avoid:_ AJI as the headline, test mAP, patch mean metrics as headline (training-crop or detector-native, not deployment unit)
 
 **Model test comparison**:
-Comparing **producer** families (YOLO vs U-Net) on the same input variant and test mosaic: same headline as **variant test ranking** — **whole-section PQ** and **PQ diagnostics** under the shared **test inference recipe**; both use non-overlapping grain lists (U-Net via extraction after semantic prediction, YOLO via **score merge** at predict time).
+Comparing **producer** families (YOLO vs U-Net) on the same input variant and test mosaic: same headline as **variant test ranking** — **whole-section PQ** and **PQ diagnostics** under the shared **test inference recipe**; both use non-overlapping grain lists (U-Net via extraction after semantic prediction, YOLO via **cross-tile association** on whole sections).
 _Avoid:_ comparing models on AP/mAP, YOLO-only metrics as cross-model evidence
 
 **Supporting test metrics**:
@@ -178,8 +182,8 @@ One grid candidate’s audit record: profile knob values, per-variant and mean t
 _Avoid:_ treating a stale row as valid after labels or weights change
 
 **Profile selection scoring**:
-Computing train **whole-section PQ** and **PQ diagnostics** for one grid point from **tiled detector proposals** through slice-merge and **score merge** to a **merged instance view**, without persisting a full **instance prediction set** for that point. Held-out test still uses full predict and canonical prediction artifacts (ADR 0005).
-_Avoid:_ skipping **score merge**, requiring prediction-set JSON equality on every grid point
+Computing train **whole-section PQ** and **PQ diagnostics** for one grid point from **tiled detector proposals** through **cross-tile association** to a **merged instance view**, without persisting a full **instance prediction set** for that point. Held-out whole predict uses the same postprocess module (ADR 0005).
+_Avoid:_ SAHI slice-merge + score-paint on the production path, requiring prediction-set JSON equality on every grid point
 
 **Profile selection ground truth cache**:
 The canonical train ground-truth **merged instance view** for a tune run, built once from vector labels and reused by all **profile selection scoring** tasks across input variants (label geometry is shared; channels are not). ADR 0005.

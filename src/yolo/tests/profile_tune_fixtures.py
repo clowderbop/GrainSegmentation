@@ -65,7 +65,7 @@ def candidate_for_variant(variant: str) -> YoloInferenceProfileCandidate:
     return by_variant[variant]
 
 
-def collect_v2_records_with_mocked_slices(
+def collect_tiled_records_with_mocked_slices(
     section_height: int,
     section_width: int,
     slice_yields: Sequence[tuple[int, int, int, int, list[Any]]],
@@ -100,25 +100,29 @@ def collect_v2_records_with_mocked_slices(
         )
 
 
-def v2_records_from_overlapping_masks(height: int, width: int) -> list:
-    """v2 records for overlapping proposals (slice-merge mask union path)."""
+def tiled_proposal_records_from_overlapping_masks(height: int, width: int) -> list:
+    """v3 tiled proposal records with overlapping masks on one tile."""
     from yolo.tiled_proposal_cache import tiled_proposal_record_from_binary_mask
 
     return [
         tiled_proposal_record_from_binary_mask(
             np.asarray(pred.mask.bool_mask, dtype=bool),
             score=float(pred.score.value),
+            tile_y0=0,
+            tile_x0=0,
+            tile_y1=height,
+            tile_x1=width,
         )
         for pred in overlapping_sahi_proposals(height, width)
     ]
 
 
-def v2_records_from_disjoint_via_collector(
+def tiled_proposal_records_disjoint_via_collector(
     height: int, width: int, *, mask_threshold: float
 ) -> list:
-    """Build v2 records via collector encode on tile-local fixture masks."""
+    """Build v3 records via collector encode on tile-local fixture masks."""
     preds = disjoint_tile_local_proposals(height, width)
-    return collect_v2_records_with_mocked_slices(
+    return collect_tiled_records_with_mocked_slices(
         height,
         width,
         [(0, 0, width, height, preds)],

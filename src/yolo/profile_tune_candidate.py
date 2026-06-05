@@ -47,7 +47,6 @@ from yolo.tiled_proposal_cache import (
     detector_cache_expected_record,
     load_tiled_proposals,
     proposal_cache_dir,
-    sahi_predictions_from_tiled_proposal_records,
 )
 
 
@@ -199,23 +198,18 @@ def score_variant_train_metrics_from_cache(
         sample_id="train",
     )
     t_load = time.perf_counter()
-    records, meta = load_tiled_proposals(cache_dir, expected=expected_proposals)
-    cache_height = int(meta["height"])
-    cache_width = int(meta["width"])
-    proposals = sahi_predictions_from_tiled_proposal_records(
-        records, height=cache_height, width=cache_width
-    )
+    records, _meta = load_tiled_proposals(cache_dir, expected=expected_proposals)
     load_proposals_s = time.perf_counter() - t_load
     height, width = int(gt_map.shape[0]), int(gt_map.shape[1])
     gt_n = count_instances(gt_map)
     _log(
         f"{prefix}  load proposals {load_proposals_s:.1f}s "
-        f"({len(proposals)} from v{TILED_PROPOSAL_CACHE_SCHEMA_VERSION} cache), "
+        f"({len(records)} from v{TILED_PROPOSAL_CACHE_SCHEMA_VERSION} cache), "
         f"GT {height}×{width} ({gt_n} instances)"
     )
     bundle = compute_train_instance_metric_bundle(
         gt_map,
-        proposals,
+        records,
         candidate=candidate,
         height=height,
         width=width,

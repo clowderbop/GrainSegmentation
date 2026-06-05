@@ -1,7 +1,7 @@
 """Cross-tile instance association for tiled YOLO detector proposals.
 
-Fixture-slice implementation: all-pairs association on full-section masks.
-Spatial indexing and cluster-local fusion crops are deferred to production wiring.
+All-pairs association on full-section masks with fixed IoS/centrality thresholds.
+Spatial indexing and cluster-local fusion crops may be added later for scale.
 """
 
 from __future__ import annotations
@@ -30,8 +30,7 @@ _MIN_CENTRALITY_GAP_FOR_BORDER_MERGE = 0.12
 class TiledAssociationProposal:
     """One detector proposal with its source tile bounds in whole-image coordinates.
 
-    Slice-local input type: wraps ``TiledProposalRecord`` fields plus tile bounds.
-    Production wiring should unify with the v2 cache record rather than duplicating.
+    Association input built from ``TiledProposalRecord`` (schema v3 tile bounds).
     """
 
     score: float
@@ -45,15 +44,17 @@ class TiledAssociationProposal:
     tile_x1: int
 
     @classmethod
-    def from_record(
-        cls,
-        record: TiledProposalRecord,
-        *,
-        tile_y0: int,
-        tile_x0: int,
-        tile_y1: int,
-        tile_x1: int,
-    ) -> TiledAssociationProposal:
+    def from_record(cls, record: TiledProposalRecord) -> TiledAssociationProposal:
+        try:
+            tile_y0 = int(record["tile_y0"])
+            tile_x0 = int(record["tile_x0"])
+            tile_y1 = int(record["tile_y1"])
+            tile_x1 = int(record["tile_x1"])
+        except KeyError as exc:
+            raise ValueError(
+                "Tiled proposal record missing source tile bounds metadata; "
+                "re-run detector jobs to produce schema_version 3 caches"
+            ) from exc
         return cls(
             score=record["score"],
             bbox=record["bbox"],

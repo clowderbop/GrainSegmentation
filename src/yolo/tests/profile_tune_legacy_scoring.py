@@ -12,7 +12,7 @@ from common.prediction_set import (
     prediction_set_to_merged_instance_view,
 )
 from common.test_inference import YoloInferenceProfileCandidate
-from yolo.profile_tune_scoring import slice_merge_proposals
+from yolo.sliced_detection import merge_sliced_object_predictions
 
 
 def legacy_merged_instance_view_from_proposals(
@@ -23,7 +23,12 @@ def legacy_merged_instance_view_from_proposals(
     width: int,
 ) -> np.ndarray:
     """Slice-merge → prediction-set encode → score merge → rasterize (parity reference)."""
-    merged_predictions = slice_merge_proposals(proposals, candidate=candidate)
+    merged_predictions = merge_sliced_object_predictions(
+        proposals,
+        postprocess_type=candidate.postprocess_type,
+        match_metric=candidate.match_metric,
+        match_threshold=candidate.match_threshold,
+    )
     pred_set = build_yolo_prediction_set_from_sahi_predictions(
         merged_predictions,
         height=height,

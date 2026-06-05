@@ -777,16 +777,14 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
     from yolo.tests.profile_tune_fixtures import (
         tiny_train_gt_map,
-        v2_records_from_disjoint_via_collector,
+        tiled_proposal_records_disjoint_via_collector,
     )
     from yolo.tests.test_profile_tune_scoring import _train_pq_via_evaluate_instances
     from yolo.tiled_proposal_cache import (
         detector_cache_expected_record,
-        load_tiled_proposals,
         proposal_cache_dir,
         proposal_cache_record,
         recipe_whole_window_fingerprint,
-        sahi_predictions_from_tiled_proposal_records,
         weights_sha256,
         write_tiled_proposals,
     )
@@ -806,12 +804,12 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     weights.write_bytes(b"weights")
     work_root = tmp_path / ".cache"
     recipe = load_test_inference_recipe()
-    v2_records = v2_records_from_disjoint_via_collector(
+    tiled_records = tiled_proposal_records_disjoint_via_collector(
         height, width, mask_threshold=candidate.mask_threshold
     )
     write_tiled_proposals(
         proposal_cache_dir(work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold),
-        v2_records,
+        tiled_records,
         proposal_cache_record(
             variant="PPL",
             weights_sha256=weights_sha256(weights),
@@ -845,22 +843,6 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     image_path.write_bytes(b"\x00")
     pred_path = tmp_path / "prediction_sets" / "train.json"
 
-    cache_dir = proposal_cache_dir(
-        work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
-    )
-    expected = detector_cache_expected_record(
-        variant="PPL",
-        weights_path=weights,
-        conf=candidate.conf,
-        mask_threshold=candidate.mask_threshold,
-        sample_id="train",
-        recipe=recipe,
-    )
-    records, meta = load_tiled_proposals(cache_dir, expected=expected)
-    proposals = sahi_predictions_from_tiled_proposal_records(
-        records, height=int(meta["height"]), width=int(meta["width"])
-    )
-
     fast_bundle = score_variant_train_metrics_from_cache(
         variant="PPL",
         candidate=candidate,
@@ -871,7 +853,7 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     )
     canonical_pq = _train_pq_via_evaluate_instances(
         gt_map,
-        proposals,
+        tiled_records,
         candidate=candidate,
         height=height,
         width=width,

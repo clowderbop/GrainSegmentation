@@ -63,7 +63,7 @@ uv sync
 
 export YOLO_DISABLE_TQDM=True
 
-echo "1/4 yolo.predict (whole-image SAHI → instance prediction sets)..."
+echo "1/4 yolo.predict (whole-image sliding window + cross-tile association)..."
 uv run python -u -m yolo.predict \
     --unit whole \
     --weights "$WEIGHTS" \
@@ -73,9 +73,6 @@ uv run python -u -m yolo.predict \
     --imgsz "$SLICE_H" \
     --conf "${CONF:-$YOLO_CONF}" \
     --mask-threshold "${MASK_THRESHOLD:-$YOLO_MASK_THRESHOLD}" \
-    --postprocess-type "${POSTPROCESS_TYPE:-$YOLO_POSTPROCESS_TYPE}" \
-    --match-metric "${MATCH_METRIC:-$YOLO_MATCH_METRIC}" \
-    --match-threshold "${MATCH_THRESHOLD:-$YOLO_MATCH_THRESHOLD}" \
     --slice-height "$SLICE_H" \
     --slice-width "$SLICE_W" \
     --overlap-height-ratio "$OV_H" \

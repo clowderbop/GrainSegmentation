@@ -21,7 +21,7 @@ from common.prediction_set import (
 )
 from common.test_inference import TestInferenceRecipe, sahi_overlap_ratio
 
-TILED_PROPOSAL_CACHE_SCHEMA_VERSION = 2
+TILED_PROPOSAL_CACHE_SCHEMA_VERSION = 3
 
 _PROPOSALS_NAME = "proposals.pkl"
 _META_NAME = "proposals.meta.json"
@@ -33,6 +33,10 @@ class TiledProposalRecord(TypedDict):
     segmentation: dict[str, Any]
     offset_y: int
     offset_x: int
+    tile_y0: int
+    tile_x0: int
+    tile_y1: int
+    tile_x1: int
 
 
 def weights_sha256(weights_path: Path) -> str:
@@ -94,7 +98,12 @@ def validate_tiled_proposal_cache(
     if schema_version == 1:
         raise ValueError(
             "Unsupported tiled proposal cache schema_version 1; "
-            "re-run detector jobs to produce schema_version 2"
+            "re-run detector jobs to produce schema_version 3"
+        )
+    if schema_version == 2:
+        raise ValueError(
+            "Unsupported tiled proposal cache schema_version 2 (missing tile bounds); "
+            "re-run detector jobs to produce schema_version 3"
         )
     if schema_version != TILED_PROPOSAL_CACHE_SCHEMA_VERSION:
         raise ValueError(
@@ -151,13 +160,23 @@ def _tile_binary_mask(pred: Any, *, mask_threshold: float) -> np.ndarray | None:
 
 
 def tiled_proposal_record_from_tile_mask(
-    mask: np.ndarray, *, score: float, offset_y: int, offset_x: int
+    mask: np.ndarray,
+    *,
+    score: float,
+    offset_y: int,
+    offset_x: int,
+    tile_y0: int,
+    tile_x0: int,
+    tile_y1: int,
+    tile_x1: int,
 ) -> TiledProposalRecord:
-    """Build one v2 record from a tight tile-local crop and whole-image offsets."""
+    """Build one v3 record from a tile-local crop, offsets, and source tile bounds."""
     binary = np.asarray(mask, dtype=bool)
     if not binary.any():
         raise ValueError("Cannot encode empty mask as tiled proposal record")
     crop_h, crop_w = binary.shape
+    if tile_y1 <= tile_y0 or tile_x1 <= tile_x0:
+        raise ValueError("tile bounds must have positive height and width")
     return TiledProposalRecord(
         score=float(score),
         bbox=[
@@ -169,16 +188,38 @@ def tiled_proposal_record_from_tile_mask(
         segmentation=binary_mask_to_segmentation(binary, height=crop_h, width=crop_w),
         offset_y=int(offset_y),
         offset_x=int(offset_x),
+        tile_y0=int(tile_y0),
+        tile_x0=int(tile_x0),
+        tile_y1=int(tile_y1),
+        tile_x1=int(tile_x1),
     )
 
 
 def tiled_proposal_record_from_binary_mask(
-    mask: np.ndarray, *, score: float
+    mask: np.ndarray,
+    *,
+    score: float,
+    tile_y0: int | None = None,
+    tile_x0: int | None = None,
+    tile_y1: int | None = None,
+    tile_x1: int | None = None,
 ) -> TiledProposalRecord:
-    """Build v2 record by tight-cropping any boolean plane (test/convenience helper)."""
+    """Build v3 record by tight-cropping; default tile bounds match the crop extent."""
     crop, offset_y, offset_x = _tight_crop_mask(mask)
+    crop_h, crop_w = crop.shape
+    resolved_y0 = offset_y if tile_y0 is None else tile_y0
+    resolved_x0 = offset_x if tile_x0 is None else tile_x0
+    resolved_y1 = offset_y + crop_h if tile_y1 is None else tile_y1
+    resolved_x1 = offset_x + crop_w if tile_x1 is None else tile_x1
     return tiled_proposal_record_from_tile_mask(
-        crop, score=score, offset_y=offset_y, offset_x=offset_x
+        crop,
+        score=score,
+        offset_y=offset_y,
+        offset_x=offset_x,
+        tile_y0=resolved_y0,
+        tile_x0=resolved_x0,
+        tile_y1=resolved_y1,
+        tile_x1=resolved_x1,
     )
 
 
@@ -187,11 +228,13 @@ def tiled_proposal_records_from_tile_predictions(
     *,
     tlx: int,
     tly: int,
+    tile_y1: int,
+    tile_x1: int,
     slice_height: int,
     slice_width: int,
     mask_threshold: float,
 ) -> list[TiledProposalRecord]:
-    """Encode tile-local SAHI predictions to v2 records (crop-local RLE + offsets)."""
+    """Encode tile-local SAHI predictions to v3 records (crop-local RLE + tile bounds)."""
     records: list[TiledProposalRecord] = []
     for pred in predictions:
         if not pred:
@@ -212,6 +255,10 @@ def tiled_proposal_records_from_tile_predictions(
                 score=_sahi_object_score(pred),
                 offset_y=tly + crop_y0,
                 offset_x=tlx + crop_x0,
+                tile_y0=tly,
+                tile_x0=tlx,
+                tile_y1=tile_y1,
+                tile_x1=tile_x1,
             )
         )
     return records
@@ -227,7 +274,7 @@ def collect_tiled_detector_proposals(
     overlap_width_ratio: float,
     mask_threshold: float,
 ) -> list[TiledProposalRecord]:
-    """Profile-tune detector path: slice loop + tile-local v2 encode (ADR 0005)."""
+    """Profile-tune detector path: slice loop + tile-local v3 encode (ADR 0005)."""
     from yolo.sliced_detection import iter_whole_slice_predictions
 
     records: list[TiledProposalRecord] = []
@@ -250,6 +297,8 @@ def collect_tiled_detector_proposals(
                 predictions,
                 tlx=tlx,
                 tly=tly,
+                tile_y1=bry,
+                tile_x1=brx,
                 slice_height=tile_h,
                 slice_width=tile_w,
                 mask_threshold=mask_threshold,
@@ -278,8 +327,17 @@ def validate_tiled_proposal_records(
             segmentation = raw["segmentation"]
             offset_y = int(raw["offset_y"])
             offset_x = int(raw["offset_x"])
+            tile_y0 = int(raw["tile_y0"])
+            tile_x0 = int(raw["tile_x0"])
+            tile_y1 = int(raw["tile_y1"])
+            tile_x1 = int(raw["tile_x1"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(f"Proposal record {index} missing required fields") from exc
+            raise ValueError(
+                f"Proposal record {index} missing required fields "
+                "(schema_version 3 requires source tile bounds)"
+            ) from exc
+        if tile_y1 <= tile_y0 or tile_x1 <= tile_x0:
+            raise ValueError(f"Proposal record {index} has invalid tile bounds")
         if not isinstance(bbox, list) or len(bbox) != 4:
             raise ValueError(f"Proposal record {index} bbox must be [x0, y0, x1, y1]")
         crop_h, crop_w = segmentation["size"]
@@ -299,6 +357,10 @@ def validate_tiled_proposal_records(
                 segmentation=segmentation,
                 offset_y=offset_y,
                 offset_x=offset_x,
+                tile_y0=tile_y0,
+                tile_x0=tile_x0,
+                tile_y1=tile_y1,
+                tile_x1=tile_x1,
             )
         )
     return validated
@@ -369,7 +431,7 @@ def sahi_predictions_from_tiled_proposal_records(
     height: int,
     width: int,
 ) -> list[Any]:
-    """Adapt v2 records to SAHI-shaped predictions with crop-local masks (ADR 0005)."""
+    """Adapt v3 records to SAHI-shaped predictions with crop-local masks (ADR 0005)."""
     from sahi.annotation import Mask as SahiMask
 
     section_shape = (int(height), int(width))

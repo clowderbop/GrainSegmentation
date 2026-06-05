@@ -24,14 +24,12 @@ def _proposal(
         score=score,
         offset_y=offset_y,
         offset_x=offset_x,
-    )
-    return TiledAssociationProposal.from_record(
-        record,
         tile_y0=tile_y0,
         tile_x0=tile_x0,
         tile_y1=tile_y1,
         tile_x1=tile_x1,
     )
+    return TiledAssociationProposal.from_record(record)
 
 
 def slice_boundary_duplicate_pair(

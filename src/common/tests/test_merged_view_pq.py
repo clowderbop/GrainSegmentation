@@ -208,6 +208,23 @@ def test_compute_merged_view_pq_matches_bundle_on_duplicate_predictions() -> Non
     assert result["near_miss_pred_count"] >= 0
 
 
+def test_compute_merged_view_pq_matches_bundle_on_gapped_label_ids() -> None:
+    """Non-contiguous instance ids must not skew PQ, counts, or IoU50 P/R/F1 vs bundle."""
+    gt = blank_map(48, 48)
+    pred = blank_map(48, 48)
+    paint_box(gt, 10, 4, 4, 18, 18)
+    paint_box(gt, 50, 28, 28, 44, 44)
+    paint_box(pred, 10, 4, 4, 18, 18)
+    paint_box(pred, 50, 28, 28, 44, 44)
+    paint_box(pred, 200, 4, 28, 18, 44)
+
+    _assert_pq_matches_bundle(gt, pred)
+    result = compute_merged_view_pq(gt, pred)
+    assert result["tp"] == 2
+    assert result["fp"] == 1
+    assert result["fn"] == 0
+
+
 def test_compute_merged_view_pq_matches_bundle_on_split_merge_overlap() -> None:
     gt = blank_map(48, 48)
     pred = blank_map(48, 48)

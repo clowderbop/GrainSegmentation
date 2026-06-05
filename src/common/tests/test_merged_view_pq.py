@@ -11,8 +11,11 @@ from common.metrics import PQ_MATCH_IOU, greedy_one_to_one_matches
 from common.merged_view_pq import (
     MERGED_VIEW_PQ_COUNT_KEYS,
     MERGED_VIEW_PQ_RESULT_KEYS,
+    coerce_merged_view_pq_value,
     compute_merged_view_pq,
+    flatten_merged_view_pq_results_by_suffix,
     format_merged_view_pq_value,
+    merged_view_pq_result_from_prefixed_columns,
 )
 from common.tests.merged_view_fixtures import (
     BUNDLE_FIXTURE_BUILDERS,
@@ -206,6 +209,95 @@ def test_near_miss_counts_when_best_iou_is_positive_but_not_a_match() -> None:
     assert result["near_miss_pred_count"] == 1
     assert result["near_miss_gt_count"] == 1
     assert 0.0 < result["avg_best_iou_unmatched_pred"] < PQ_MATCH_IOU
+
+
+def test_zero_overlap_prediction_does_not_count_as_near_miss() -> None:
+    gt = blank_map(32, 32)
+    pred = blank_map(32, 32)
+    paint_box(gt, 1, 4, 4, 14, 14)
+    paint_box(pred, 1, 4, 4, 14, 14)
+    paint_box(pred, 2, 20, 20, 28, 28)
+
+    result = compute_merged_view_pq(gt, pred)
+
+    assert result["tp"] == 1
+    assert result["fp"] == 1
+    assert result["num_cooccurring_pairs"] == 1
+    assert result["num_pairs_above_pq_threshold"] == 1
+    assert result["near_miss_pred_count"] == 0
+    assert result["near_miss_gt_count"] == 0
+    assert result["avg_best_iou_unmatched_pred"] == 0.0
+
+
+def test_matched_prediction_forensics_exclude_matched_instances() -> None:
+    gt = blank_map(32, 32)
+    pred = blank_map(32, 32)
+    paint_box(gt, 1, 4, 4, 14, 14)
+    paint_box(gt, 2, 18, 18, 28, 28)
+    paint_box(pred, 1, 4, 4, 14, 14)
+    paint_box(pred, 2, 18, 18, 28, 28)
+
+    result = compute_merged_view_pq(gt, pred)
+
+    assert result["tp"] == 2
+    assert result["fp"] == 0
+    assert result["fn"] == 0
+    assert result["num_cooccurring_pairs"] == 2
+    assert result["num_pairs_above_pq_threshold"] == 2
+    assert result["near_miss_pred_count"] == 0
+    assert result["near_miss_gt_count"] == 0
+    assert result["avg_best_iou_unmatched_pred"] == 0.0
+    assert result["min_matched_iou"] == result["max_matched_iou"] == pytest.approx(1.0)
+
+
+def test_pairs_above_pq_threshold_uses_strict_iou_gt_half() -> None:
+    gt = blank_map(16, 16)
+    pred = blank_map(16, 16)
+    paint_box(gt, 1, 0, 0, 10, 10)
+    paint_box(pred, 1, 5, 0, 10, 10)
+
+    result = compute_merged_view_pq(gt, pred)
+
+    assert result["tp"] == 0
+    assert result["num_cooccurring_pairs"] == 1
+    assert result["num_pairs_above_pq_threshold"] == 0
+    assert result["near_miss_pred_count"] == 1
+    assert result["near_miss_gt_count"] == 1
+
+
+def test_coerce_and_format_forensics_fields() -> None:
+    forensics_counts = (
+        "num_cooccurring_pairs",
+        "num_pairs_above_pq_threshold",
+        "near_miss_pred_count",
+        "near_miss_gt_count",
+    )
+    for key in forensics_counts:
+        assert coerce_merged_view_pq_value(key, 3.4) == 3
+        assert format_merged_view_pq_value(key, 3) == "3"
+
+    assert coerce_merged_view_pq_value("avg_best_iou_unmatched_pred", "0.41") == pytest.approx(
+        0.41
+    )
+    assert format_merged_view_pq_value("avg_best_iou_unmatched_pred", 0.41) == "0.41000000"
+
+
+def test_flatten_and_parse_forensics_fields_roundtrip() -> None:
+    gt = blank_map(32, 32)
+    pred = blank_map(32, 32)
+    paint_box(gt, 1, 8, 8, 24, 24)
+    paint_box(pred, 1, 8, 8, 18, 18)
+
+    result = compute_merged_view_pq(gt, pred)
+    flat = flatten_merged_view_pq_results_by_suffix({"variant_a": result})
+    parsed = merged_view_pq_result_from_prefixed_columns(flat, suffix="variant_a")
+
+    assert parsed == result
+    assert parsed["num_cooccurring_pairs"] == 1
+    assert parsed["near_miss_pred_count"] == 1
+    assert parsed["avg_best_iou_unmatched_pred"] == pytest.approx(
+        result["avg_best_iou_unmatched_pred"]
+    )
 
 
 def test_instance_metric_bundle_keys_unchanged() -> None:

@@ -20,10 +20,23 @@ from common.metrics import (
     precision_recall_f1_from_iou_matrix,
 )
 
+INSTANCE_METRIC_BUNDLE_INT_KEYS: frozenset[str] = frozenset(
+    {
+        "tp",
+        "fp",
+        "fn",
+        "gt_instance_count",
+        "pred_instance_count",
+    }
+)
+
 INSTANCE_METRIC_BUNDLE_KEYS: tuple[str, ...] = (
     "pq",
     "dq",
     "sq",
+    "tp",
+    "fp",
+    "fn",
     "precision_iou50",
     "recall_iou50",
     "f1_iou50",
@@ -44,6 +57,9 @@ class InstanceMetricBundle(TypedDict):
     pq: float
     dq: float
     sq: float
+    tp: int
+    fp: int
+    fn: int
     precision_iou50: float
     recall_iou50: float
     f1_iou50: float
@@ -129,6 +145,7 @@ def compute_instance_metric_bundle(
 
     if nt == 0 and np_ == 0:
         pq, dq, sq = 1.0, 1.0, 1.0
+        tp, fp, fn = 0, 0, 0
         prf = _thresholded_prf_bundle(np.zeros((0, 0)), 0, 0)
         aji_plus = 1.0
     else:
@@ -151,6 +168,9 @@ def compute_instance_metric_bundle(
         "pq": float(pq),
         "dq": float(dq),
         "sq": float(sq),
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
         **prf,
         "gt_instance_count": gt_instance_count,
         "pred_instance_count": pred_instance_count,

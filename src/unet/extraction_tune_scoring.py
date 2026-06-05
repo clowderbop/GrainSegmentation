@@ -9,11 +9,12 @@ from typing import Any, Sequence
 import numpy as np
 
 from common.merged_view_pq import (
-    MERGED_VIEW_PQ_COUNT_KEYS,
     MERGED_VIEW_PQ_RESULT_KEYS,
     MergedViewPqResult,
+    coerce_merged_view_pq_value,
     compute_merged_view_pq,
     format_merged_view_pq_value,
+    mean_merged_view_pq_results,
 )
 from unet.instance_masks import semantic_to_instance_label_map_watershed
 
@@ -68,20 +69,6 @@ def merged_view_pq_for_sample(
     return compute_merged_view_pq(true_instances, pred_instances)
 
 
-def _mean_merged_view_pq(
-    results: Sequence[MergedViewPqResult],
-) -> dict[str, float | int]:
-    if not results:
-        raise ValueError("results must not be empty")
-    out: dict[str, float | int] = {}
-    for key in MERGED_VIEW_PQ_RESULT_KEYS:
-        if key in MERGED_VIEW_PQ_COUNT_KEYS:
-            out[key] = int(round(float(np.mean([r[key] for r in results]))))
-        else:
-            out[key] = float(np.mean([float(r[key]) for r in results]))
-    return out
-
-
 def mean_train_pq_for_watershed_params(
     true_instances_per_sample: Sequence[np.ndarray],
     pred_semantic_per_sample: Sequence[np.ndarray],
@@ -94,7 +81,7 @@ def mean_train_pq_for_watershed_params(
         true_instances_per_sample, pred_semantic_per_sample, strict=True
     ):
         per_sample.append(dict(merged_view_pq_for_sample(true_instances, pred_semantic, params)))
-    return _mean_merged_view_pq(per_sample), per_sample
+    return mean_merged_view_pq_results(per_sample), per_sample
 
 
 def watershed_per_sample_columns(
@@ -161,12 +148,6 @@ def select_best_watershed_tune_row(rows: list[dict[str, Any]]) -> dict[str, Any]
     return max(rows, key=lambda row: float(row["mean_pq"]))
 
 
-def _json_scalar_for_pq_field(key: str, value: float | int) -> float | int:
-    if key in MERGED_VIEW_PQ_COUNT_KEYS:
-        return int(value)
-    return float(value)
-
-
 def watershed_best_json_summary(
     best_row: dict[str, Any],
     best_params: WatershedParamSet,
@@ -187,9 +168,13 @@ def watershed_best_json_summary(
         "sample_ids": list(sample_ids),
     }
     for key in MERGED_VIEW_PQ_RESULT_KEYS:
-        summary[f"best_mean_{key}"] = _json_scalar_for_pq_field(key, float(best_row[f"mean_{key}"]))
+        summary[f"best_mean_{key}"] = coerce_merged_view_pq_value(
+            key, float(best_row[f"mean_{key}"])
+        )
         summary[f"best_per_sample_{key}"] = {
-            sid: _json_scalar_for_pq_field(key, float(best_row[f"{key}__{sanitize_sample_id(sid)}"]))
+            sid: coerce_merged_view_pq_value(
+                key, float(best_row[f"{key}__{sanitize_sample_id(sid)}"])
+            )
             for sid in sample_ids
         }
     return summary

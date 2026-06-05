@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 
 from common.evaluate_instances import evaluate_instance_samples
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.instance_metric_bundle import (
+    INSTANCE_METRIC_BUNDLE_INT_KEYS,
+    INSTANCE_METRIC_BUNDLE_KEYS,
+)
 from common.reporting import (
     INSTANCE_METRIC_KEYS,
     patch_aggregate_extra_keys,
@@ -33,6 +36,9 @@ def test_whole_section_sample_row_includes_full_metric_bundle(tmp_path) -> None:
     assert row["mF1_iou50_95"] == pytest.approx(1.0)
     assert row["pred_gt_instance_ratio"] == pytest.approx(1.0)
     assert row["aji_plus"] == pytest.approx(1.0)
+    assert row["tp"] == 1
+    assert row["fp"] == 0
+    assert row["fn"] == 0
     assert row["gt_instance_count"] == 1
     assert row["pred_instance_count"] == 1
     assert row["empty_gt"] is False
@@ -79,8 +85,14 @@ def test_patch_report_includes_full_bundle_aggregates(tmp_path) -> None:
     assert extras["n_patches"] == 2
     assert extras["n_empty_gt"] == 0
     for key in INSTANCE_METRIC_BUNDLE_KEYS:
-        assert extras[patch_aggregate_grainy_key(key)] == pytest.approx(1.0)
-        assert extras[patch_aggregate_weighted_key(key)] == pytest.approx(1.0)
+        if key in ("fp", "fn"):
+            expected = 0.0
+        elif key in INSTANCE_METRIC_BUNDLE_INT_KEYS:
+            expected = 1.0
+        else:
+            expected = 1.0
+        assert extras[patch_aggregate_grainy_key(key)] == pytest.approx(expected)
+        assert extras[patch_aggregate_weighted_key(key)] == pytest.approx(expected)
     assert extras[patch_aggregate_grainy_key("dq")] == pytest.approx(1.0)
     assert extras[patch_aggregate_grainy_key("mF1_iou50_95")] == pytest.approx(1.0)
     assert extras[patch_aggregate_weighted_key("pred_gt_instance_ratio")] == pytest.approx(

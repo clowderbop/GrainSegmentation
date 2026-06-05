@@ -7,7 +7,10 @@ from typing import Any
 
 import numpy as np
 
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.instance_metric_bundle import (
+    INSTANCE_METRIC_BUNDLE_INT_KEYS,
+    INSTANCE_METRIC_BUNDLE_KEYS,
+)
 
 INSTANCE_METRIC_KEYS: tuple[str, ...] = INSTANCE_METRIC_BUNDLE_KEYS
 
@@ -49,7 +52,7 @@ def build_sample_row(
     }
     for key in INSTANCE_METRIC_KEYS:
         value = metrics[key]
-        row[key] = int(value) if key.endswith("_count") else float(value)
+        row[key] = int(value) if key in INSTANCE_METRIC_BUNDLE_INT_KEYS else float(value)
     if extra:
         for k, v in extra.items():
             if k in row:

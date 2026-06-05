@@ -9,7 +9,10 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.instance_metric_bundle import (
+    INSTANCE_METRIC_BUNDLE_INT_KEYS,
+    INSTANCE_METRIC_BUNDLE_KEYS,
+)
 from common.merged_view_pq import MERGED_VIEW_PQ_COUNT_KEYS, MERGED_VIEW_PQ_RESULT_KEYS
 from common.test_inference import (
     YoloInferenceProfileCandidate,
@@ -17,8 +20,14 @@ from common.test_inference import (
 )
 
 
-def constant_metric_bundle(value: float) -> dict[str, float]:
-    return {key: float(value) for key in INSTANCE_METRIC_BUNDLE_KEYS}
+def constant_metric_bundle(value: float) -> dict[str, float | int]:
+    out: dict[str, float | int] = {}
+    for key in INSTANCE_METRIC_BUNDLE_KEYS:
+        if key in INSTANCE_METRIC_BUNDLE_INT_KEYS:
+            out[key] = int(round(value))
+        else:
+            out[key] = float(value)
+    return out
 
 
 def constant_merged_view_pq_result(value: float) -> dict[str, float | int]:

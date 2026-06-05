@@ -116,6 +116,9 @@ _BUNDLE_PQ_FIELDS = (
     "pq",
     "dq",
     "sq",
+    "tp",
+    "fp",
+    "fn",
     "precision_iou50",
     "recall_iou50",
     "f1_iou50",
@@ -130,12 +133,7 @@ def _assert_pq_matches_bundle(gt: np.ndarray, pred: np.ndarray) -> None:
     result = compute_merged_view_pq(gt, pred)
     assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
     for key in _BUNDLE_PQ_FIELDS:
-        assert result[key] == pytest.approx(bundle[key]), key
-    tp = result["tp"]
-    fp = result["fp"]
-    fn = result["fn"]
-    assert tp + fp == result["pred_instance_count"]
-    assert tp + fn == result["gt_instance_count"]
+        assert result[key] == bundle[key], key
     assert result["pq"] == pytest.approx(result["dq"] * result["sq"])
 
 
@@ -265,6 +263,9 @@ def test_instance_metric_bundle_keys_unchanged() -> None:
         "pq",
         "dq",
         "sq",
+        "tp",
+        "fp",
+        "fn",
         "precision_iou50",
         "recall_iou50",
         "f1_iou50",

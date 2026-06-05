@@ -8,7 +8,10 @@ from typing import Any, Sequence
 
 import numpy as np
 
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.instance_metric_bundle import (
+    INSTANCE_METRIC_BUNDLE_INT_KEYS,
+    INSTANCE_METRIC_BUNDLE_KEYS,
+)
 
 TRAIN_WHOLE_SECTION_SAMPLE_IDS: tuple[str, ...] = ("train",)
 
@@ -100,7 +103,7 @@ def mean_bundle_across_variants(
     bundles = list(per_variant_bundles.values())
     out: dict[str, float] = {}
     for key in INSTANCE_METRIC_BUNDLE_KEYS:
-        if key.endswith("_count"):
+        if key in INSTANCE_METRIC_BUNDLE_INT_KEYS:
             out[key] = int(round(float(np.mean([b[key] for b in bundles]))))
         else:
             out[key] = float(np.mean([float(b[key]) for b in bundles]))

@@ -28,6 +28,9 @@ def test_perfect_single_grain_match_has_unit_pq() -> None:
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
+    assert bundle["tp"] == 1
+    assert bundle["fp"] == 0
+    assert bundle["fn"] == 0
     assert bundle["pq"] == pytest.approx(1.0)
     assert bundle["dq"] == pytest.approx(1.0)
     assert bundle["sq"] == pytest.approx(1.0)
@@ -45,6 +48,9 @@ def test_both_empty_maps_score_perfectly() -> None:
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
+    assert bundle["tp"] == 0
+    assert bundle["fp"] == 0
+    assert bundle["fn"] == 0
     assert bundle["pq"] == pytest.approx(1.0)
     assert bundle["dq"] == pytest.approx(1.0)
     assert bundle["sq"] == pytest.approx(1.0)

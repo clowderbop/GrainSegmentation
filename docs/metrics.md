@@ -7,6 +7,7 @@ Definitions for evaluation numbers produced by SLURM eval jobs and **post-eval r
 - **PQ (Panoptic Quality):** Headline whole-section instance metric for individual grain instance recovery. Uses one-to-one matches with the standard strict IoU > 0.5 convention and combines detection quality with matched-mask quality.
 - **DQ (Detection Quality):** PQ component measuring one-to-one instance detection quality.
 - **SQ (Segmentation Quality):** PQ component measuring mean IoU of matched instances.
+- **TP / FP / FN (IoU50 match counts):** Greedy one-to-one match counts at strict IoU > 0.5 — true positives, false positives (unmatched predictions), and false negatives (unmatched ground-truth grains). Same convention as **PQ** and tune-path **`MergedViewPqResult`**.
 - **Precision / Recall / F1 at IoU thresholds:** Object-level matching diagnostics at IoU50 and IoU75 using strict IoU > threshold matching.
 - **Mean precision / recall / F1 over IoU 0.50–0.95:** `mP_iou50_95`, `mR_iou50_95`, and `mF1_iou50_95` average precision, recall, and F1 at IoU thresholds 0.50, 0.55, …, 0.95 with the same strict-threshold matching rule.
 - **Instance counts:** Predicted instance count, ground-truth instance count, and predicted/ground-truth instance ratio.
@@ -19,12 +20,13 @@ Required companion fields whenever PQ is reported on held-out **eval** or in **p
 | Field group | Contents |
 |-------------|----------|
 | PQ decomposition | **DQ**, **SQ** |
+| IoU50 match counts | **TP**, **FP**, **FN** (greedy one-to-one at strict IoU > 0.5) |
 | Thresholded matching | Precision, recall, and F1 at IoU50 and IoU75 |
 | Stricter mask summary | Mean precision, recall, and F1 over IoU 0.50–0.95 (`mP_iou50_95`, `mR_iou50_95`, `mF1_iou50_95`) |
 | Instance counts | Predicted count, ground-truth count, predicted/ground-truth ratio |
 | Overlap diagnostic | **AJI+** (supporting; not headline) |
 
-Together with **PQ**, these form the **instance metric bundle** for each evaluated sample unit on the eval path.
+Together with **PQ**, these form the **instance metric bundle** for each evaluated sample unit on the eval path (`INSTANCE_METRIC_BUNDLE_KEYS` in [`src/common/instance_metric_bundle.py`](../src/common/instance_metric_bundle.py)).
 
 ### Tune-path vs eval-path diagnostics
 
@@ -33,7 +35,7 @@ Train-side grid scoring (YOLO **profile selection**, U-Net watershed tune, CC-vs
 | Path | Entry point | Persisted record | Selection uses |
 |------|-------------|------------------|----------------|
 | **Tune** | `compute_merged_view_pq` | **`MergedViewPqResult`** — PQ/DQ/SQ, IoU50 P/R/F1, TP/FP/FN, instance counts, matched-IoU spread, overlap forensics | `pq` / `mean_pq` only |
-| **Eval** | `compute_instance_metric_bundle` | Full **instance metric bundle** — above plus IoU75 P/R/F1, mP/mR/mF1 0.5:0.95, **AJI+** | Headline **PQ**; full **PQ diagnostics** in reports |
+| **Eval** | `compute_instance_metric_bundle` | Full **instance metric bundle** — shared IoU50 PQ/DQ/SQ, **TP**/**FP**/**FN**, IoU50 P/R/F1, plus IoU75 P/R/F1, mP/mR/mF1 0.5:0.95, **AJI+** | Headline **PQ**; full **PQ diagnostics** in reports |
 
 Implementation: [`src/common/merged_view_pq.py`](../src/common/merged_view_pq.py), [`src/common/instance_metric_bundle.py`](../src/common/instance_metric_bundle.py). YOLO profile selection calls `compute_train_pq` → `compute_merged_view_pq` after cross-tile association.
 

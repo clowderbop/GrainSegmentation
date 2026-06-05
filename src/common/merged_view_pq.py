@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from collections.abc import Mapping, Sequence
+from typing import Any, TypedDict
 
 import numpy as np
 
@@ -25,9 +26,14 @@ __all__ = [
     "MERGED_VIEW_PQ_RESULT_KEYS",
     "MergedViewPqResult",
     "OverlapStats",
+    "coerce_merged_view_pq_value",
     "compute_merged_view_pq",
+    "flatten_merged_view_pq_results_by_suffix",
     "format_merged_view_pq_value",
     "instance_overlap_stats",
+    "mean_merged_view_pq_results",
+    "merged_view_pq_column_name",
+    "merged_view_pq_result_from_prefixed_columns",
 ]
 
 MERGED_VIEW_PQ_RESULT_KEYS: tuple[str, ...] = (
@@ -73,6 +79,54 @@ def format_merged_view_pq_value(key: str, value: float | int) -> str:
     if key in MERGED_VIEW_PQ_COUNT_KEYS:
         return str(int(value))
     return f"{float(value):.8f}"
+
+
+def coerce_merged_view_pq_value(key: str, value: Any) -> float | int:
+    if key in MERGED_VIEW_PQ_COUNT_KEYS:
+        return int(round(float(value)))
+    return float(value)
+
+
+def merged_view_pq_column_name(key: str, suffix: str) -> str:
+    return f"{key}__{suffix}"
+
+
+def mean_merged_view_pq_results(
+    results: Sequence[MergedViewPqResult | Mapping[str, float | int]],
+) -> dict[str, float | int]:
+    if not results:
+        raise ValueError("results must not be empty")
+    out: dict[str, float | int] = {}
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        if key in MERGED_VIEW_PQ_COUNT_KEYS:
+            out[key] = int(round(float(np.mean([r[key] for r in results]))))
+        else:
+            out[key] = float(np.mean([float(r[key]) for r in results]))
+    return out
+
+
+def merged_view_pq_result_from_prefixed_columns(
+    row: Mapping[str, Any],
+    *,
+    suffix: str,
+) -> MergedViewPqResult:
+    result: dict[str, float | int] = {}
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        column = merged_view_pq_column_name(key, suffix)
+        if column not in row:
+            raise KeyError(f"Missing {column!r} in row")
+        result[key] = coerce_merged_view_pq_value(key, row[column])
+    return result  # type: ignore[return-value]
+
+
+def flatten_merged_view_pq_results_by_suffix(
+    per_suffix_results: Mapping[str, MergedViewPqResult],
+) -> dict[str, float | int]:
+    flat: dict[str, float | int] = {}
+    for suffix, result in per_suffix_results.items():
+        for key in MERGED_VIEW_PQ_RESULT_KEYS:
+            flat[merged_view_pq_column_name(key, suffix)] = result[key]
+    return flat
 
 
 class MergedViewPqResult(TypedDict):

@@ -24,6 +24,9 @@ def _bundle_row(
     pred_gt_instance_ratio: float = 1.0,
 ) -> dict:
     row = {key: pq for key in INSTANCE_METRIC_BUNDLE_KEYS if key not in (
+        "tp",
+        "fp",
+        "fn",
         "gt_instance_count",
         "pred_instance_count",
         "pred_gt_instance_ratio",
@@ -33,9 +36,18 @@ def _bundle_row(
     row["sq"] = pq
     row["f1_iou50"] = f1_iou50 if f1_iou50 is not None else pq
     row["aji_plus"] = aji_plus
+    pred_instance_count = gt_instance_count
     row["gt_instance_count"] = gt_instance_count
-    row["pred_instance_count"] = gt_instance_count
+    row["pred_instance_count"] = pred_instance_count
     row["pred_gt_instance_ratio"] = pred_gt_instance_ratio
+    if empty_gt or gt_instance_count == 0:
+        row["tp"] = 0
+        row["fp"] = pred_instance_count
+        row["fn"] = gt_instance_count
+    else:
+        row["tp"] = gt_instance_count
+        row["fp"] = pred_instance_count - gt_instance_count
+        row["fn"] = 0
     row["empty_gt"] = empty_gt
     return row
 

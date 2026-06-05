@@ -14,9 +14,12 @@ import yaml
 
 from common import yaml_validate as yv
 from common.merged_view_pq import (
-    MERGED_VIEW_PQ_COUNT_KEYS,
     MERGED_VIEW_PQ_RESULT_KEYS,
     MergedViewPqResult,
+    flatten_merged_view_pq_results_by_suffix,
+    mean_merged_view_pq_results,
+    merged_view_pq_column_name,
+    merged_view_pq_result_from_prefixed_columns,
 )
 from common.instance_eval_report import extract_metric_from_report
 from common.test_inference import (
@@ -142,7 +145,7 @@ PROFILE_SELECTION_OBJECTIVE = "pq"
 
 
 def variant_metric_column(metric_key: str, variant: str) -> str:
-    return f"{metric_key}__{variant}"
+    return merged_view_pq_column_name(metric_key, variant)
 
 
 def extract_mean_pq_from_report(report: dict[str, Any]) -> float:
@@ -161,59 +164,15 @@ def select_best_candidate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return max(rows, key=lambda row: float(row["mean_pq"]))
 
 
-def _coerce_merged_view_pq_value(key: str, value: Any) -> float | int:
-    if key in MERGED_VIEW_PQ_COUNT_KEYS:
-        return int(round(float(value)))
-    return float(value)
-
-
-def merged_view_pq_result_from_grid_row(
-    row: dict[str, Any],
-    *,
-    variant: str,
-) -> MergedViewPqResult:
-    result: dict[str, float | int] = {}
-    for key in MERGED_VIEW_PQ_RESULT_KEYS:
-        column = variant_metric_column(key, variant)
-        if column not in row:
-            raise KeyError(f"Missing {column!r} in grid row")
-        result[key] = _coerce_merged_view_pq_value(key, row[column])
-    return result  # type: ignore[return-value]
-
-
 def per_variant_pq_results_from_grid_row(
     row: dict[str, Any],
     *,
     variant_names: tuple[str, ...],
 ) -> dict[str, MergedViewPqResult]:
     return {
-        variant: merged_view_pq_result_from_grid_row(row, variant=variant)
+        variant: merged_view_pq_result_from_prefixed_columns(row, suffix=variant)
         for variant in variant_names
     }
-
-
-def mean_merged_view_pq_across_variants(
-    results: list[MergedViewPqResult],
-) -> dict[str, float | int]:
-    if not results:
-        raise ValueError("results must not be empty")
-    out: dict[str, float | int] = {}
-    for key in MERGED_VIEW_PQ_RESULT_KEYS:
-        if key in MERGED_VIEW_PQ_COUNT_KEYS:
-            out[key] = int(round(float(np.mean([r[key] for r in results]))))
-        else:
-            out[key] = float(np.mean([float(r[key]) for r in results]))
-    return out
-
-
-def flatten_per_variant_pq_results(
-    per_variant_results: dict[str, MergedViewPqResult],
-) -> dict[str, float | int]:
-    flat: dict[str, float | int] = {}
-    for variant, result in per_variant_results.items():
-        for key in MERGED_VIEW_PQ_RESULT_KEYS:
-            flat[variant_metric_column(key, variant)] = result[key]
-    return flat
 
 
 def grid_results_fieldnames(variant_names: tuple[str, ...]) -> list[str]:
@@ -236,14 +195,12 @@ def grid_result_row_from_candidate_scoring(
     candidate: YoloInferenceProfileCandidate,
     per_variant_pq_results: dict[str, MergedViewPqResult],
 ) -> dict[str, Any]:
-    mean_pq_fields = mean_merged_view_pq_across_variants(
-        list(per_variant_pq_results.values())
-    )
+    mean_pq_fields = mean_merged_view_pq_results(list(per_variant_pq_results.values()))
     row: dict[str, Any] = {
         "candidate_id": candidate.candidate_id(),
         **candidate.to_dict(),
         **{f"mean_{key}": value for key, value in mean_pq_fields.items()},
-        **flatten_per_variant_pq_results(per_variant_pq_results),
+        **flatten_merged_view_pq_results_by_suffix(per_variant_pq_results),
     }
     return row
 

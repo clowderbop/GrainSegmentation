@@ -26,16 +26,18 @@ from common.test_inference import (
     profile_tune_fixed_mask_threshold,
 )
 from common.variants import repo_root
-from common.merged_view_pq import MergedViewPqResult
+from common.merged_view_pq import (
+    MergedViewPqResult,
+    flatten_merged_view_pq_results_by_suffix,
+    mean_merged_view_pq_results,
+)
 from yolo.inference_profile_tune import (
     PROFILE_SELECTION_OBJECTIVE,
     TuneGridSpec,
     candidate_at_grid_index,
-    flatten_per_variant_pq_results,
     iter_grid_candidates,
     load_profile_selection_row,
     load_tune_grid,
-    mean_merged_view_pq_across_variants,
     mean_pq_across_variants,
     profile_selection_row_path,
     tune_grid_fingerprint,
@@ -227,15 +229,13 @@ def build_profile_selection_row(
         variant: float(result[PROFILE_SELECTION_OBJECTIVE])
         for variant, result in per_variant_pq_results.items()
     }
-    mean_pq_fields = mean_merged_view_pq_across_variants(
-        list(per_variant_pq_results.values())
-    )
+    mean_pq_fields = mean_merged_view_pq_results(list(per_variant_pq_results.values()))
     row: dict[str, Any] = {
         "candidate_id": candidate.candidate_id(),
         **candidate.to_dict(),
         **{f"mean_{key}": value for key, value in mean_pq_fields.items()},
         "fingerprint": fingerprint,
-        **flatten_per_variant_pq_results(per_variant_pq_results),
+        **flatten_merged_view_pq_results_by_suffix(per_variant_pq_results),
     }
     assert row["mean_pq"] == mean_pq_across_variants(per_variant_pq)
     return row

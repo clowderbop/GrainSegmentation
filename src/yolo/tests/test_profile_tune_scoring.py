@@ -95,11 +95,9 @@ _PROFILE_SELECTION_PQ_PARITY_KEYS = (
 
 
 def _assert_pq_result_matches_bundle_subset(
-    result: dict[str, float | int], bundle: dict[str, float]
+    result: dict[str, float | int], bundle: dict[str, float | int]
 ) -> None:
     for key in _PROFILE_SELECTION_PQ_PARITY_KEYS:
-        if key in ("tp", "fp", "fn"):
-            continue
         assert result[key] == pytest.approx(bundle[key], rel=0.0, abs=1e-9), key
 
 

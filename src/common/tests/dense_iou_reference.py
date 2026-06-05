@@ -172,6 +172,7 @@ def compute_instance_metric_bundle_dense_reference(
 
     if nt == 0 and np_ == 0:
         pq, dq, sq = 1.0, 1.0, 1.0
+        tp, fp, fn = 0, 0, 0
         prf = _thresholded_prf_bundle_dense(np.zeros((0, 0)), 0, 0)
         aji_plus = 1.0
     else:
@@ -192,6 +193,9 @@ def compute_instance_metric_bundle_dense_reference(
         "pq": float(pq),
         "dq": float(dq),
         "sq": float(sq),
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
         **prf,
         "gt_instance_count": gt_instance_count,
         "pred_instance_count": pred_instance_count,

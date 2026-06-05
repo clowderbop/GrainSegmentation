@@ -8,7 +8,7 @@ Held-out reporting needs one headline objective and one fixed inference setup so
 
 ## Decision
 
-**Variant test ranking** and **model test comparison** use whole-section sliding-window inference, scored by **whole-section PQ** on the **merged instance view**. Reports also include DQ, SQ, precision/recall/F1 at IoU50 and IoU75, mean F1 over IoU50:95, predicted and ground-truth instance counts, predicted/ground-truth ratio, and AJI+. AJI+ remains a supporting microscopy overlap diagnostic, not the headline.
+**Variant test ranking** and **model test comparison** use whole-section sliding-window inference, scored by **whole-section PQ** on the **merged instance view**. Reports also include DQ, SQ, IoU50 TP/FP/FN match counts, precision/recall/F1 at IoU50 and IoU75, mean F1 over IoU50:95, predicted and ground-truth instance counts, predicted/ground-truth ratio, and AJI+. AJI+ remains a supporting microscopy overlap diagnostic, not the headline.
 
 The same **instance metric bundle** is computed for every held-out **eval** instance evaluation whenever artifacts support it. Train-side grid scoring (YOLO **profile selection**, U-Net watershed tune, CC-vs-watershed pick) persists **`MergedViewPqResult`** from `compute_merged_view_pq` instead — same **PQ** definition, without IoU75, mP/mR/mF1 0.5:0.95, or AJI+ on the tune hot path ([tune-path vs eval-path](../metrics.md#tune-path-vs-eval-path-diagnostics)). Patch evaluations compute patch-level bundle fields as supporting evidence only. Patch metric aggregates exclude empty-GT patches from means, count them separately, and report both unweighted and grain-weighted means over grain-bearing patches.
 

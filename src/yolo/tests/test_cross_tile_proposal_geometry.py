@@ -39,9 +39,10 @@ def test_enrich_and_pair_compare_avoid_full_section_mask_allocation() -> None:
 
     with patch.object(cta.np, "zeros", spy_zeros):
         enriched = cta._enrich_proposals(proposals)
-        for left_index in range(len(enriched)):
-            for right_index in range(left_index + 1, len(enriched)):
-                cta._should_associate(enriched[left_index], enriched[right_index])
+        for left_index, right_index in cta.generate_association_candidate_pairs(
+            enriched
+        ):
+            cta._should_associate(enriched[left_index], enriched[right_index])
 
     assert violations == []
     for entry in enriched:
@@ -57,6 +58,17 @@ def test_associate_tiled_proposals_on_huge_section_smoke() -> None:
     result = associate_tiled_proposals(proposals, height=10_000, width=52_000)
     assert_yolo_grains_non_overlapping(result)
     assert _foreground_mask_count(result) == 1
+
+
+def test_cluster_fusion_avoids_full_section_mask_allocation() -> None:
+    """Cluster fusion must not allocate section-sized boolean planes per member."""
+    proposals, _, _ = slice_boundary_duplicate_pair()
+    violations, spy_zeros = _zeros_allocation_violations()
+
+    with patch.object(cta.np, "zeros", spy_zeros):
+        associate_tiled_proposals(proposals, height=10_000, width=52_000)
+
+    assert violations == []
 
 
 def test_crop_local_ios_matches_full_section_ios_on_fixture_pair() -> None:

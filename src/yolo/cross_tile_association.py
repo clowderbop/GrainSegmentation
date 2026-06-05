@@ -1,7 +1,7 @@
 """Cross-tile instance association for tiled YOLO detector proposals.
 
-Crop-local proposal geometry with all-pairs association and fixed IoS/centrality
-thresholds. Spatial indexing and cluster-local fusion crops may be added later.
+Crop-local proposal geometry, spatially bounded candidate-pair generation,
+cluster-local fusion, and fixed IoS/centrality thresholds.
 """
 
 from __future__ import annotations
@@ -13,8 +13,9 @@ from typing import Any
 import numpy as np
 
 from common.prediction_set import (
+    GRAIN_CLASS_ID,
     PredictionSet,
-    build_yolo_prediction_set_from_instance_map,
+    binary_mask_to_segmentation,
     segmentation_to_binary_mask,
 )
 from yolo.tiled_proposal_cache import TiledProposalRecord
@@ -78,6 +79,24 @@ class _EnrichedProposal:
     centroid_x: float
     centrality: float
     touches_border: bool
+
+
+@dataclass(frozen=True)
+class _FusedCluster:
+    local_mask: np.ndarray
+    offset_y: int
+    offset_x: int
+    score: float
+
+    @property
+    def bbox_yxyx(self) -> tuple[int, int, int, int]:
+        crop_h, crop_w = self.local_mask.shape
+        return (
+            self.offset_y,
+            self.offset_x,
+            self.offset_y + crop_h,
+            self.offset_x + crop_w,
+        )
 
 
 def mask_ios_crop_local(
@@ -176,6 +195,72 @@ def _touches_tile_border(
     )
 
 
+def _bbox_yxyx(proposal: TiledAssociationProposal) -> tuple[float, float, float, float]:
+    x0, y0, x1, y1 = proposal.bbox
+    return float(y0), float(x0), float(y1), float(x1)
+
+
+def _tile_bounds_yxyx(proposal: TiledAssociationProposal) -> tuple[int, int, int, int]:
+    return proposal.tile_y0, proposal.tile_x0, proposal.tile_y1, proposal.tile_x1
+
+
+def _rects_intersect(
+    left: tuple[float, ...], right: tuple[float, ...]
+) -> bool:
+    ly0, lx0, ly1, lx1 = left
+    ry0, rx0, ry1, rx1 = right
+    return ly0 < ry1 and ry0 < ly1 and lx0 < rx1 and rx0 < lx1
+
+
+def _tiles_overlap(
+    left: tuple[int, int, int, int], right: tuple[int, int, int, int]
+) -> bool:
+    return _rects_intersect(
+        (float(left[0]), float(left[1]), float(left[2]), float(left[3])),
+        (float(right[0]), float(right[1]), float(right[2]), float(right[3])),
+    )
+
+
+def _expanded_bbox(entry: _EnrichedProposal) -> tuple[float, float, float, float]:
+    y0, x0, y1, x1 = _bbox_yxyx(entry.proposal)
+    if not entry.touches_border:
+        return y0, x0, y1, x1
+    prop = entry.proposal
+    tile_h = max(prop.tile_y1 - prop.tile_y0, 1)
+    tile_w = max(prop.tile_x1 - prop.tile_x0, 1)
+    margin_y = max(1, int(round(tile_h * _BORDER_MARGIN_FRAC)))
+    margin_x = max(1, int(round(tile_w * _BORDER_MARGIN_FRAC)))
+    return (
+        y0 - margin_y,
+        x0 - margin_x,
+        y1 + margin_y,
+        x1 + margin_x,
+    )
+
+
+def generate_association_candidate_pairs(
+    enriched: Sequence[_EnrichedProposal],
+) -> list[tuple[int, int]]:
+    """Return deduplicated proposal index pairs that may be slice-boundary duplicates."""
+    count = len(enriched)
+    if count < 2:
+        return []
+    bboxes = [_expanded_bbox(entry) for entry in enriched]
+    tiles = [_tile_bounds_yxyx(entry.proposal) for entry in enriched]
+    pairs: list[tuple[int, int]] = []
+    for left_index in range(count):
+        for right_index in range(left_index + 1, count):
+            same_tile = tiles[left_index] == tiles[right_index]
+            if not same_tile and not _tiles_overlap(
+                tiles[left_index], tiles[right_index]
+            ):
+                continue
+            if not _rects_intersect(bboxes[left_index], bboxes[right_index]):
+                continue
+            pairs.append((left_index, right_index))
+    return pairs
+
+
 def _crop_local_ios(left: _EnrichedProposal, right: _EnrichedProposal) -> float:
     left_prop = left.proposal
     right_prop = right.proposal
@@ -189,20 +274,6 @@ def _crop_local_ios(left: _EnrichedProposal, right: _EnrichedProposal) -> float:
         left_area=left.area,
         right_area=right.area,
     )
-
-
-def _place_local_mask_in_section(
-    local_mask: np.ndarray,
-    *,
-    offset_y: int,
-    offset_x: int,
-    height: int,
-    width: int,
-) -> np.ndarray:
-    plane = np.zeros((height, width), dtype=bool)
-    crop_h, crop_w = local_mask.shape
-    plane[offset_y : offset_y + crop_h, offset_x : offset_x + crop_w] = local_mask
-    return plane
 
 
 def _should_associate(left: _EnrichedProposal, right: _EnrichedProposal) -> bool:
@@ -242,44 +313,119 @@ def _cluster_members(parent: list[int], count: int) -> dict[int, list[int]]:
     return clusters
 
 
-def _fuse_cluster(
+def _cluster_crop_bounds(
     members: Sequence[_EnrichedProposal],
-    *,
-    height: int,
-    width: int,
-) -> tuple[np.ndarray, float]:
-    fused = np.zeros((height, width), dtype=bool)
+) -> tuple[int, int, int, int]:
+    y0 = min(member.proposal.offset_y for member in members)
+    x0 = min(member.proposal.offset_x for member in members)
+    y1 = max(
+        member.proposal.offset_y + member.local_mask.shape[0] for member in members
+    )
+    x1 = max(
+        member.proposal.offset_x + member.local_mask.shape[1] for member in members
+    )
+    return y0, x0, y1, x1
+
+
+def _fuse_cluster(members: Sequence[_EnrichedProposal]) -> _FusedCluster:
+    y0, x0, y1, x1 = _cluster_crop_bounds(members)
+    crop_h, crop_w = y1 - y0, x1 - x0
+    fused = np.zeros((crop_h, crop_w), dtype=bool)
     for member in members:
         prop = member.proposal
-        placed = _place_local_mask_in_section(
-            member.local_mask,
-            offset_y=prop.offset_y,
-            offset_x=prop.offset_x,
-            height=height,
-            width=width,
-        )
-        fused |= placed
+        local_y = prop.offset_y - y0
+        local_x = prop.offset_x - x0
+        mask_h, mask_w = member.local_mask.shape
+        fused[local_y : local_y + mask_h, local_x : local_x + mask_w] |= member.local_mask
     score = max(member.proposal.score for member in members)
-    return fused, score
+    return _FusedCluster(local_mask=fused, offset_y=y0, offset_x=x0, score=score)
 
 
-def _rasterize_clusters_non_overlapping(
-    fused_clusters: list[tuple[np.ndarray, float]],
+def _bbox_intersects(
+    left: tuple[int, int, int, int], right: tuple[int, int, int, int]
+) -> bool:
+    return _rects_intersect(
+        (float(left[0]), float(left[1]), float(left[2]), float(left[3])),
+        (float(right[0]), float(right[1]), float(right[2]), float(right[3])),
+    )
+
+
+def _subtract_occluder_from_cluster(
+    target: _FusedCluster, occluder: _FusedCluster
+) -> np.ndarray:
+    """Clear ``target`` pixels covered by ``occluder`` inside their bbox intersection."""
+    if not _bbox_intersects(target.bbox_yxyx, occluder.bbox_yxyx):
+        return target.local_mask
+    ty0, tx0, ty1, tx1 = target.bbox_yxyx
+    oy0, ox0, oy1, ox1 = occluder.bbox_yxyx
+    iy0 = max(ty0, oy0)
+    ix0 = max(tx0, ox0)
+    iy1 = min(ty1, oy1)
+    ix1 = min(tx1, ox1)
+    clipped = target.local_mask.copy()
+    target_slice = clipped[iy0 - ty0 : iy1 - ty0, ix0 - tx0 : ix1 - tx0]
+    occluder_slice = occluder.local_mask[iy0 - oy0 : iy1 - oy0, ix0 - ox0 : ix1 - ox0]
+    target_slice[occluder_slice] = False
+    return clipped
+
+
+def _resolve_cluster_overlaps_by_score(
+    clusters: Sequence[_FusedCluster],
+) -> list[_FusedCluster]:
+    """Prefer higher-score grains where cluster bboxes overlap (score-paint semantics)."""
+    ordered = sorted(clusters, key=lambda cluster: cluster.score, reverse=True)
+    kept: list[_FusedCluster] = []
+    for cluster in ordered:
+        local_mask = cluster.local_mask
+        for occluder in kept:
+            local_mask = _subtract_occluder_from_cluster(
+                _FusedCluster(
+                    local_mask=local_mask,
+                    offset_y=cluster.offset_y,
+                    offset_x=cluster.offset_x,
+                    score=cluster.score,
+                ),
+                occluder,
+            )
+        if local_mask.any():
+            kept.append(
+                _FusedCluster(
+                    local_mask=local_mask,
+                    offset_y=cluster.offset_y,
+                    offset_x=cluster.offset_x,
+                    score=cluster.score,
+                )
+            )
+    return kept
+
+
+def _build_yolo_prediction_set_from_fused_clusters(
+    clusters: Sequence[_FusedCluster],
     *,
     height: int,
     width: int,
-) -> tuple[np.ndarray, list[float]]:
-    order = sorted(
-        range(len(fused_clusters)),
-        key=lambda index: fused_clusters[index][1],
+) -> PredictionSet:
+    detections: list[dict[str, Any]] = []
+    for cluster in _resolve_cluster_overlaps_by_score(clusters):
+        crop_h, crop_w = cluster.local_mask.shape
+        detections.append(
+            {
+                "segmentation": binary_mask_to_segmentation(
+                    cluster.local_mask, height=crop_h, width=crop_w
+                ),
+                "offset_y": cluster.offset_y,
+                "offset_x": cluster.offset_x,
+                "score": float(cluster.score),
+                "category_id": GRAIN_CLASS_ID,
+            }
+        )
+    return PredictionSet(
+        schema_version=1,
+        height=height,
+        width=width,
+        producer="yolo",
+        detections=tuple(detections),
     )
-    instance_map = np.zeros((height, width), dtype=np.int32)
-    scores: list[float] = []
-    for label, cluster_index in enumerate(order, start=1):
-        mask, score = fused_clusters[cluster_index]
-        instance_map[mask] = label
-        scores.append(score)
-    return instance_map, scores
 
 
 def associate_tiled_proposals(
@@ -303,23 +449,18 @@ def associate_tiled_proposals(
     enriched = _enrich_proposals(proposals)
 
     parent = list(range(len(enriched)))
-    for left_index in range(len(enriched)):
-        for right_index in range(left_index + 1, len(enriched)):
-            if _should_associate(enriched[left_index], enriched[right_index]):
-                _union_find_merge(parent, left_index, right_index)
+    for left_index, right_index in generate_association_candidate_pairs(enriched):
+        if _should_associate(enriched[left_index], enriched[right_index]):
+            _union_find_merge(parent, left_index, right_index)
 
     clusters = _cluster_members(parent, len(enriched))
-    fused_clusters: list[tuple[np.ndarray, float]] = []
+    fused_clusters: list[_FusedCluster] = []
     for member_indices in clusters.values():
         members = [enriched[index] for index in member_indices]
-        fused_clusters.append(_fuse_cluster(members, height=height, width=width))
+        fused_clusters.append(_fuse_cluster(members))
 
-    instance_map, scores = _rasterize_clusters_non_overlapping(
+    return _build_yolo_prediction_set_from_fused_clusters(
         fused_clusters, height=height, width=width
-    )
-    return build_yolo_prediction_set_from_instance_map(
-        instance_map,
-        score_for_label=lambda label_id: float(scores[label_id - 1]),
     )
 
 
@@ -356,5 +497,6 @@ def _enrich_proposals(
 __all__ = [
     "TiledAssociationProposal",
     "associate_tiled_proposals",
+    "generate_association_candidate_pairs",
     "mask_ios_crop_local",
 ]

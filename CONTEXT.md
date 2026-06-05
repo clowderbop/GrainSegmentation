@@ -8,6 +8,8 @@ Research codebase comparing U-Net (semantic segmentation + instance extraction) 
 
 **Instance prediction set**:
 The canonical per-sample model output: a list of non-overlapping grain instances, each with encoded mask geometry. YOLO entries also carry **score** (winning proposal after **cross-tile association** on whole sections, or **score merge** on patch predict); U-Net entries do not. On-disk layout: ADR 0001.
+
+Optional per-detection **`offset_y`** / **`offset_x`** (integers, both required when either is present): whole-image origin of a crop-local COCO RLE whose `segmentation.size` is the crop height and width, not the section size. **Cross-tile association** writes these so cluster fusion avoids full-section masks; patch **score merge** and Ultralytics encode still use full-section RLE with implicit `(0, 0)`. Decoders (`yolo_detection_mask_in_section`, **merged instance view**) place crop masks into section coordinates when offsets are set.
 _Avoid:_ handover file, predictions JSON, NPZ (format names, not the concept)
 
 **Instance label map**:

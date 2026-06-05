@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Literal, overload
 
 import numpy as np
@@ -52,6 +52,34 @@ def binary_mask_to_segmentation(mask: np.ndarray, *, height: int, width: int) ->
 def segmentation_to_binary_mask(segmentation: dict[str, Any]) -> np.ndarray:
     decoded = mask_utils.decode(segmentation)
     return decoded.astype(bool)
+
+
+def yolo_detection_mask_in_section(
+    det: Mapping[str, Any],
+    *,
+    height: int,
+    width: int,
+) -> np.ndarray:
+    """Decode one YOLO grain mask into whole-image coordinates.
+
+    Crop-local segmentations use optional ``offset_y`` / ``offset_x`` (association output).
+    """
+    mask = segmentation_to_binary_mask(det["segmentation"])
+    offset_y = int(det.get("offset_y", 0))
+    offset_x = int(det.get("offset_x", 0))
+    if offset_y == 0 and offset_x == 0 and mask.shape == (height, width):
+        return mask
+    crop_h, crop_w = mask.shape
+    if offset_y < 0 or offset_x < 0:
+        raise ValueError(f"Invalid mask offset: ({offset_y}, {offset_x})")
+    if offset_y + crop_h > height or offset_x + crop_w > width:
+        raise ValueError(
+            f"Mask crop {crop_h}x{crop_w} at ({offset_y}, {offset_x}) "
+            f"extends outside section {height}x{width}"
+        )
+    plane = np.zeros((height, width), dtype=bool)
+    plane[offset_y : offset_y + crop_h, offset_x : offset_x + crop_w] = mask
+    return plane
 
 
 def _append_yolo_detection(
@@ -110,13 +138,19 @@ def validate_prediction_set(payload: dict[str, Any]) -> PredictionSet:
         if producer == "yolo":
             if not has_score:
                 raise ValueError(f"yolo detections[{index}] requires score")
-            detections.append(
-                {
-                    "segmentation": seg,
-                    "score": float(raw["score"]),
-                    "category_id": GRAIN_CLASS_ID,
-                }
-            )
+            det: dict[str, Any] = {
+                "segmentation": seg,
+                "score": float(raw["score"]),
+                "category_id": GRAIN_CLASS_ID,
+            }
+            if "offset_y" in raw or "offset_x" in raw:
+                if "offset_y" not in raw or "offset_x" not in raw:
+                    raise ValueError(
+                        f"yolo detections[{index}] offset_y and offset_x must both be set"
+                    )
+                det["offset_y"] = int(raw["offset_y"])
+                det["offset_x"] = int(raw["offset_x"])
+            detections.append(det)
         else:
             if has_score:
                 raise ValueError(f"unet detections[{index}] must not include score")
@@ -284,9 +318,10 @@ def assert_yolo_grains_non_overlapping(prediction_set: PredictionSet) -> None:
         raise ValueError(
             f"non-overlap check requires producer 'yolo', got {prediction_set.producer!r}"
         )
-    occupied = np.zeros((prediction_set.height, prediction_set.width), dtype=bool)
+    height, width = prediction_set.height, prediction_set.width
+    occupied = np.zeros((height, width), dtype=bool)
     for det in prediction_set.detections:
-        mask = segmentation_to_binary_mask(det["segmentation"])
+        mask = yolo_detection_mask_in_section(det, height=height, width=width)
         if np.any(occupied & mask):
             raise ValueError("YOLO instance prediction set has overlapping grain masks")
         occupied |= mask
@@ -333,7 +368,9 @@ def yolo_prediction_set_to_coco_dt(
         )
     detections: list[dict[str, object]] = []
     for det in prediction_set.detections:
-        binary = segmentation_to_binary_mask(det["segmentation"])
+        binary = yolo_detection_mask_in_section(
+            det, height=height, width=width
+        )
         if not binary.any():
             continue
         ys, xs = np.where(binary)
@@ -358,7 +395,7 @@ def prediction_set_to_merged_instance_view(prediction_set: PredictionSet) -> np.
 
     out = np.zeros((height, width), dtype=np.int32)
     for index, det in enumerate(prediction_set.detections):
-        mask = segmentation_to_binary_mask(det["segmentation"])
+        mask = yolo_detection_mask_in_section(det, height=height, width=width)
         out[mask] = index + 1
     return out
 
@@ -382,5 +419,6 @@ __all__ = [
     "save_prediction_set",
     "segmentation_to_binary_mask",
     "validate_prediction_set",
+    "yolo_detection_mask_in_section",
     "yolo_prediction_set_to_coco_dt",
 ]

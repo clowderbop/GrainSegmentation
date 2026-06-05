@@ -7,7 +7,7 @@ import numpy as np
 from common.prediction_set import (
     assert_yolo_grains_non_overlapping,
     prediction_set_to_merged_instance_view,
-    segmentation_to_binary_mask,
+    yolo_detection_mask_in_section,
 )
 from common.tests.prediction_set_fixtures import assert_instance_map_partitions_equal
 from yolo.cross_tile_association import associate_tiled_proposals
@@ -21,10 +21,11 @@ from yolo.tests.cross_tile_association_fixtures import (
 
 
 def _foreground_mask_count(prediction_set) -> int:
+    height, width = prediction_set.height, prediction_set.width
     return sum(
         1
         for det in prediction_set.detections
-        if segmentation_to_binary_mask(det["segmentation"]).any()
+        if yolo_detection_mask_in_section(det, height=height, width=width).any()
     )
 
 

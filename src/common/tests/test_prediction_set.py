@@ -13,6 +13,7 @@ from common.instance_maps import yolo_detections_to_instance_map_by_score
 from common.prediction_set import (
     PredictionSet,
     assert_yolo_grains_non_overlapping,
+    binary_mask_to_segmentation,
     build_yolo_prediction_set_from_ultralytics,
     load_prediction_set,
     merge_yolo_proposals_by_score,
@@ -21,6 +22,7 @@ from common.prediction_set import (
     save_prediction_set,
     segmentation_to_binary_mask,
     validate_prediction_set,
+    yolo_detection_mask_in_section,
 )
 from common.tests.prediction_set_fixtures import (
     assert_instance_map_partitions_equal,
@@ -90,6 +92,115 @@ def test_validate_rejects_yolo_detection_without_score() -> None:
                 ],
             }
         )
+
+
+def test_yolo_detection_mask_in_section_fast_path_skips_section_plane() -> None:
+    """Full-section RLE at (0, 0) returns the decoded mask without allocating a section plane."""
+    height, width = 8, 8
+    mask = np.zeros((height, width), dtype=bool)
+    mask[2:5, 2:5] = True
+    det = {
+        "segmentation": binary_mask_to_segmentation(mask, height=height, width=width),
+        "score": 0.5,
+        "category_id": 0,
+    }
+    with patch("numpy.zeros", side_effect=AssertionError("must not allocate section plane")):
+        placed = yolo_detection_mask_in_section(det, height=height, width=width)
+
+    np.testing.assert_array_equal(placed, mask)
+
+
+def test_yolo_detection_mask_in_section_places_crop_at_offset() -> None:
+    crop = np.zeros((3, 4), dtype=bool)
+    crop[1, 2] = True
+    det = {
+        "segmentation": binary_mask_to_segmentation(crop, height=3, width=4),
+        "offset_y": 2,
+        "offset_x": 1,
+        "score": 0.6,
+        "category_id": 0,
+    }
+    placed = yolo_detection_mask_in_section(det, height=8, width=8)
+    expected = np.zeros((8, 8), dtype=bool)
+    expected[3, 3] = True
+    np.testing.assert_array_equal(placed, expected)
+
+
+def test_yolo_detection_mask_in_section_rejects_negative_offset() -> None:
+    det = {
+        "segmentation": binary_mask_to_segmentation(
+            np.ones((2, 2), dtype=bool), height=2, width=2
+        ),
+        "offset_y": -1,
+        "offset_x": 0,
+        "score": 0.5,
+        "category_id": 0,
+    }
+    with pytest.raises(ValueError, match="Invalid mask offset"):
+        yolo_detection_mask_in_section(det, height=8, width=8)
+
+
+def test_yolo_detection_mask_in_section_rejects_crop_outside_section() -> None:
+    det = {
+        "segmentation": binary_mask_to_segmentation(
+            np.ones((3, 3), dtype=bool), height=3, width=3
+        ),
+        "offset_y": 6,
+        "offset_x": 6,
+        "score": 0.5,
+        "category_id": 0,
+    }
+    with pytest.raises(ValueError, match="extends outside section"):
+        yolo_detection_mask_in_section(det, height=8, width=8)
+
+
+def test_validate_rejects_yolo_detection_with_only_one_offset_field() -> None:
+    with pytest.raises(ValueError, match="offset_y and offset_x must both be set"):
+        validate_prediction_set(
+            {
+                "schema_version": 1,
+                "height": 8,
+                "width": 8,
+                "producer": "yolo",
+                "detections": [
+                    {
+                        "segmentation": {"size": [2, 2], "counts": "0"},
+                        "offset_y": 1,
+                        "score": 0.5,
+                        "category_id": 0,
+                    }
+                ],
+            }
+        )
+
+
+def test_validate_yolo_offset_fields_save_load_roundtrip(tmp_path: Path) -> None:
+    crop = np.zeros((3, 4), dtype=bool)
+    crop[1, 2] = True
+    payload = {
+        "schema_version": 1,
+        "height": 8,
+        "width": 8,
+        "producer": "yolo",
+        "detections": [
+            {
+                "segmentation": binary_mask_to_segmentation(crop, height=3, width=4),
+                "offset_y": 2,
+                "offset_x": 1,
+                "score": 0.75,
+                "category_id": 0,
+            }
+        ],
+    }
+    path = prediction_set_path(tmp_path, "offset_crop")
+    save_prediction_set(path, payload)
+    loaded = load_prediction_set(path)
+    det = loaded.detections[0]
+    assert det["offset_y"] == 2
+    assert det["offset_x"] == 1
+    placed = yolo_detection_mask_in_section(det, height=8, width=8)
+    merged = prediction_set_to_merged_instance_view(loaded)
+    assert int(placed.sum()) == int((merged > 0).sum()) == 1
 
 
 def test_yolo_merged_instance_view_decodes_one_mask_at_a_time() -> None:

@@ -41,6 +41,17 @@ def test_run_watershed_tune_predict_script_writes_semantic_predictions() -> None
         assert f"#SBATCH --{key}={WATERSHED_TUNE_PREDICT_RESOURCES[key]}" in text
 
 
+def test_run_watershed_tune_predict_uses_test_inference_recipe_geometry() -> None:
+    script = run_watershed_tune_predict_script_path()
+    text = script.read_text(encoding="utf-8")
+    assert "test_inference.sh" in text
+    assert "load_test_inference_exports" in text
+    assert 'PATCH_SIZE="$UNET_WHOLE_PATCH_SIZE"' in text
+    assert 'STRIDE="$UNET_WHOLE_STRIDE"' in text
+    assert "PATCH_SIZE=1024" not in text
+    assert "STRIDE=512" not in text
+
+
 def test_shell_scripts_share_preds_root_with_python_helper() -> None:
     for script in (
         run_watershed_tune_predict_script_path(),

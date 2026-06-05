@@ -9,7 +9,7 @@ from common.instance_metric_bundle import (
     INSTANCE_METRIC_BUNDLE_KEYS,
     compute_instance_metric_bundle,
 )
-from common.tests.instance_map_fixtures import (
+from common.tests.merged_view_fixtures import (
     bundle_fixture_aji_plus_duplicates,
     bundle_fixture_both_empty,
     bundle_fixture_duplicate_preds,

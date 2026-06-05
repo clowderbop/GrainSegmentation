@@ -14,7 +14,7 @@ from common.merged_view_pq import (
     format_merged_view_pq_value,
     instance_overlap_stats,
 )
-from common.tests.instance_map_fixtures import blank_map, paint_box
+from common.tests.merged_view_fixtures import blank_map, paint_box
 
 
 def test_merged_view_pq_count_keys_are_subset_of_result_keys() -> None:

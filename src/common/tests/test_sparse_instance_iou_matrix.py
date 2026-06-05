@@ -14,7 +14,7 @@ from common.tests.dense_iou_reference import (
     compute_instance_metric_bundle_dense_reference,
     dense_build_instance_iou_matrix,
 )
-from common.tests.instance_map_fixtures import (
+from common.tests.merged_view_fixtures import (
     BUNDLE_FIXTURE_BUILDERS,
     blank_map,
     get_bundle_fixture,

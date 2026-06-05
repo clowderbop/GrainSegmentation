@@ -15,15 +15,18 @@ source "$SLURM_ROOT/utils/variants.sh"
 source "$SLURM_ROOT/utils/manifest_shell.sh"
 # shellcheck source=SLURM/utils/tensorflow.sh
 source "$SLURM_ROOT/utils/tensorflow.sh"
+# shellcheck source=SLURM/utils/test_inference.sh
+source "$SLURM_ROOT/utils/test_inference.sh"
 mkdir -p "$REPO_ROOT/logs"
 
 GRAINSEG_ROOT="$(grainseg_root)"
+load_test_inference_exports
 DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
 MODEL_PATH="$GRAINSEG_ROOT/models/unet/unet_finetuned_PPL+AllPPX.keras"
 PREDS_ROOT="$GRAINSEG_ROOT/runs/watershed_tune_preds"
 
-PATCH_SIZE=1024
-STRIDE=512
+PATCH_SIZE="$UNET_WHOLE_PATCH_SIZE"
+STRIDE="$UNET_WHOLE_STRIDE"
 BATCH_SIZE=1
 
 function usage {

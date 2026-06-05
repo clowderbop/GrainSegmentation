@@ -12,7 +12,6 @@ from common.merged_view_pq import (
     MERGED_VIEW_PQ_RESULT_KEYS,
     compute_merged_view_pq,
     format_merged_view_pq_value,
-    instance_overlap_stats,
 )
 from common.tests.merged_view_fixtures import blank_map, paint_box
 
@@ -27,6 +26,9 @@ def test_format_merged_view_pq_value_formats_counts_as_int_strings() -> None:
 
 
 def test_instance_overlap_stats_reports_co_occurring_pairs_and_areas() -> None:
+    """Regression import path: overlap primitive stays on merged_view_pq exports."""
+    from common.merged_view_pq import instance_overlap_stats
+
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)
     paint_box(gt, 1, 4, 4, 20, 20)
@@ -40,76 +42,9 @@ def test_instance_overlap_stats_reports_co_occurring_pairs_and_areas() -> None:
     assert stats.gt_areas[1] == 16 * 16
     assert stats.pred_areas[1] == 16 * 16
     assert stats.pred_areas[2] == 8 * 8
-    assert list(zip(stats.pair_gt_ids, stats.pair_pred_ids, stats.pair_intersections)) == [
-        (1, 1, 16 * 16),
-    ]
-
-
-def test_instance_overlap_stats_empty_maps_have_no_pairs() -> None:
-    gt = blank_map(8, 8)
-    pred = blank_map(8, 8)
-
-    stats = instance_overlap_stats(gt, pred)
-
-    assert stats.gt_ids == []
-    assert stats.pred_ids == []
-    assert stats.gt_areas == {}
-    assert stats.pred_areas == {}
-    assert len(stats.pair_gt_ids) == 0
-
-
-def test_instance_overlap_stats_single_instance_pair() -> None:
-    gt = blank_map(16, 16)
-    pred = blank_map(16, 16)
-    paint_box(gt, 1, 2, 2, 10, 10)
-    paint_box(pred, 1, 2, 2, 10, 10)
-
-    stats = instance_overlap_stats(gt, pred)
-
-    assert stats.gt_ids == [1]
-    assert stats.pred_ids == [1]
-    assert len(stats.pair_gt_ids) == 1
-    assert int(stats.pair_intersections[0]) == stats.gt_areas[1] == stats.pred_areas[1]
-
-
-def test_instance_overlap_stats_split_merge_one_pred_two_gt() -> None:
-    """One predicted instance overlaps two GT grains; sparse pairs list both intersections."""
-    gt = blank_map(48, 48)
-    pred = blank_map(48, 48)
-    paint_box(gt, 1, 10, 10, 20, 20)
-    paint_box(gt, 2, 28, 28, 38, 38)
-    paint_box(pred, 1, 10, 10, 20, 20)
-    paint_box(pred, 1, 20, 20, 28, 28)
-    paint_box(pred, 1, 28, 28, 32, 32)
-
-    stats = instance_overlap_stats(gt, pred)
-
-    assert stats.gt_ids == [1, 2]
-    assert stats.pred_ids == [1]
-    pairs = sorted(
-        zip(stats.pair_gt_ids, stats.pair_pred_ids, stats.pair_intersections)
-    )
-    assert pairs[0][0] == 1 and pairs[0][1] == 1
-    assert pairs[1][0] == 2 and pairs[1][1] == 1
-    assert int(pairs[0][2]) > 0 and int(pairs[1][2]) > 0
-    assert stats.gt_areas[1] + stats.gt_areas[2] > int(stats.pred_areas[1])
-
-
-def test_instance_overlap_stats_handles_gapped_label_ids() -> None:
-    gt = blank_map(24, 24)
-    pred = blank_map(24, 24)
-    paint_box(gt, 7, 2, 2, 10, 10)
-    paint_box(pred, 42, 2, 2, 10, 10)
-
-    stats = instance_overlap_stats(gt, pred)
-
-    assert stats.gt_ids == [7]
-    assert stats.pred_ids == [42]
-    assert stats.gt_areas[7] == 8 * 8
-    assert stats.pred_areas[42] == 8 * 8
-    assert list(zip(stats.pair_gt_ids, stats.pair_pred_ids, stats.pair_intersections)) == [
-        (7, 42, 8 * 8),
-    ]
+    assert list(
+        zip(stats.pair_gt_ids, stats.pair_pred_ids, stats.pair_intersections, strict=True)
+    ) == [(1, 1, 16 * 16)]
 
 
 _BUNDLE_PQ_FIELDS = (

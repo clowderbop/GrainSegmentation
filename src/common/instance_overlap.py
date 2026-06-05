@@ -32,6 +32,21 @@ def _areas_by_id(instance_map: np.ndarray, ids: list[int]) -> dict[int, int]:
     return {int(i): int(counts[i]) for i in ids}
 
 
+def _sort_co_occurring_pairs(
+    pair_gt_ids: np.ndarray,
+    pair_pred_ids: np.ndarray,
+    pair_intersections: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if len(pair_gt_ids) == 0:
+        return pair_gt_ids, pair_pred_ids, pair_intersections
+    order = np.lexsort((pair_pred_ids, pair_gt_ids))
+    return (
+        pair_gt_ids[order],
+        pair_pred_ids[order],
+        pair_intersections[order],
+    )
+
+
 def instance_overlap_stats(
     true_instances: np.ndarray, pred_instances: np.ndarray
 ) -> OverlapStats:
@@ -57,14 +72,20 @@ def instance_overlap_stats(
         [true_instances[overlap_mask], pred_instances[overlap_mask]]
     )
     pairs, counts = np.unique(stacked, axis=0, return_counts=True)
+    pair_gt_ids = pairs[:, 0].astype(np.int32, copy=False)
+    pair_pred_ids = pairs[:, 1].astype(np.int32, copy=False)
+    pair_intersections = counts.astype(np.int64, copy=False)
+    pair_gt_ids, pair_pred_ids, pair_intersections = _sort_co_occurring_pairs(
+        pair_gt_ids, pair_pred_ids, pair_intersections
+    )
     return OverlapStats(
         gt_ids=gt_ids,
         pred_ids=pred_ids,
         gt_areas=gt_areas,
         pred_areas=pred_areas,
-        pair_gt_ids=pairs[:, 0].astype(np.int32, copy=False),
-        pair_pred_ids=pairs[:, 1].astype(np.int32, copy=False),
-        pair_intersections=counts.astype(np.int64, copy=False),
+        pair_gt_ids=pair_gt_ids,
+        pair_pred_ids=pair_pred_ids,
+        pair_intersections=pair_intersections,
     )
 
 

@@ -13,6 +13,8 @@ import yaml
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
+    profile_tune_candidate_from_conf,
+    profile_tune_fixed_mask_threshold,
 )
 from common.variants import repo_root
 
@@ -55,7 +57,14 @@ from yolo.profile_tune_dry_run import dry_run_scorer
 from yolo.profile_tune_cli import validate_detector_caches
 
 
-def _write_grid(path: Path) -> None:
+def _write_grid(path: Path, *, conf: list[float] | None = None) -> None:
+    path.write_text(
+        yaml.safe_dump({"grid": {"conf": conf or [0.2, 0.3]}}),
+        encoding="utf-8",
+    )
+
+
+def _write_legacy_grid(path: Path) -> None:
     path.write_text(
         yaml.safe_dump(
             {
@@ -72,15 +81,28 @@ def _write_grid(path: Path) -> None:
     )
 
 
-def test_load_tune_grid_reads_full_factorial_search_space(tmp_path: Path) -> None:
+def test_load_tune_grid_reads_conf_only_search_space(tmp_path: Path) -> None:
     grid_path = tmp_path / "grid.yaml"
-    _write_grid(grid_path)
+    _write_grid(grid_path, conf=[0.2, 0.3])
     spec = load_tune_grid(grid_path)
-    assert spec.grid.postprocess_type == ("GREEDYNMM", "NMM")
-    assert spec.grid.match_metric == ("IOS",)
-    assert spec.grid.match_threshold == (0.4, 0.5)
     assert spec.grid.conf == (0.2, 0.3)
-    assert spec.grid.mask_threshold == (0.45, 0.55)
+
+
+def test_load_tune_grid_rejects_multi_value_mask_threshold(tmp_path: Path) -> None:
+    grid_path = tmp_path / "grid.yaml"
+    grid_path.write_text(
+        yaml.safe_dump({"grid": {"conf": [0.2], "mask_threshold": [0.4, 0.5, 0.6]}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="mask_threshold must not list multiple"):
+        load_tune_grid(grid_path)
+
+
+def test_load_tune_grid_rejects_obsolete_sahi_axes(tmp_path: Path) -> None:
+    grid_path = tmp_path / "grid.yaml"
+    _write_legacy_grid(grid_path)
+    with pytest.raises(ValueError, match="no longer a profile-selection axis"):
+        load_tune_grid(grid_path)
 
 
 def test_count_detector_jobs_is_variant_count(tmp_path: Path) -> None:
@@ -123,18 +145,12 @@ def test_detector_job_at_index_rejects_out_of_range(tmp_path: Path) -> None:
         detector_job_at_index(spec, variants, 999)
 
 
-def test_iter_grid_candidates_full_factorial_product(tmp_path: Path) -> None:
-    _write_grid(tmp_path / "grid.yaml")
+def test_iter_grid_candidates_one_per_conf(tmp_path: Path) -> None:
+    _write_grid(tmp_path / "grid.yaml", conf=[0.2, 0.3])
     spec = load_tune_grid(tmp_path / "grid.yaml")
     candidates = list(iter_grid_candidates(spec))
     assert len(candidates) == count_grid_candidates(spec)
-    assert candidates[0] == YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
-        conf=0.2,
-        mask_threshold=0.45,
-    )
+    assert candidates[0] == profile_tune_candidate_from_conf(0.2)
     assert len({c.candidate_id() for c in candidates}) == len(candidates)
 
 
@@ -211,19 +227,13 @@ unet:
 """,
         encoding="utf-8",
     )
-    profile = YoloInferenceProfileCandidate(
-        postprocess_type="NMM",
-        match_metric="IOS",
-        match_threshold=0.7,
-        conf=0.2,
-        mask_threshold=0.45,
-    )
+    profile = profile_tune_candidate_from_conf(0.2)
     promote_profile_to_recipe(profile, recipe_path)
     updated_text = recipe_path.read_text(encoding="utf-8")
     assert "# Shared test inference recipe (ADR 0003)." in updated_text
     assert "# YOLO inference profile (ADR 0005)." in updated_text
     assert "  conf: 0.2" in updated_text
-    assert "  postprocess_type: NMM" in updated_text
+    assert "  postprocess_type: GREEDYNMM" in updated_text
     assert "  patch:\n    batch: 16" in updated_text
 
 
@@ -257,18 +267,11 @@ unet:
 """,
         encoding="utf-8",
     )
-    profile = YoloInferenceProfileCandidate(
-        postprocess_type="NMM",
-        match_metric="IOS",
-        match_threshold=0.7,
-        conf=0.2,
-        mask_threshold=0.45,
-    )
+    profile = profile_tune_candidate_from_conf(0.2)
     promote_profile_to_recipe(profile, recipe_path)
     updated = yaml.safe_load(recipe_path.read_text(encoding="utf-8"))
-    assert updated["yolo"]["postprocess_type"] == "NMM"
-    assert updated["yolo"]["match_threshold"] == 0.7
     assert updated["yolo"]["conf"] == 0.2
+    assert updated["yolo"]["mask_threshold"] == profile_tune_fixed_mask_threshold()
     assert updated["whole"]["window"] == 1024
     assert updated["unet"]["patch"]["batch_size"] == 1
 
@@ -303,23 +306,14 @@ unet:
 """,
         encoding="utf-8",
     )
-    profile = YoloInferenceProfileCandidate(
-        postprocess_type="NMM",
-        match_metric="IOS",
-        match_threshold=0.7,
-        conf=0.2,
-        mask_threshold=0.45,
-    )
+    profile = profile_tune_candidate_from_conf(0.2)
     promote_profile_to_recipe(profile, recipe_path)
     loaded = load_test_inference_recipe(recipe_path)
     assert loaded.yolo.conf == profile.conf
-    assert loaded.yolo.profile.mask_threshold == profile.mask_threshold
-    assert loaded.yolo.profile.postprocess_type == profile.postprocess_type
-    assert loaded.yolo.profile.match_metric == profile.match_metric
-    assert loaded.yolo.profile.match_threshold == profile.match_threshold
+    assert loaded.yolo.profile.mask_threshold == profile_tune_fixed_mask_threshold()
 
 
-def test_promote_profile_rejects_invalid_profile_and_preserves_recipe(tmp_path: Path) -> None:
+def test_promote_profile_rejects_missing_conf_key_and_preserves_recipe(tmp_path: Path) -> None:
     recipe_path = tmp_path / "test_inference.yaml"
     original = """whole:
   window: 1024
@@ -327,7 +321,6 @@ def test_promote_profile_rejects_invalid_profile_and_preserves_recipe(tmp_path: 
 patch:
   imgsz: 1024
 yolo:
-  conf: 0.25
   mask_threshold: 0.5
   postprocess_type: GREEDYNMM
   match_metric: IOS
@@ -347,14 +340,8 @@ unet:
     batch_size: 1
 """
     recipe_path.write_text(original, encoding="utf-8")
-    profile = YoloInferenceProfileCandidate(
-        postprocess_type="",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
-    with pytest.raises(ValueError, match="postprocess_type"):
+    profile = profile_tune_candidate_from_conf(0.25)
+    with pytest.raises(ValueError, match="missing yolo profile keys"):
         promote_profile_to_recipe(profile, recipe_path)
     assert recipe_path.read_text(encoding="utf-8") == original
 
@@ -363,22 +350,17 @@ def test_tune_grid_path_defaults_to_config_yolo_inference_profile_tune_yaml() ->
     assert tune_grid_path() == repo_root() / "config" / "yolo_inference_profile_tune.yaml"
 
 
-def test_committed_tune_grid_is_well_formed_factorial() -> None:
-    """Default config/yolo_inference_profile_tune.yaml must be a valid non-empty grid."""
+def test_committed_tune_grid_is_conf_only_seven_candidates() -> None:
+    """Default config/yolo_inference_profile_tune.yaml is conf-only (~7 candidates)."""
     spec = load_tune_grid(tune_grid_path())
-    grid = spec.grid
-    for axis_name, values in (
-        ("postprocess_type", grid.postprocess_type),
-        ("match_metric", grid.match_metric),
-        ("match_threshold", grid.match_threshold),
-        ("conf", grid.conf),
-        ("mask_threshold", grid.mask_threshold),
-    ):
-        assert len(values) >= 1, f"grid.{axis_name} must list at least one value"
+    assert len(spec.grid.conf) == 7
+    assert count_grid_candidates(spec) == 7
 
     candidates = list(iter_grid_candidates(spec))
-    assert len(candidates) == count_grid_candidates(spec)
-    assert len({c.candidate_id() for c in candidates}) == len(candidates)
+    assert len(candidates) == 7
+    assert len({c.candidate_id() for c in candidates}) == 7
+    fixed_mask = profile_tune_fixed_mask_threshold()
+    assert all(c.mask_threshold == fixed_mask for c in candidates)
 
     variants = ("PPL", "PPL+AllPPX")
     assert count_detector_jobs(spec, len(variants)) == len(variants)
@@ -388,13 +370,7 @@ def test_committed_tune_grid_is_well_formed_factorial() -> None:
 
 
 def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:
-    profile = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
+    profile = profile_tune_candidate_from_conf(0.25)
     winner_path = tmp_path / "grid" / "winner.json"
     write_grid_winner_json(
         winner_path, candidate=profile, mean_pq=0.7, per_variant_pq={"PPL": 0.7}
@@ -402,6 +378,9 @@ def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:
     payload = json.loads(winner_path.read_text(encoding="utf-8"))
     assert payload["selection_objective"] == PROFILE_SELECTION_OBJECTIVE
     assert payload["mean_pq"] == pytest.approx(0.7)
+    assert payload["conf"] == pytest.approx(0.25)
+    assert payload["fixed_mask_threshold"] == profile_tune_fixed_mask_threshold()
+    assert "postprocess_type" in payload["removed_grid_axes"]
     loaded = load_grid_winner(winner_path)
     assert loaded == profile
 
@@ -564,8 +543,8 @@ def test_run_grid_search_no_resume_does_not_delete_existing_csv_at_start(
     grid_dir.mkdir(parents=True)
     csv_path = grid_dir / "results.csv"
     csv_path.write_text(
-        "candidate_id,postprocess_type,match_metric,match_threshold,conf,mask_threshold,mean_pq,pq__PPL\n"
-        "stale,GREEDYNMM,IOS,0.5,0.25,0.5,0.1,0.1\n",
+        "candidate_id,conf,mask_threshold,mean_pq,pq__PPL\n"
+        "stale,0.25,0.4,0.1,0.1\n",
         encoding="utf-8",
     )
     _write_grid(tmp_path / "grid.yaml")
@@ -598,13 +577,7 @@ def test_run_grid_search_no_resume_does_not_delete_existing_csv_at_start(
 
 def test_append_grid_result_row_writes_incrementally(tmp_path: Path) -> None:
     csv_path = tmp_path / "grid" / "results.csv"
-    profile = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
+    profile = profile_tune_candidate_from_conf(0.25)
     row_a = grid_result_row_from_candidate_scoring(
         candidate=profile,
         mean_pq=0.7,
@@ -703,16 +676,15 @@ def test_recompute_winner_from_csv_picks_highest_mean_pq(tmp_path: Path) -> None
     fieldnames = grid_results_fieldnames(("PPL",))
     (grid_dir / "results.csv").write_text(
         ",".join(fieldnames) + "\n"
-        "low,GREEDYNMM,IOS,0.5,0.25,0.5,0.4,"
+        "low,0.25,0.4,0.4,"
         + ",".join("0.4" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
         + "\n"
-        "high,NMM,IOU,0.6,0.35,0.6,0.9,"
+        "high,0.35,0.4,0.9,"
         + ",".join("0.9" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
         + "\n",
         encoding="utf-8",
     )
     winner = recompute_winner_from_csv(tmp_path, variant_names=("PPL",))
-    assert winner.postprocess_type == "NMM"
     assert winner.conf == pytest.approx(0.35)
     loaded = load_grid_winner(grid_dir / "winner.json")
     assert loaded == winner
@@ -728,7 +700,7 @@ def test_profile_tune_finalize_cli_recompute_winner_from_csv(
     fieldnames = grid_results_fieldnames(("PPL",))
     (grid_dir / "results.csv").write_text(
         ",".join(fieldnames) + "\n"
-        "winner,GREEDYNMM,IOS,0.5,0.2,0.45,0.95,"
+        "winner,0.2,0.4,0.95,"
         + ",".join("0.95" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
         + "\n",
         encoding="utf-8",
@@ -790,13 +762,8 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     )
 
     height, width = 16, 16
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
-        conf=0.2,
-        mask_threshold=0.45,
-    )
+    candidate = profile_tune_candidate_from_conf(0.2)
+    fixed_mask = profile_tune_fixed_mask_threshold()
     grainseg_root = tmp_path / "grainseg"
     run_root = grainseg_root / "runs" / "yolo26-seg"
     weights = run_root / "PPL" / "weights" / "best.pt"
@@ -805,17 +772,17 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
     work_root = tmp_path / ".cache"
     recipe = load_test_inference_recipe()
     tiled_records = tiled_proposal_records_disjoint_via_collector(
-        height, width, mask_threshold=candidate.mask_threshold
+        height, width, mask_threshold=fixed_mask
     )
     write_tiled_proposals(
-        proposal_cache_dir(work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold),
+        proposal_cache_dir(work_root / "PPL", conf=candidate.conf),
         tiled_records,
         proposal_cache_record(
             variant="PPL",
             weights_sha256=weights_sha256(weights),
             recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
             conf=candidate.conf,
-            mask_threshold=candidate.mask_threshold,
+            mask_threshold=fixed_mask,
             sample_id="train",
             height=height,
             width=width,
@@ -927,13 +894,8 @@ def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None
         env=env,
     )
 
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
-        conf=0.2,
-        mask_threshold=0.45,
-    )
+    candidate = profile_tune_candidate_from_conf(0.2)
+    fixed_mask = profile_tune_fixed_mask_threshold()
     run_root = grainseg_root / "runs" / "yolo26-seg"
     weights = run_root / "PPL" / "weights" / "best.pt"
     weights.parent.mkdir(parents=True)
@@ -942,16 +904,14 @@ def test_build_train_gt_cache_loads_in_candidate_scoring(tmp_path: Path) -> None
     mask = np.zeros((height, width), dtype=bool)
     mask[10:20, 10:20] = True
     write_tiled_proposals(
-        proposal_cache_dir(
-            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
-        ),
+        proposal_cache_dir(work_root / "PPL", conf=candidate.conf),
         [tiled_proposal_record_from_binary_mask(mask, score=0.5)],
         proposal_cache_record(
             variant="PPL",
             weights_sha256=weights_sha256(weights),
             recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
             conf=candidate.conf,
-            mask_threshold=candidate.mask_threshold,
+            mask_threshold=fixed_mask,
             sample_id="train",
             height=height,
             width=width,
@@ -1042,13 +1002,8 @@ def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
         env=env,
     )
 
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
-        conf=0.2,
-        mask_threshold=0.45,
-    )
+    candidate = profile_tune_candidate_from_conf(0.2)
+    fixed_mask = profile_tune_fixed_mask_threshold()
     run_root = grainseg_root / "runs" / "yolo26-seg"
     weights = run_root / "PPL" / "weights" / "best.pt"
     weights.parent.mkdir(parents=True)
@@ -1057,16 +1012,14 @@ def test_on_disk_gt_and_v2_proposal_caches_score_within_sub_minute(
     mask = np.zeros((height, width), dtype=bool)
     mask[10:20, 10:20] = True
     write_tiled_proposals(
-        proposal_cache_dir(
-            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
-        ),
+        proposal_cache_dir(work_root / "PPL", conf=candidate.conf),
         [tiled_proposal_record_from_binary_mask(mask, score=0.5)],
         proposal_cache_record(
             variant="PPL",
             weights_sha256=weights_sha256(weights),
             recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
             conf=candidate.conf,
-            mask_threshold=candidate.mask_threshold,
+            mask_threshold=fixed_mask,
             sample_id="train",
             height=height,
             width=width,
@@ -1115,27 +1068,22 @@ def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
     height, width = 16, 16
     mask = np.zeros((height, width), dtype=bool)
     mask[0:4, 0:4] = True
+    fixed_mask = profile_tune_fixed_mask_threshold()
     write_tiled_proposals(
-        proposal_cache_dir(work_root / "PPL", conf=0.2, mask_threshold=0.45),
+        proposal_cache_dir(work_root / "PPL", conf=0.2),
         [tiled_proposal_record_from_binary_mask(mask, score=0.5)],
         proposal_cache_record(
             variant="PPL",
             weights_sha256=weights_sha256(weights),
             recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
             conf=0.2,
-            mask_threshold=0.45,
+            mask_threshold=fixed_mask,
             sample_id="train",
             height=height,
             width=width,
         ),
     )
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.99,
-        mask_threshold=0.45,
-    )
+    candidate = profile_tune_candidate_from_conf(0.99)
     with pytest.raises(FileNotFoundError):
         score_variant_train_metrics_from_cache(
             variant="PPL",

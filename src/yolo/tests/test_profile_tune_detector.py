@@ -90,10 +90,9 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
     detector_tune_layout: dict[str, Path],
 ) -> None:
     layout = detector_tune_layout
-    conf, mask_threshold = 0.25, 0.5
-    cache_dir = proposal_cache_dir(
-        layout["work_root"] / layout["variant"], conf=conf, mask_threshold=mask_threshold
-    )
+    conf = 0.25
+    fixed_mask = load_test_inference_recipe().yolo.profile.mask_threshold
+    cache_dir = proposal_cache_dir(layout["work_root"] / layout["variant"], conf=conf)
     recipe = load_test_inference_recipe()
     height, width = 16, 16
     mask = np.zeros((height, width), dtype=bool)
@@ -103,7 +102,7 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
         weights_sha256=weights_sha256(layout["weights"]),
         recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
         conf=conf,
-        mask_threshold=mask_threshold,
+        mask_threshold=fixed_mask,
         sample_id="train",
         height=height,
         width=width,
@@ -121,7 +120,7 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
     common_kwargs = dict(
         variant=layout["variant"],
         conf=conf,
-        mask_threshold=mask_threshold,
+        mask_threshold=fixed_mask,
         output_dir=layout["output_dir"],
         grainseg_root=layout["grainseg_root"],
         run_root=layout["run_root"],
@@ -153,7 +152,8 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
 ) -> None:
     """Detector write path stores v2 crop-local RLE on disk, not full-section dense masks."""
     layout = detector_tune_layout
-    conf, mask_threshold = 0.2, 0.45
+    conf = 0.2
+    fixed_mask = load_test_inference_recipe().yolo.profile.mask_threshold
     height, width = 64, 64
     image = np.zeros((height, width, 3), dtype=np.uint8)
     tile_preds = disjoint_tile_local_proposals(height, width)
@@ -165,7 +165,7 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
     common_kwargs = dict(
         variant=layout["variant"],
         conf=conf,
-        mask_threshold=mask_threshold,
+        mask_threshold=fixed_mask,
         output_dir=layout["output_dir"],
         grainseg_root=layout["grainseg_root"],
         run_root=layout["run_root"],
@@ -196,7 +196,7 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
         variant=layout["variant"],
         weights_path=layout["weights"],
         conf=conf,
-        mask_threshold=mask_threshold,
+        mask_threshold=fixed_mask,
         sample_id="train",
     )
     loaded, meta = load_tiled_proposals(cache_dir, expected=expected)
@@ -223,17 +223,7 @@ def test_profile_tune_detector_main_runs_variant_bundle_for_array_index(
 
     grid_path = tmp_path / "grid.yaml"
     grid_path.write_text(
-        yaml.safe_dump(
-            {
-                "grid": {
-                    "postprocess_type": ["GREEDYNMM"],
-                    "match_metric": ["IOS"],
-                    "match_threshold": [0.5],
-                    "conf": [0.2, 0.3],
-                    "mask_threshold": [0.45, 0.55],
-                },
-            }
-        ),
+        yaml.safe_dump({"grid": {"conf": [0.2, 0.3]}}),
         encoding="utf-8",
     )
     output_dir = tmp_path / "run"
@@ -276,15 +266,13 @@ def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
     grid_path = layout["repo"] / "grid.yaml"
     grid_path.parent.mkdir(parents=True, exist_ok=True)
     grid_path.write_text(
-        '{"grid": {"postprocess_type": ["GREEDYNMM"], "match_metric": ["IOS"], '
-        '"match_threshold": [0.5], "conf": [0.2, 0.3], "mask_threshold": [0.45]}}',
+        '{"grid": {"conf": [0.2, 0.3]}}',
         encoding="utf-8",
     )
     spec = load_tune_grid(grid_path)
-    conf, mask_threshold = 0.2, 0.45
-    cache_dir = proposal_cache_dir(
-        layout["work_root"] / layout["variant"], conf=conf, mask_threshold=mask_threshold
-    )
+    conf = 0.2
+    fixed_mask = load_test_inference_recipe().yolo.profile.mask_threshold
+    cache_dir = proposal_cache_dir(layout["work_root"] / layout["variant"], conf=conf)
     recipe = load_test_inference_recipe()
     height, width = 8, 8
     record = proposal_cache_record(
@@ -292,7 +280,7 @@ def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
         weights_sha256=weights_sha256(layout["weights"]),
         recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
         conf=conf,
-        mask_threshold=mask_threshold,
+        mask_threshold=fixed_mask,
         sample_id="train",
         height=height,
         width=width,
@@ -343,4 +331,4 @@ def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
             local_train_image=layout["train_mosaic"],
         )
 
-    assert compute_calls == [(0.3, 0.45)]
+    assert compute_calls == [(0.3, fixed_mask)]

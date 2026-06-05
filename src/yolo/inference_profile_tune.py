@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import itertools
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
-from math import prod
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -24,8 +22,9 @@ from common.instance_eval_report import (
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
-    parse_yolo_profile_candidate_mapping,
-    rewrite_yolo_profile_in_recipe_text,
+    profile_tune_candidate_from_conf,
+    profile_tune_fixed_mask_threshold,
+    rewrite_yolo_conf_in_recipe_text,
 )
 from common.variants import repo_root
 from yolo.profile_tune_work import weights_path
@@ -38,16 +37,20 @@ _TUNE_GRID_RELATIVE = Path("config") / "yolo_inference_profile_tune.yaml"
 
 @dataclass(frozen=True)
 class ProfileTuneGrid:
-    postprocess_type: tuple[str, ...]
-    match_metric: tuple[str, ...]
-    match_threshold: tuple[float, ...]
     conf: tuple[float, ...]
-    mask_threshold: tuple[float, ...]
 
 
 @dataclass(frozen=True)
 class TuneGridSpec:
     grid: ProfileTuneGrid
+
+
+_REMOVED_GRID_AXES = (
+    "postprocess_type",
+    "match_metric",
+    "match_threshold",
+    "mask_threshold",
+)
 
 
 def tune_grid_path(path: Path | None = None) -> Path:
@@ -60,37 +63,30 @@ def load_tune_grid(path: Path | None = None) -> TuneGridSpec:
         raw = yaml.safe_load(handle)
     doc = yv.require_mapping(raw, context=str(resolved))
     grid_raw = yv.require_mapping(doc.get("grid"), context="grid")
+    for axis in _REMOVED_GRID_AXES:
+        if axis not in grid_raw:
+            continue
+        values = grid_raw.get(axis)
+        if axis == "mask_threshold":
+            if isinstance(values, list) and len(values) > 1:
+                raise ValueError(
+                    "grid.mask_threshold must not list multiple values; "
+                    "mask threshold is fixed in config/test_inference.yaml"
+                )
+        raise ValueError(
+            f"grid.{axis} is no longer a profile-selection axis "
+            f"(removed after cross-tile postprocess); tune conf only"
+        )
     return TuneGridSpec(
         grid=ProfileTuneGrid(
-            postprocess_type=yv.require_str_list(
-                grid_raw.get("postprocess_type"), context="grid.postprocess_type"
-            ),
-            match_metric=yv.require_str_list(
-                grid_raw.get("match_metric"), context="grid.match_metric"
-            ),
-            match_threshold=yv.require_float_list(
-                grid_raw.get("match_threshold"), context="grid.match_threshold"
-            ),
             conf=yv.require_float_list(grid_raw.get("conf"), context="grid.conf"),
-            mask_threshold=yv.require_float_list(
-                grid_raw.get("mask_threshold"), context="grid.mask_threshold"
-            ),
         ),
     )
 
 
 def count_grid_candidates(spec: TuneGridSpec) -> int:
-    """Number of profile points in the Cartesian product of grid axes."""
-    grid = spec.grid
-    return prod(
-        (
-            len(grid.postprocess_type),
-            len(grid.match_metric),
-            len(grid.match_threshold),
-            len(grid.conf),
-            len(grid.mask_threshold),
-        )
-    )
+    """Number of profile points (conf values only)."""
+    return len(spec.grid.conf)
 
 
 def count_detector_jobs(spec: TuneGridSpec, variant_count: int) -> int:
@@ -100,13 +96,12 @@ def count_detector_jobs(spec: TuneGridSpec, variant_count: int) -> int:
 
 
 def detector_keys_per_variant(spec: TuneGridSpec) -> int:
-    grid = spec.grid
-    return len(grid.conf) * len(grid.mask_threshold)
+    return len(spec.grid.conf)
 
 
-def iter_detector_keys(spec: TuneGridSpec) -> Iterable[tuple[float, float]]:
-    """Detector knob pairs processed inside one variant GPU task."""
-    yield from itertools.product(spec.grid.conf, spec.grid.mask_threshold)
+def iter_detector_keys(spec: TuneGridSpec) -> Iterable[float]:
+    """Detector conf values processed inside one variant GPU task."""
+    yield from spec.grid.conf
 
 
 def variant_at_detector_array_index(variants: tuple[str, ...], array_index: int) -> str:
@@ -121,16 +116,16 @@ def variant_at_detector_array_index(variants: tuple[str, ...], array_index: int)
 
 def iter_detector_jobs(
     spec: TuneGridSpec, variants: tuple[str, ...]
-) -> Iterable[tuple[str, float, float]]:
-    """Flat detector grid: every (variant, conf, mask_threshold) cache key."""
+) -> Iterable[tuple[str, float]]:
+    """Flat detector grid: every (variant, conf) cache key."""
     for variant in variants:
-        for conf, mask_threshold in iter_detector_keys(spec):
-            yield variant, conf, mask_threshold
+        for conf in iter_detector_keys(spec):
+            yield variant, conf
 
 
 def detector_job_at_index(
     spec: TuneGridSpec, variants: tuple[str, ...], array_index: int
-) -> tuple[str, float, float]:
+) -> tuple[str, float]:
     """Resolve a flat detector grid index (tests, legacy callers)."""
     if array_index < 1:
         raise ValueError(f"array index must be >= 1, got {array_index}")
@@ -143,27 +138,8 @@ def detector_job_at_index(
 
 
 def iter_grid_candidates(spec: TuneGridSpec) -> Iterable[YoloInferenceProfileCandidate]:
-    grid = spec.grid
-    for (
-        postprocess_type,
-        match_metric,
-        match_threshold,
-        conf,
-        mask_threshold,
-    ) in itertools.product(
-        grid.postprocess_type,
-        grid.match_metric,
-        grid.match_threshold,
-        grid.conf,
-        grid.mask_threshold,
-    ):
-        yield YoloInferenceProfileCandidate(
-            postprocess_type=postprocess_type,
-            match_metric=match_metric,
-            match_threshold=match_threshold,
-            conf=conf,
-            mask_threshold=mask_threshold,
-        )
+    for conf in spec.grid.conf:
+        yield profile_tune_candidate_from_conf(conf)
 
 
 PROFILE_SELECTION_OBJECTIVE = "pq"
@@ -221,9 +197,6 @@ def score_candidate_across_variants(
 def grid_results_fieldnames(variant_names: tuple[str, ...]) -> list[str]:
     base = [
         "candidate_id",
-        "postprocess_type",
-        "match_metric",
-        "match_threshold",
         "conf",
         "mask_threshold",
         "mean_pq",
@@ -318,9 +291,6 @@ def variant_eval_fingerprint(
     recipe = load_test_inference_recipe()
     return {
         "candidate_id": candidate.candidate_id(),
-        "postprocess_type": candidate.postprocess_type,
-        "match_metric": candidate.match_metric,
-        "match_threshold": candidate.match_threshold,
         "conf": candidate.conf,
         "mask_threshold": candidate.mask_threshold,
         "variant": variant,
@@ -373,13 +343,7 @@ def finalize_grid_winner(
         raise ValueError("rows must not be empty")
     write_grid_results_csv(grid_dir / "results.csv", rows, variant_names=variant_names)
     best_row = select_best_candidate(rows)
-    winner = YoloInferenceProfileCandidate(
-        postprocess_type=str(best_row["postprocess_type"]),
-        match_metric=str(best_row["match_metric"]),
-        match_threshold=float(best_row["match_threshold"]),
-        conf=float(best_row["conf"]),
-        mask_threshold=float(best_row["mask_threshold"]),
-    )
+    winner = profile_tune_candidate_from_conf(float(best_row["conf"]))
     write_grid_winner_json(
         grid_dir / "winner.json",
         candidate=winner,
@@ -468,18 +432,29 @@ def write_grid_winner_json(
     per_variant_pq: dict[str, float],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    fixed_mask = profile_tune_fixed_mask_threshold()
     payload = {
         "selection_objective": PROFILE_SELECTION_OBJECTIVE,
         "mean_pq": mean_pq,
-        "profile": candidate.to_dict(),
+        "conf": candidate.conf,
+        "mask_threshold": fixed_mask,
+        "profile_selection_axes": ["conf"],
+        "fixed_mask_threshold": fixed_mask,
+        "removed_grid_axes": list(_REMOVED_GRID_AXES),
         "per_variant_pq": per_variant_pq,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def candidate_from_winner_json(payload: dict[str, Any]) -> YoloInferenceProfileCandidate:
+    if "conf" in payload:
+        return profile_tune_candidate_from_conf(
+            yv.require_float(payload.get("conf"), context="conf")
+        )
     profile = yv.require_mapping(payload.get("profile"), context="profile")
-    return parse_yolo_profile_candidate_mapping(profile, context="profile")
+    return profile_tune_candidate_from_conf(
+        yv.require_float(profile.get("conf"), context="profile.conf")
+    )
 
 
 def load_grid_winner(path: Path) -> YoloInferenceProfileCandidate:
@@ -516,9 +491,6 @@ def rows_to_grid_results(
     for row in rows:
         csv_row: dict[str, Any] = {
             "candidate_id": row["candidate_id"],
-            "postprocess_type": row["postprocess_type"],
-            "match_metric": row["match_metric"],
-            "match_threshold": row["match_threshold"],
             "conf": row["conf"],
             "mask_threshold": row["mask_threshold"],
             "mean_pq": row["mean_pq"],
@@ -563,8 +535,11 @@ def promote_profile_to_recipe(
     recipe_path: Path,
 ) -> None:
     original_text = recipe_path.read_text(encoding="utf-8")
+    fixed_mask = profile_tune_fixed_mask_threshold()
     recipe_path.write_text(
-        rewrite_yolo_profile_in_recipe_text(original_text, profile),
+        rewrite_yolo_conf_in_recipe_text(
+            original_text, conf=profile.conf, mask_threshold=fixed_mask
+        ),
         encoding="utf-8",
     )
     load_test_inference_recipe.cache_clear()
@@ -574,12 +549,6 @@ def promote_profile_to_recipe(
         recipe_path.write_text(original_text, encoding="utf-8")
         raise ValueError(f"promoted recipe failed validation: {exc}") from exc
     promoted = loaded.yolo
-    if (
-        promoted.conf != profile.conf
-        or promoted.profile.mask_threshold != profile.mask_threshold
-        or promoted.profile.postprocess_type != profile.postprocess_type
-        or promoted.profile.match_metric != profile.match_metric
-        or promoted.profile.match_threshold != profile.match_threshold
-    ):
+    if promoted.conf != profile.conf or promoted.profile.mask_threshold != fixed_mask:
         recipe_path.write_text(original_text, encoding="utf-8")
         raise ValueError("promoted recipe does not match winning profile")

@@ -1,17 +1,4 @@
 grid:
-  postprocess_type:
-    - GREEDYNMM
-    - NMM
-  match_metric:
-    - IOU
-    - IOS
-  match_threshold:
-    - 0.4
-    - 0.5
-    - 0.6
-    - 0.7
-    - 0.8
-    - 0.9
   conf:
     - 0.05
     - 0.10
@@ -20,7 +7,3 @@ grid:
     - 0.25
     - 0.30
     - 0.35
-  mask_threshold:
-    - 0.4
-    - 0.5
-    - 0.6

@@ -57,13 +57,10 @@ def recipe_whole_window_fingerprint(recipe: TestInferenceRecipe) -> str:
 
 
 def proposal_cache_dir(
-    variant_work_root: Path, *, conf: float, mask_threshold: float
+    variant_work_root: Path, *, conf: float, mask_threshold: float | None = None
 ) -> Path:
-    return (
-        variant_work_root
-        / "tiled_proposals"
-        / f"c{conf:g}_t{mask_threshold:g}"
-    )
+    del mask_threshold  # fixed in test inference recipe; identity is conf-only
+    return variant_work_root / "tiled_proposals" / f"c{conf:g}"
 
 
 def proposal_cache_record(

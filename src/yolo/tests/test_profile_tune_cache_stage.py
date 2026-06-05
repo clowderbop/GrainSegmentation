@@ -174,7 +174,7 @@ def test_stage_candidate_work_missing_proposal_cache_points_at_scratch_path(
         mask_threshold=0.45,
     )
 
-    with pytest.raises(FileNotFoundError, match="PPL/tiled_proposals/c0.2_t0.45"):
+    with pytest.raises(FileNotFoundError, match="PPL/tiled_proposals/c0.2"):
         stage_candidate_work(
             scratch_cache_root=scratch_cache,
             tmp_work_root=tmp_path / "tmpdir" / "work",

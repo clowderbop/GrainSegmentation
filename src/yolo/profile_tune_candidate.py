@@ -21,7 +21,10 @@ from common.profile_tune_gt_cache import (
     train_labels_gpkg_path,
 )
 from common.reporting import count_instances
-from common.test_inference import YoloInferenceProfileCandidate
+from common.test_inference import (
+    YoloInferenceProfileCandidate,
+    profile_tune_fixed_mask_threshold,
+)
 from common.variants import repo_root
 from yolo.inference_profile_tune import (
     PROFILE_SELECTION_OBJECTIVE,
@@ -62,24 +65,18 @@ def validate_detector_caches_for_candidate(
     grainseg_root: Path,
     run_root: Path,
 ) -> None:
-    """Ensure tiled-proposal caches exist for this candidate's (conf, mask_threshold)."""
-    _log(
-        f"Checking detector caches for conf={candidate.conf:g} "
-        f"mask_threshold={candidate.mask_threshold:g} …"
-    )
+    """Ensure tiled-proposal caches exist for this candidate's conf."""
+    fixed_mask = profile_tune_fixed_mask_threshold()
+    _log(f"Checking detector caches for conf={candidate.conf:g} …")
     missing: list[str] = []
     for variant in variants:
         weights = weights_path(grainseg_root, variant, run_root)
-        cache_dir = proposal_cache_dir(
-            work_root / variant,
-            conf=candidate.conf,
-            mask_threshold=candidate.mask_threshold,
-        )
+        cache_dir = proposal_cache_dir(work_root / variant, conf=candidate.conf)
         expected = detector_cache_expected_record(
             variant=variant,
             weights_path=weights,
             conf=candidate.conf,
-            mask_threshold=candidate.mask_threshold,
+            mask_threshold=fixed_mask,
             sample_id="train",
         )
         try:
@@ -122,9 +119,7 @@ def candidate_row_fingerprint(
 
         per_variant[variant] = {
             "weights_sha256": weights_sha256(weights),
-            "proposal_cache_key": (
-                f"c{candidate.conf:g}_t{candidate.mask_threshold:g}"
-            ),
+            "proposal_cache_key": f"c{candidate.conf:g}",
             "proposal_schema_version": TILED_PROPOSAL_CACHE_SCHEMA_VERSION,
         }
     return {
@@ -187,14 +182,13 @@ def score_variant_train_metrics_from_cache(
     t0 = time.perf_counter()
 
     weights = weights_path(grainseg_root, variant, run_root)
-    cache_dir = proposal_cache_dir(
-        work_root / variant, conf=candidate.conf, mask_threshold=candidate.mask_threshold
-    )
+    fixed_mask = profile_tune_fixed_mask_threshold()
+    cache_dir = proposal_cache_dir(work_root / variant, conf=candidate.conf)
     expected_proposals = detector_cache_expected_record(
         variant=variant,
         weights_path=weights,
         conf=candidate.conf,
-        mask_threshold=candidate.mask_threshold,
+        mask_threshold=fixed_mask,
         sample_id="train",
     )
     t_load = time.perf_counter()
@@ -280,10 +274,8 @@ def score_profile_selection_candidate(
         )
 
     _log(
-        f"Scoring {len(variants)} variants: "
-        f"postprocess={candidate.postprocess_type} metric={candidate.match_metric} "
-        f"match_threshold={candidate.match_threshold:g} conf={candidate.conf:g} "
-        f"mask_threshold={candidate.mask_threshold:g}"
+        f"Scoring {len(variants)} variants: conf={candidate.conf:g} "
+        f"(fixed mask_threshold={profile_tune_fixed_mask_threshold():g})"
     )
     t_all = time.perf_counter()
     gt_map = load_shared_train_gt_map(work_root=work_root, grainseg_root=grainseg_root)

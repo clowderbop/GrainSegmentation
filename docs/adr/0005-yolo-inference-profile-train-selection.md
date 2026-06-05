@@ -4,32 +4,32 @@ Status: accepted
 
 ## Context / Problem
 
-YOLO whole-section inference uses sliding windows plus per-slice Ultralytics detection. The shared test recipe fixes window geometry, but YOLO still needs five train-selected knobs before held-out test: `postprocess_type`, `match_metric`, `match_threshold`, `conf`, and `mask_threshold`.
+YOLO whole-section inference uses sliding windows plus per-slice Ultralytics detection, then **cross-tile association** to fuse tiled proposals into one grain instance per annotated grain. The shared test recipe fixes window geometry and compatibility settings (`mask_threshold`, legacy SAHI fields on patch paths), but **profile selection** still needs one train-selected knob before held-out test: detector **`conf`**.
 
 ## Decision
 
-We select one shared **YOLO inference profile** on the whole train section. A factorial grid from `config/yolo_inference_profile_tune.yaml` is scored by mean whole-section train PQ across all registry variants. Pre-merge proposal counts, patch metrics, and other diagnostics are audit information only. The winner is promoted into `config/test_inference.yaml` and committed before held-out test.
+We select one shared **YOLO inference profile** on the whole train section. A **conf-only** grid from `config/yolo_inference_profile_tune.yaml` (~7 candidates) is scored by mean whole-section train PQ across all registry variants. Pre-merge proposal counts, patch metrics, and other diagnostics are audit information only. The winner is promoted into `config/test_inference.yaml` (train-selected `conf` plus fixed `mask_threshold`) and committed before held-out test.
 
 The profile is shared across variants. Per-variant profiles are rejected because they would confound **variant test ranking** with inference settings. Re-run profile selection when train labels or YOLO weights change materially, not after every single-variant training job.
 
 Profile tuning uses two durable scratch caches under `OUTPUT_DIR/.cache/` (internal to tune runs):
 
-- **Tiled detector proposals:** detector outputs cached per `(variant, conf, mask_threshold)` as compact `schema_version` 3 records with score, whole-image bbox, crop-local COCO RLE, crop offset, source tile bounds, and image shape under `.cache/{variant}/tiled_proposals/c{conf}_t{mask}/`. Schema 1–2 caches (including v2 without tile metadata) are rejected; re-run detector jobs. The cache is not the canonical prediction artifact.
+- **Tiled detector proposals:** detector outputs cached per `(variant, conf)` as compact `schema_version` 3 records with score, whole-image bbox, crop-local COCO RLE, crop offset, source tile bounds, and image shape under `.cache/{variant}/tiled_proposals/c{conf}/`. `mask_threshold` is stored in cache metadata from the fixed **test inference recipe** value (not a grid axis). Schema 1–2 caches (including v2 without tile metadata) are rejected; re-run detector jobs. The cache is not the canonical prediction artifact.
 - **Profile selection ground truth cache:** one train **merged instance view** under `.cache/gt_cache/train/`, rasterized from `train_labels.gpkg` with the canonical OpenCV polygon painter. It is shared across variants because label geometry is shared.
 
-**Profile selection** rows, `results.csv`, and `winner.json` live under `OUTPUT_DIR/grid/` on scratch so array resume and parallel candidates do not depend on node-local disks.
+**Profile selection** rows, `results.csv`, and `winner.json` live under `OUTPUT_DIR/grid/` on scratch so array resume and parallel candidates do not depend on node-local disks. `winner.json` documents `conf`, fixed `mask_threshold`, and removed grid axes (`postprocess_type`, `match_metric`, `match_threshold`, multi-value `mask_threshold`).
 
-In-flight tune runs that used the legacy `_work/` cache root are incompatible and are not resumed; start a new run id after the layout change.
+In-flight tune runs that used the legacy `_work/` cache root or `c{conf}_t{mask}` proposal paths are incompatible and are not resumed; start a new run id after the layout change.
 
-Detector SLURM array tasks are bundled by registry **input configuration** (variant): each task stages only that variant’s train whole stacked TIFF to `$TMPDIR`, loads YOLO once, writes all `conf × mask_threshold` proposal caches for that variant back to scratch `.cache/`, and does not persist manifest staging trees under the tune run directory.
+Detector SLURM array tasks are bundled by registry **input configuration** (variant): each task stages only that variant’s train whole stacked TIFF to `$TMPDIR`, loads YOLO once, writes all `conf` proposal caches for that variant back to scratch `.cache/`, and does not persist manifest staging trees under the tune run directory.
 
-Candidate array tasks copy only the subtrees required for that grid point (shared GT cache plus the four variant proposal trees for its `conf` and `mask_threshold`) from `.cache/` into job-unique `$TMPDIR`, then run **profile selection scoring** against the local work root. Scoring loads tiled proposals and the GT cache, runs **cross-tile association** (same module as held-out whole predict) into a merged instance view, and computes train PQ plus the full diagnostic bundle. It does not write an **instance prediction set** for every grid point. Held-out whole predict uses the same postprocess path and persists canonical prediction sets.
+Candidate array tasks copy only the subtrees required for that grid point (shared GT cache plus the four variant proposal trees for its `conf`) from `.cache/` into job-unique `$TMPDIR`, then run **profile selection scoring** against the local work root. Scoring loads tiled proposals and the GT cache, runs **cross-tile association** (same module as held-out whole predict) into a merged instance view, and computes train PQ plus the full diagnostic bundle. It does not write an **instance prediction set** for every grid point. Held-out whole predict uses the same postprocess path and persists canonical prediction sets.
 
-Each candidate writes a **profile selection result row** with knob values, per-variant PQ, mean PQ, diagnostics, and input fingerprints. Finalization merges rows into `grid/results.csv` and writes `grid/winner.json`. Valid detector caches may be reused within a compatible run directory; stale rows or incompatible cache schema versions must not resume.
+Each candidate writes a **profile selection result row** with knob values (`conf`, fixed `mask_threshold`), per-variant PQ, mean PQ, diagnostics, and input fingerprints. Finalization merges rows into `grid/results.csv` and writes `grid/winner.json`. Valid detector caches may be reused within a compatible run directory; stale rows or incompatible cache schema versions must not resume.
 
 ## Rejected Alternatives
 
-Per-variant profiles; coordinate search instead of a factorial grid; optimizing overlapping detector proposals; AJI as the selection objective; Bayesian search for v1; scratch-only winners without git promotion; full-section proposal masks in caches; per-variant GT caches; using semantic preprocessing TIFFs as GT. These were rejected for fairness, reproducibility, memory, wrong target semantics, or avoidable complexity.
+Per-variant profiles; coordinate search instead of a factorial grid; optimizing overlapping detector proposals; AJI as the selection objective; Bayesian search for v1; scratch-only winners without git promotion; full-section proposal masks in caches; per-variant GT caches; using semantic preprocessing TIFFs as GT; SAHI slice-merge axes and multi-value `mask_threshold` on the cross-tile postprocess path. These were rejected for fairness, reproducibility, memory, wrong target semantics, or avoidable complexity.
 
 ## Consequences
 
@@ -44,4 +44,3 @@ Profile selection depends on cross-tile-associated YOLO whole-section prediction
 - Metric policy: [`docs/metrics.md`](../metrics.md)
 - Glossary: [`CONTEXT.md`](../../CONTEXT.md)
 - Profile grid: [`config/yolo_inference_profile_tune.yaml`](../../config/yolo_inference_profile_tune.yaml)
-

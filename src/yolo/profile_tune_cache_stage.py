@@ -108,16 +108,12 @@ def stage_candidate_work(
     per_variant: dict[str, float] = {}
     t_proposals = time.perf_counter()
     for variant in variants:
-        rel = proposal_cache_dir(
-            Path(variant),
-            conf=candidate.conf,
-            mask_threshold=candidate.mask_threshold,
-        )
+        rel = proposal_cache_dir(Path(variant), conf=candidate.conf)
         src = scratch_cache_root / rel
         _require_dir(
             src,
             scratch_cache_root=scratch_cache_root,
-            label=f"{variant}/tiled_proposals/c{candidate.conf:g}_t{candidate.mask_threshold:g}",
+            label=f"{variant}/tiled_proposals/c{candidate.conf:g}",
         )
         t_var = time.perf_counter()
         copy_tree_timed(src, tmp_work_root / rel)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from common.test_inference import profile_tune_fixed_mask_threshold
 from common.variants import all_variant_names
 from yolo.inference_profile_tune import TuneGridSpec, iter_detector_jobs
 from yolo.profile_tune_work import weights_path
@@ -32,24 +33,22 @@ def validate_detector_caches(
     run_root: Path,
 ) -> None:
     """Ensure all tiled-proposal caches exist for the full detector job grid."""
-    missing: list[tuple[str, float, float]] = []
-    for variant, conf, mask_threshold in iter_detector_jobs(spec, variants):
+    missing: list[tuple[str, float]] = []
+    fixed_mask = profile_tune_fixed_mask_threshold()
+    for variant, conf in iter_detector_jobs(spec, variants):
         weights = weights_path(grainseg_root, variant, run_root)
-        cache_dir = proposal_cache_dir(work_root / variant, conf=conf, mask_threshold=mask_threshold)
+        cache_dir = proposal_cache_dir(work_root / variant, conf=conf)
         expected = detector_cache_expected_record(
             variant=variant,
             weights_path=weights,
             conf=conf,
-            mask_threshold=mask_threshold,
+            mask_threshold=fixed_mask,
             sample_id="train",
         )
         try:
             load_tiled_proposals(cache_dir, expected=expected)
         except (FileNotFoundError, ValueError):
-            missing.append((variant, conf, mask_threshold))
+            missing.append((variant, conf))
     if missing:
-        formatted = ", ".join(
-            f"{variant}(conf={conf:g}, mask={mask:g})"
-            for variant, conf, mask in missing
-        )
+        formatted = ", ".join(f"{variant}(conf={conf:g})" for variant, conf in missing)
         raise FileNotFoundError(f"Missing or invalid detector caches: {formatted}")

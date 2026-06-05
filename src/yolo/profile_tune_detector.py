@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from common.profile_tune_paths import profile_tune_cache_root
+from common.test_inference import load_test_inference_recipe, profile_tune_fixed_mask_threshold
 from common.variants import repo_root
 from yolo.inference_profile_tune import (
     TuneGridSpec,
@@ -30,7 +31,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--variant", default=None)
     parser.add_argument("--conf", type=float, default=None)
-    parser.add_argument("--mask-threshold", type=float, default=None)
     parser.add_argument(
         "--grid-config",
         type=Path,
@@ -77,27 +77,18 @@ def resolve_detector_variant(
     variants: tuple[str, ...],
     variant: str | None,
     conf: float | None,
-    mask_threshold: float | None,
     array_index: int | None,
 ) -> str:
     explicit_variant = variant
-    explicit_keys = (conf, mask_threshold)
-    if array_index is not None and (
-        explicit_variant is not None or any(v is not None for v in explicit_keys)
-    ):
+    if array_index is not None and (explicit_variant is not None or conf is not None):
         raise ValueError(
-            "Specify either --array-index or --variant/--conf/--mask-threshold, not both"
+            "Specify either --array-index or --variant/--conf, not both"
         )
     if array_index is not None:
         return variant_at_detector_array_index(variants, array_index)
     if explicit_variant is None:
         raise ValueError(
             "One of --array-index or --variant is required for profile tune detector"
-        )
-    if any(v is not None for v in explicit_keys) and any(v is None for v in explicit_keys):
-        raise ValueError(
-            "Specify both --conf and --mask-threshold for a single detector key, or neither "
-            "to run all detector keys for the variant"
         )
     return explicit_variant
 
@@ -150,9 +141,9 @@ def run_detector_variant_bundle(
     repo: Path,
     local_train_image: Path | None = None,
     train_image_staging_dir: Path | None = None,
-    detector_keys: Iterable[tuple[float, float]] | None = None,
+    detector_keys: Iterable[float] | None = None,
 ) -> None:
-    """Stage train image once, load YOLO once, write all detector-key caches for a variant."""
+    """Stage train image once, load YOLO once, write all conf-key caches for a variant."""
     del repo
     scratch_cache = profile_tune_cache_root(output_dir)
     prepared, staging_note = prepare_detector_variant(
@@ -166,6 +157,7 @@ def run_detector_variant_bundle(
     if staging_note:
         print(staging_note, flush=True)
 
+    fixed_mask = profile_tune_fixed_mask_threshold(prepared.recipe)
     detection_model = None
     keys = (
         list(detector_keys)
@@ -173,13 +165,13 @@ def run_detector_variant_bundle(
         else list(iter_detector_keys(spec))
     )
 
-    for conf, mask_threshold in keys:
+    for conf in keys:
         try:
             cache_dir, detection_model, wrote = write_detector_key_proposals_if_needed(
                 prepared,
                 variant=variant,
                 conf=conf,
-                mask_threshold=mask_threshold,
+                mask_threshold=fixed_mask,
                 work_root=work_root,
                 detection_model=detection_model,
                 log_skip=True,
@@ -187,7 +179,7 @@ def run_detector_variant_bundle(
         except Exception:
             print(
                 f"Detector key failed: variant={variant} conf={conf:g} "
-                f"mask_threshold={mask_threshold:g}",
+                f"mask_threshold={fixed_mask:g}",
                 flush=True,
             )
             raise
@@ -208,7 +200,6 @@ def main(argv: list[str] | None = None) -> None:
         variants=variants,
         variant=args.variant,
         conf=args.conf,
-        mask_threshold=args.mask_threshold,
         array_index=args.array_index,
     )
     grainseg_root, run_root = default_grainseg_and_run_roots(
@@ -224,12 +215,13 @@ def main(argv: list[str] | None = None) -> None:
             flush=True,
         )
 
-    single_key = args.conf is not None and args.mask_threshold is not None
-    if single_key:
+    if args.conf is not None:
+        recipe = load_test_inference_recipe()
+        fixed_mask = profile_tune_fixed_mask_threshold(recipe)
         cache_dir = write_detector_proposal_cache(
             variant=variant,
             conf=args.conf,
-            mask_threshold=args.mask_threshold,
+            mask_threshold=fixed_mask,
             output_dir=args.output_dir,
             grainseg_root=grainseg_root,
             run_root=run_root,

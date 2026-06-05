@@ -47,6 +47,12 @@ def test_tiled_proposal_cache_schema_version_is_three() -> None:
     assert TILED_PROPOSAL_CACHE_SCHEMA_VERSION == 3
 
 
+def test_proposal_cache_dir_uses_conf_only_path(tmp_path: Path) -> None:
+    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.25)
+    assert cache_dir == tmp_path / "PPL" / "tiled_proposals" / "c0.25"
+    assert "t0." not in cache_dir.name
+
+
 def test_proposal_cache_record_includes_fingerprint_fields() -> None:
     recipe = load_test_inference_recipe()
     record = proposal_cache_record(

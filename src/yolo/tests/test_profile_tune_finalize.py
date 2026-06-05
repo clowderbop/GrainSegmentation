@@ -9,7 +9,11 @@ import pytest
 import yaml
 
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
-from common.test_inference import YoloInferenceProfileCandidate
+from common.test_inference import (
+    YoloInferenceProfileCandidate,
+    load_test_inference_recipe,
+    profile_tune_candidate_from_conf,
+)
 from yolo.inference_profile_tune import (
     grid_result_row_from_candidate_scoring,
     grid_results_fieldnames,
@@ -24,17 +28,7 @@ from yolo.tests.profile_tune_fixtures import constant_metric_bundle
 
 def _write_mini_grid(path: Path) -> None:
     path.write_text(
-        yaml.safe_dump(
-            {
-                "grid": {
-                    "postprocess_type": ["GREEDYNMM", "NMM"],
-                    "match_metric": ["IOS"],
-                    "match_threshold": [0.5],
-                    "conf": [0.25],
-                    "mask_threshold": [0.5],
-                },
-            }
-        ),
+        yaml.safe_dump({"grid": {"conf": [0.25, 0.30]}}),
         encoding="utf-8",
     )
 
@@ -43,20 +37,8 @@ def test_finalize_merges_rows_into_results_csv_and_winner(tmp_path: Path) -> Non
     _write_mini_grid(tmp_path / "grid.yaml")
     output_dir = tmp_path / "run"
     grid_dir = output_dir / "grid"
-    better = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
-    worse = YoloInferenceProfileCandidate(
-        postprocess_type="NMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
+    better = profile_tune_candidate_from_conf(0.25)
+    worse = profile_tune_candidate_from_conf(0.30)
     for candidate, pq in ((better, 0.9), (worse, 0.4)):
         write_profile_selection_row(
             profile_selection_row_path(grid_dir, candidate.candidate_id()),
@@ -108,7 +90,7 @@ def test_finalize_recompute_winner_from_csv(tmp_path: Path, capsys: pytest.Captu
     fieldnames = grid_results_fieldnames(("PPL",))
     (grid_dir / "results.csv").write_text(
         ",".join(fieldnames) + "\n"
-        "winner,GREEDYNMM,IOS,0.5,0.2,0.45,0.95,"
+        "winner,0.2,0.4,0.95,"
         + ",".join("0.95" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
         + "\n",
         encoding="utf-8",

@@ -8,7 +8,10 @@ import numpy as np
 import pytest
 
 from common.profile_tune_gt_cache import gt_cache_dir, write_gt_instance_map_cache
-from common.test_inference import YoloInferenceProfileCandidate
+from common.test_inference import (
+    YoloInferenceProfileCandidate,
+    profile_tune_fixed_mask_threshold,
+)
 from yolo.tiled_proposal_cache import proposal_cache_dir, write_tiled_proposals
 
 
@@ -51,11 +54,8 @@ def test_stage_candidate_work_copies_gt_cache_preserving_layout(tmp_path: Path) 
     scratch_cache = tmp_path / "scratch" / ".cache"
     _write_gt_cache(scratch_cache)
     candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
         conf=0.2,
-        mask_threshold=0.45,
+        mask_threshold=profile_tune_fixed_mask_threshold(),
     )
     _write_proposal_cache(
         scratch_cache,
@@ -86,18 +86,12 @@ def test_stage_candidate_work_copies_only_candidate_proposal_subtrees(
     scratch_cache = tmp_path / "scratch" / ".cache"
     _write_gt_cache(scratch_cache)
     candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
         conf=0.2,
-        mask_threshold=0.45,
+        mask_threshold=profile_tune_fixed_mask_threshold(),
     )
     other = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
         conf=0.5,
-        mask_threshold=0.6,
+        mask_threshold=profile_tune_fixed_mask_threshold(),
     )
     for variant in ("PPL", "PPLPPXblend"):
         _write_proposal_cache(
@@ -143,11 +137,8 @@ def test_stage_candidate_work_missing_gt_cache_fails_fast(tmp_path: Path) -> Non
 
     scratch_cache = tmp_path / "scratch" / ".cache"
     candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
         conf=0.2,
-        mask_threshold=0.45,
+        mask_threshold=profile_tune_fixed_mask_threshold(),
     )
 
     with pytest.raises(FileNotFoundError, match="gt_cache/train"):
@@ -167,11 +158,8 @@ def test_stage_candidate_work_missing_proposal_cache_points_at_scratch_path(
     scratch_cache = tmp_path / "scratch" / ".cache"
     _write_gt_cache(scratch_cache)
     candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
         conf=0.2,
-        mask_threshold=0.45,
+        mask_threshold=profile_tune_fixed_mask_threshold(),
     )
 
     with pytest.raises(FileNotFoundError, match="PPL/tiled_proposals/c0.2"):
@@ -189,11 +177,8 @@ def test_stage_candidate_work_returns_proposal_timing_breakdown(tmp_path: Path) 
     scratch_cache = tmp_path / "scratch" / ".cache"
     _write_gt_cache(scratch_cache)
     candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.4,
         conf=0.2,
-        mask_threshold=0.45,
+        mask_threshold=profile_tune_fixed_mask_threshold(),
     )
     for variant in ("PPL", "PPLPPXblend"):
         _write_proposal_cache(

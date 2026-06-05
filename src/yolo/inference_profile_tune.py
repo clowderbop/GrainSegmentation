@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -18,13 +17,8 @@ from common.merged_view_pq import (
     MERGED_VIEW_PQ_COUNT_KEYS,
     MERGED_VIEW_PQ_RESULT_KEYS,
     MergedViewPqResult,
-    merged_view_pq_from_instance_metric_bundle,
 )
-from common.instance_eval_report import (
-    extract_instance_metric_bundle_from_report,
-    extract_metric_from_report,
-    load_instance_eval_report,
-)
+from common.instance_eval_report import extract_metric_from_report
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
@@ -33,10 +27,6 @@ from common.test_inference import (
     rewrite_yolo_conf_in_recipe_text,
 )
 from common.variants import repo_root
-from yolo.profile_tune_work import weights_path
-from yolo.tiled_proposal_cache import recipe_whole_window_fingerprint, weights_sha256
-
-VariantScorer = Callable[[str, YoloInferenceProfileCandidate, Path], Path]
 
 _TUNE_GRID_RELATIVE = Path("config") / "yolo_inference_profile_tune.yaml"
 
@@ -226,25 +216,6 @@ def flatten_per_variant_pq_results(
     return flat
 
 
-def load_instance_metrics_report(path: Path) -> dict[str, Any]:
-    return load_instance_eval_report(path)
-
-
-def score_candidate_across_variants(
-    variant_reports: dict[str, Path],
-) -> tuple[float, dict[str, dict[str, float]]]:
-    per_variant_bundles: dict[str, dict[str, float]] = {}
-    for variant, report_path in variant_reports.items():
-        per_variant_bundles[variant] = extract_instance_metric_bundle_from_report(
-            load_instance_metrics_report(report_path)
-        )
-    per_variant_pq = {
-        variant: bundle[PROFILE_SELECTION_OBJECTIVE]
-        for variant, bundle in per_variant_bundles.items()
-    }
-    return mean_pq_across_variants(per_variant_pq), per_variant_bundles
-
-
 def grid_results_fieldnames(variant_names: tuple[str, ...]) -> list[str]:
     base = [
         "candidate_id",
@@ -323,69 +294,6 @@ def tune_grid_fingerprint(grid_config: Path | None) -> str:
     return digest
 
 
-@dataclass(frozen=True)
-class GridResumeContext:
-    grainseg_root: Path
-    run_root: Path
-    grid_config: Path | None
-
-
-def variant_eval_resume_meta_path(metrics_path: Path) -> Path:
-    return metrics_path.with_name(f"{metrics_path.stem}.resume.json")
-
-
-def variant_eval_fingerprint(
-    *,
-    candidate: YoloInferenceProfileCandidate,
-    variant: str,
-    context: GridResumeContext,
-) -> dict[str, Any]:
-    weights = weights_path(context.grainseg_root, variant, context.run_root)
-    recipe = load_test_inference_recipe()
-    return {
-        "candidate_id": candidate.candidate_id(),
-        "conf": candidate.conf,
-        "mask_threshold": candidate.mask_threshold,
-        "variant": variant,
-        "weights_sha256": weights_sha256(weights),
-        "recipe_window_fingerprint": recipe_whole_window_fingerprint(recipe),
-        "tune_grid_fingerprint": tune_grid_fingerprint(context.grid_config),
-    }
-
-
-def write_variant_eval_resume_meta(metrics_path: Path, fingerprint: dict[str, Any]) -> None:
-    variant_eval_resume_meta_path(metrics_path).write_text(
-        json.dumps(fingerprint, indent=2),
-        encoding="utf-8",
-    )
-
-
-def metrics_resume_valid(metrics_path: Path, *, expected: dict[str, Any]) -> bool:
-    if not metrics_path.is_file():
-        return False
-    meta_path = variant_eval_resume_meta_path(metrics_path)
-    if not meta_path.is_file():
-        return False
-    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    for key, expected_value in expected.items():
-        if meta.get(key) != expected_value:
-            return False
-    return True
-
-
-def should_skip_variant_eval(
-    metrics_path: Path,
-    *,
-    resume: bool,
-    expected_fingerprint: dict[str, Any] | None,
-) -> bool:
-    if not resume:
-        return False
-    if expected_fingerprint is None:
-        return metrics_path.is_file()
-    return metrics_resume_valid(metrics_path, expected=expected_fingerprint)
-
-
 def finalize_grid_winner(
     grid_dir: Path,
     rows: list[dict[str, Any]],
@@ -406,76 +314,6 @@ def finalize_grid_winner(
         ),
     )
     return winner
-
-
-def run_grid_search(
-    *,
-    candidates: list[YoloInferenceProfileCandidate],
-    variants: tuple[str, ...],
-    output_dir: Path,
-    score_variant: VariantScorer,
-    resume: bool = False,
-    resume_context: GridResumeContext | None = None,
-    on_variant_scored: Callable[
-        [YoloInferenceProfileCandidate, str, Path], None
-    ]
-    | None = None,
-) -> tuple[YoloInferenceProfileCandidate, list[dict[str, object]]]:
-    grid_dir = output_dir / "grid"
-    results_csv = grid_dir / "results.csv"
-    rows: list[dict[str, object]] = []
-    if resume:
-        rows = [dict(row) for row in load_grid_results_csv(results_csv)]
-    completed_ids = {str(row["candidate_id"]) for row in rows}
-
-    for candidate in candidates:
-        if resume and candidate.candidate_id() in completed_ids:
-            continue
-        candidate_dir = grid_dir / "candidates" / candidate.candidate_id()
-        variant_reports: dict[str, Path] = {}
-        for variant in variants:
-            variant_out = candidate_dir / variant
-            metrics_path = variant_out / "instance_metrics.json"
-            fingerprint = (
-                variant_eval_fingerprint(
-                    candidate=candidate, variant=variant, context=resume_context
-                )
-                if resume_context is not None
-                else None
-            )
-            if should_skip_variant_eval(
-                metrics_path, resume=resume, expected_fingerprint=fingerprint
-            ):
-                if not metrics_path.is_file():
-                    raise FileNotFoundError(
-                        f"Resume expected metrics at {metrics_path}"
-                    )
-                variant_reports[variant] = metrics_path
-            else:
-                variant_reports[variant] = score_variant(variant, candidate, variant_out)
-                if resume_context is not None and fingerprint is not None:
-                    write_variant_eval_resume_meta(metrics_path, fingerprint)
-            if on_variant_scored is not None:
-                on_variant_scored(candidate, variant, variant_reports[variant])
-        mean_pq, per_variant_bundles = score_candidate_across_variants(variant_reports)
-        row = grid_result_row_from_candidate_scoring(
-            candidate=candidate,
-            per_variant_pq_results={
-                variant: merged_view_pq_from_instance_metric_bundle(bundle)
-                for variant, bundle in per_variant_bundles.items()
-            },
-        )
-        rows.append(row)
-        write_grid_results_csv(results_csv, rows, variant_names=variants)
-        print(
-            f"grid {candidate.candidate_id()}: mean_pq={mean_pq:.6f}",
-            flush=True,
-        )
-
-    if not rows:
-        raise ValueError("no grid results to finalize")
-    winner = finalize_grid_winner(grid_dir, rows, variant_names=variants)
-    return winner, rows
 
 
 def write_grid_winner_json(

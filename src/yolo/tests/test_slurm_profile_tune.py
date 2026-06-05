@@ -66,32 +66,12 @@ def test_profile_tune_detector_walltime_tiers_from_detector_key_count(
 
     narrow = tmp_path / "narrow.yaml"
     narrow.write_text(
-        yaml.safe_dump(
-            {
-                "grid": {
-                    "postprocess_type": ["GREEDYNMM"],
-                    "match_metric": ["IOS"],
-                    "match_threshold": [0.5],
-                    "conf": [0.2, 0.3],
-                    "mask_threshold": [0.45],
-                },
-            }
-        ),
+        yaml.safe_dump({"grid": {"conf": [0.2, 0.3]}}),
         encoding="utf-8",
     )
     wide = tmp_path / "wide.yaml"
     wide.write_text(
-        yaml.safe_dump(
-            {
-                "grid": {
-                    "postprocess_type": ["GREEDYNMM"],
-                    "match_metric": ["IOS"],
-                    "match_threshold": [0.5],
-                    "conf": [0.2, 0.3],
-                    "mask_threshold": [0.45, 0.55],
-                },
-            }
-        ),
+        yaml.safe_dump({"grid": {"conf": [0.2, 0.3, 0.4, 0.5]}}),
         encoding="utf-8",
     )
     assert profile_tune_detector_walltime(load_tune_grid(narrow)) == (

@@ -11,7 +11,10 @@ import numpy as np
 
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from common.merged_view_pq import MERGED_VIEW_PQ_COUNT_KEYS, MERGED_VIEW_PQ_RESULT_KEYS
-from common.test_inference import YoloInferenceProfileCandidate
+from common.test_inference import (
+    YoloInferenceProfileCandidate,
+    profile_tune_fixed_mask_threshold,
+)
 
 
 def constant_metric_bundle(value: float) -> dict[str, float]:
@@ -42,38 +45,17 @@ from common.tests.profile_tune_fixtures import (  # noqa: F401
 
 
 def candidate_for_variant(variant: str) -> YoloInferenceProfileCandidate:
-    """One distinct grid point per registry variant (ADR 0005 parity fixtures)."""
-    by_variant: dict[str, YoloInferenceProfileCandidate] = {
-        "PPL": YoloInferenceProfileCandidate(
-            postprocess_type="GREEDYNMM",
-            match_metric="IOS",
-            match_threshold=0.4,
-            conf=0.15,
-            mask_threshold=0.4,
-        ),
-        "PPLPPXblend": YoloInferenceProfileCandidate(
-            postprocess_type="NMM",
-            match_metric="IOU",
-            match_threshold=0.5,
-            conf=0.25,
-            mask_threshold=0.5,
-        ),
-        "PPL+PPXblend": YoloInferenceProfileCandidate(
-            postprocess_type="GREEDYNMM",
-            match_metric="IOU",
-            match_threshold=0.6,
-            conf=0.35,
-            mask_threshold=0.6,
-        ),
-        "PPL+AllPPX": YoloInferenceProfileCandidate(
-            postprocess_type="NMM",
-            match_metric="IOS",
-            match_threshold=0.5,
-            conf=0.25,
-            mask_threshold=0.5,
-        ),
+    """One distinct conf per registry variant (ADR 0005 parity fixtures)."""
+    conf_by_variant = {
+        "PPL": 0.15,
+        "PPLPPXblend": 0.25,
+        "PPL+PPXblend": 0.35,
+        "PPL+AllPPX": 0.25,
     }
-    return by_variant[variant]
+    return YoloInferenceProfileCandidate(
+        conf=conf_by_variant[variant],
+        mask_threshold=profile_tune_fixed_mask_threshold(),
+    )
 
 
 def collect_tiled_records_with_mocked_slices(

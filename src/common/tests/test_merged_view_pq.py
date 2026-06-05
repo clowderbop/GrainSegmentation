@@ -241,29 +241,6 @@ def test_near_miss_counts_when_best_iou_is_positive_but_not_a_match() -> None:
     assert 0.0 < result["avg_best_iou_unmatched_pred"] < PQ_MATCH_IOU
 
 
-def test_merged_view_pq_from_instance_metric_bundle_derives_match_counts() -> None:
-    from common.merged_view_pq import merged_view_pq_from_instance_metric_bundle
-
-    bundle = {
-        "pq": 0.8,
-        "dq": 0.9,
-        "sq": 0.7,
-        "precision_iou50": 0.5,
-        "recall_iou50": 1.0,
-        "f1_iou50": 2 / 3,
-        "gt_instance_count": 2,
-        "pred_instance_count": 4,
-        "pred_gt_instance_ratio": 2.0,
-    }
-    result = merged_view_pq_from_instance_metric_bundle(bundle)
-
-    assert result["tp"] == 2
-    assert result["fp"] == 2
-    assert result["fn"] == 0
-    assert result["pq"] == pytest.approx(0.8)
-    assert result["num_cooccurring_pairs"] == 0
-
-
 def test_instance_metric_bundle_keys_unchanged() -> None:
     from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 

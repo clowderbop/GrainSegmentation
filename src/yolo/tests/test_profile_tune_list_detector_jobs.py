@@ -12,17 +12,7 @@ from yolo.profile_tune_list_detector_jobs import main
 
 def _write_minimal_grid(path: Path) -> None:
     path.write_text(
-        yaml.safe_dump(
-            {
-                "grid": {
-                    "postprocess_type": ["GREEDYNMM"],
-                    "match_metric": ["IOS"],
-                    "match_threshold": [0.5],
-                    "conf": [0.2, 0.3],
-                    "mask_threshold": [0.45, 0.55],
-                },
-            }
-        ),
+        yaml.safe_dump({"grid": {"conf": [0.2, 0.3]}}),
         encoding="utf-8",
     )
 

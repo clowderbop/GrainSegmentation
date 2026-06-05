@@ -11,7 +11,7 @@ import pytest
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from common.test_inference import YoloInferenceProfileCandidate
 from common.variants import all_variant_names
-from yolo.inference_profile_tune import extract_instance_metric_bundle_from_report
+from common.instance_eval_report import extract_instance_metric_bundle_from_report
 from yolo.tiled_proposal_cache import TiledProposalRecord
 from yolo.tests.profile_tune_fixtures import (
     candidate_for_variant,
@@ -97,12 +97,10 @@ _PROFILE_SELECTION_PQ_PARITY_KEYS = (
 def _assert_pq_result_matches_bundle_subset(
     result: dict[str, float | int], bundle: dict[str, float]
 ) -> None:
-    from common.merged_view_pq import merged_view_pq_from_instance_metric_bundle
-
-    reference = merged_view_pq_from_instance_metric_bundle(bundle)
     for key in _PROFILE_SELECTION_PQ_PARITY_KEYS:
-        expected = reference[key] if key in ("tp", "fp", "fn") else bundle[key]
-        assert result[key] == pytest.approx(expected, rel=0.0, abs=1e-9), key
+        if key in ("tp", "fp", "fn"):
+            continue
+        assert result[key] == pytest.approx(bundle[key], rel=0.0, abs=1e-9), key
 
 
 @pytest.mark.parametrize("variant", all_variant_names())

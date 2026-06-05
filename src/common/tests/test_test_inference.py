@@ -54,20 +54,20 @@ unet:
     assert profile.match_threshold == 0.7
 
 
-def test_parse_yolo_profile_candidate_mapping_rejects_empty_postprocess_type() -> None:
-    from common.test_inference import parse_yolo_profile_candidate_mapping
+def test_profile_tune_candidate_from_conf_uses_recipe_mask_threshold() -> None:
+    from common.test_inference import (
+        profile_tune_candidate_from_conf,
+        profile_tune_fixed_mask_threshold,
+    )
 
-    with pytest.raises(ValueError, match="postprocess_type"):
-        parse_yolo_profile_candidate_mapping(
-            {
-                "postprocess_type": "",
-                "match_metric": "IOS",
-                "match_threshold": 0.5,
-                "conf": 0.25,
-                "mask_threshold": 0.5,
-            },
-            context="profile",
-        )
+    candidate = profile_tune_candidate_from_conf(0.25)
+    assert candidate.conf == 0.25
+    assert candidate.mask_threshold == profile_tune_fixed_mask_threshold()
+    assert not hasattr(candidate, "postprocess_type")
+    assert candidate.to_dict() == {
+        "conf": 0.25,
+        "mask_threshold": profile_tune_fixed_mask_threshold(),
+    }
 
 
 def test_emit_shell_exports_yolo_inference_profile(capsys: pytest.CaptureFixture[str]) -> None:

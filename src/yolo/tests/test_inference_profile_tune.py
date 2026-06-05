@@ -18,10 +18,8 @@ from common.test_inference import (
 )
 from common.variants import repo_root
 
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from yolo.inference_profile_tune import (
-    GridResumeContext,
     PROFILE_SELECTION_OBJECTIVE,
     append_grid_result_row,
     count_detector_jobs,
@@ -38,24 +36,17 @@ from yolo.inference_profile_tune import (
     load_grid_winner,
     load_tune_grid,
     mean_pq_across_variants,
-    metrics_resume_valid,
     promote_profile_to_recipe,
-    run_grid_search,
-    score_candidate_across_variants,
     select_best_candidate,
-    should_skip_variant_eval,
     tune_grid_path,
-    variant_eval_fingerprint,
     variant_metric_column,
     write_grid_winner_json,
-    write_variant_eval_resume_meta,
 )
 from yolo.tests.profile_tune_fixtures import (
     constant_merged_view_pq_result,
     constant_metric_bundle,
     instance_metrics_report_for_pq,
 )
-from yolo.profile_tune_dry_run import dry_run_scorer
 from yolo.profile_tune_cli import validate_detector_caches
 
 
@@ -428,27 +419,6 @@ def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:
     assert loaded == profile
 
 
-def test_score_candidate_across_variants_reads_variant_reports(tmp_path: Path) -> None:
-    def _write_report(path: Path, pq: float) -> None:
-        path.write_text(
-            json.dumps(instance_metrics_report_for_pq(pq)),
-            encoding="utf-8",
-        )
-
-    ppl_report = tmp_path / "ppl.json"
-    ppx_report = tmp_path / "ppx.json"
-    _write_report(ppl_report, 0.8)
-    _write_report(ppx_report, 0.6)
-    mean_pq, per_variant_bundles = score_candidate_across_variants(
-        {"PPL": ppl_report, "PPL+AllPPX": ppx_report}
-    )
-    assert mean_pq == pytest.approx(0.7)
-    assert per_variant_bundles["PPL"]["pq"] == pytest.approx(0.8)
-    assert per_variant_bundles["PPL+AllPPX"]["pq"] == pytest.approx(0.6)
-    for key in INSTANCE_METRIC_BUNDLE_KEYS:
-        assert key in per_variant_bundles["PPL"]
-
-
 def test_uv_run_cmd_uses_uv_directory_for_each_project() -> None:
     from yolo.profile_tune_work import uv_run_cmd
 
@@ -514,110 +484,6 @@ def test_extract_mean_pq_from_evaluate_instances_report_shape() -> None:
     assert extract_mean_pq_from_report(report) == pytest.approx(0.42)
 
 
-def test_run_grid_search_dry_run_picks_best_across_all_registry_variants(
-    tmp_path: Path,
-) -> None:
-    from common.variants import all_variant_names
-    variants = all_variant_names()
-    _write_grid(tmp_path / "grid.yaml")
-    spec = load_tune_grid(tmp_path / "grid.yaml")
-    candidates = list(iter_grid_candidates(spec))[:2]
-    better, worse = candidates[0], candidates[1]
-    scores: dict[tuple[str, str], float] = {}
-    for variant in variants:
-        scores[(variant, better.candidate_id())] = 0.9
-        scores[(variant, worse.candidate_id())] = 0.1
-    winner, _ = run_grid_search(
-        candidates=[better, worse],
-        variants=variants,
-        output_dir=tmp_path / "tune_all",
-        score_variant=dry_run_scorer(scores),
-    )
-    assert winner == better
-
-
-def test_run_grid_search_dry_run_writes_winner(tmp_path: Path) -> None:
-    _write_grid(tmp_path / "grid.yaml")
-    spec = load_tune_grid(tmp_path / "grid.yaml")
-    candidates = list(iter_grid_candidates(spec))
-    assert len(candidates) >= 2
-    better, worse = candidates[0], candidates[1]
-    scorer = dry_run_scorer(
-        {
-            ("PPL", better.candidate_id()): 0.9,
-            ("PPL", worse.candidate_id()): 0.4,
-        }
-    )
-    winner, _ = run_grid_search(
-        candidates=[better, worse],
-        variants=("PPL",),
-        output_dir=tmp_path / "tune",
-        score_variant=scorer,
-    )
-    assert winner == better
-    assert (tmp_path / "tune" / "grid" / "winner.json").is_file()
-    assert (tmp_path / "tune" / "grid" / "results.csv").is_file()
-
-
-def test_should_skip_variant_eval_requires_matching_resume_fingerprint(
-    tmp_path: Path,
-) -> None:
-    metrics = tmp_path / "instance_metrics.json"
-    expected = {"candidate_id": "x", "conf": 0.25}
-    assert not should_skip_variant_eval(
-        metrics, resume=True, expected_fingerprint=expected
-    )
-    metrics.write_text("{}", encoding="utf-8")
-    assert not should_skip_variant_eval(
-        metrics, resume=True, expected_fingerprint=expected
-    )
-    write_variant_eval_resume_meta(metrics, expected)
-    assert should_skip_variant_eval(metrics, resume=True, expected_fingerprint=expected)
-    assert not should_skip_variant_eval(
-        metrics, resume=True, expected_fingerprint={**expected, "conf": 0.99}
-    )
-    assert not should_skip_variant_eval(metrics, resume=False, expected_fingerprint=expected)
-
-
-def test_run_grid_search_no_resume_does_not_delete_existing_csv_at_start(
-    tmp_path: Path,
-) -> None:
-    grid_dir = tmp_path / "grid"
-    grid_dir.mkdir(parents=True)
-    csv_path = grid_dir / "results.csv"
-    csv_path.write_text(
-        "candidate_id,conf,mask_threshold,mean_pq,pq__PPL\n"
-        "stale,0.25,0.4,0.1,0.1\n",
-        encoding="utf-8",
-    )
-    _write_grid(tmp_path / "grid.yaml")
-    spec = load_tune_grid(tmp_path / "grid.yaml")
-    candidate = list(iter_grid_candidates(spec))[0]
-
-    def scorer(variant: str, cand: YoloInferenceProfileCandidate, out_dir: Path) -> Path:
-        out_dir.mkdir(parents=True, exist_ok=True)
-        metrics = out_dir / "instance_metrics.json"
-        metrics.write_text(
-            json.dumps(instance_metrics_report_for_pq(0.55)),
-            encoding="utf-8",
-        )
-        return metrics
-
-    run_grid_search(
-        candidates=[candidate],
-        variants=("PPL",),
-        output_dir=tmp_path,
-        score_variant=scorer,
-        resume=False,
-        resume_context=None,
-    )
-    assert csv_path.is_file()
-    loaded = load_grid_results_csv(csv_path)
-    assert len(loaded) == 1
-    assert loaded[0]["candidate_id"] == candidate.candidate_id()
-    assert float(loaded[0]["mean_pq"]) == pytest.approx(0.55)
-
-
 def test_append_grid_result_row_writes_incrementally(tmp_path: Path) -> None:
     csv_path = tmp_path / "grid" / "results.csv"
     profile = profile_tune_candidate_from_conf(0.25)
@@ -656,58 +522,6 @@ def test_validate_detector_caches_raises_when_cache_missing(tmp_path: Path) -> N
             grainseg_root=tmp_path / "grainseg",
             run_root=run_root,
         )
-
-
-def test_run_grid_search_resume_skips_when_fingerprint_matches(tmp_path: Path) -> None:
-    _write_grid(tmp_path / "grid.yaml")
-    spec = load_tune_grid(tmp_path / "grid.yaml")
-    candidates = list(iter_grid_candidates(spec))[:1]
-    candidate = candidates[0]
-    grainseg_root = tmp_path / "grainseg"
-    run_root = grainseg_root / "runs" / "yolo26-seg"
-    weights = run_root / "PPL" / "weights" / "best.pt"
-    weights.parent.mkdir(parents=True)
-    weights.write_bytes(b"weights")
-    existing = tmp_path / "grid" / "candidates" / candidate.candidate_id() / "PPL"
-    existing.mkdir(parents=True)
-    metrics = existing / "instance_metrics.json"
-    metrics.write_text(
-        json.dumps(instance_metrics_report_for_pq(0.88)),
-        encoding="utf-8",
-    )
-    resume_context = GridResumeContext(
-        grainseg_root=grainseg_root,
-        run_root=run_root,
-        grid_config=tmp_path / "grid.yaml",
-    )
-    write_variant_eval_resume_meta(
-        metrics,
-        variant_eval_fingerprint(
-            candidate=candidate, variant="PPL", context=resume_context
-        ),
-    )
-    calls: list[tuple[str, str]] = []
-
-    def scorer(variant: str, cand: YoloInferenceProfileCandidate, out_dir: Path) -> Path:
-        calls.append((variant, cand.candidate_id()))
-        raise AssertionError("scorer should not run when resume fingerprint matches")
-
-    winner, _ = run_grid_search(
-        candidates=[candidate],
-        variants=("PPL",),
-        output_dir=tmp_path,
-        score_variant=scorer,
-        resume=True,
-        resume_context=resume_context,
-    )
-    assert winner == candidate
-    assert calls == []
-    assert metrics_resume_valid(
-        metrics,
-        expected=variant_eval_fingerprint(
-            candidate=candidate, variant="PPL", context=resume_context
-        ),
-    )
 
 
 def test_finalize_grid_winner_writes_per_variant_pq_results_from_csv(tmp_path: Path) -> None:

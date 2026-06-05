@@ -10,7 +10,10 @@ import numpy as np
 import pytest
 
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
-from common.test_inference import YoloInferenceProfileCandidate
+from common.test_inference import (
+    YoloInferenceProfileCandidate,
+    profile_tune_candidate_from_conf,
+)
 from yolo.inference_profile_tune import (
     load_profile_selection_row,
     profile_selection_row_path,
@@ -26,13 +29,7 @@ from yolo.tests.profile_tune_fixtures import constant_merged_view_pq_result
 
 
 def test_build_profile_selection_row_includes_per_variant_pq_results() -> None:
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
+    candidate = profile_tune_candidate_from_conf(0.25)
     row = build_profile_selection_row(
         candidate=candidate,
         per_variant_pq_results={
@@ -53,13 +50,7 @@ def test_build_profile_selection_row_includes_per_variant_pq_results() -> None:
 
 
 def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> None:
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
+    candidate = profile_tune_candidate_from_conf(0.25)
     output_dir = tmp_path / "run"
     work_root = output_dir / ".cache"
     grainseg_root = tmp_path / "grainseg"
@@ -101,13 +92,7 @@ def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> No
 def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
     tmp_path: Path,
 ) -> None:
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="NMM",
-        match_metric="IOU",
-        match_threshold=0.6,
-        conf=0.35,
-        mask_threshold=0.6,
-    )
+    candidate = profile_tune_candidate_from_conf(0.35)
     output_dir = tmp_path / "run"
     grid_dir = output_dir / "grid"
     row_path = profile_selection_row_path(grid_dir, candidate.candidate_id())
@@ -162,13 +147,7 @@ def test_row_fingerprint_matches_requires_exact_equality() -> None:
 
 
 def test_score_profile_selection_candidate_loads_gt_once(tmp_path: Path) -> None:
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
+    candidate = profile_tune_candidate_from_conf(0.25)
     output_dir = tmp_path / "run"
     gt_loads: list[int] = []
     fake_gt = np.zeros((16, 16), dtype=np.int32)
@@ -213,13 +192,7 @@ def test_candidate_row_fingerprint_includes_proposal_schema_v2(
     from yolo.profile_tune_candidate import candidate_row_fingerprint
     from yolo.tiled_proposal_cache import TILED_PROPOSAL_CACHE_SCHEMA_VERSION
 
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
+    candidate = profile_tune_candidate_from_conf(0.25)
     grainseg_root = tmp_path / "grainseg"
     run_root = grainseg_root / "runs" / "yolo26-seg"
     weights = run_root / "PPL" / "weights" / "best.pt"
@@ -250,13 +223,7 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
 
     from yolo.tiled_proposal_cache import weights_sha256
 
-    candidate = YoloInferenceProfileCandidate(
-        postprocess_type="GREEDYNMM",
-        match_metric="IOS",
-        match_threshold=0.5,
-        conf=0.25,
-        mask_threshold=0.5,
-    )
+    candidate = profile_tune_candidate_from_conf(0.25)
     output_dir = tmp_path / "run"
     grainseg_root = tmp_path / "GrainSeg"
     run_root = grainseg_root / "runs" / "yolo26-seg"

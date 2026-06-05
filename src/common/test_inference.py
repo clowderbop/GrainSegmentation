@@ -49,11 +49,8 @@ class YoloInferenceProfile:
 
 @dataclass(frozen=True)
 class YoloInferenceProfileCandidate:
-    """Full YOLO inference profile knobs for tune selection and promote."""
+    """Conf grid point for profile selection; mask threshold fixed in test recipe."""
 
-    postprocess_type: str
-    match_metric: str
-    match_threshold: float
     conf: float
     mask_threshold: float
 
@@ -123,42 +120,7 @@ def parse_yolo_inference_profile(yolo_raw: dict[str, Any]) -> YoloInferenceProfi
     )
 
 
-def yolo_profile_candidate_from_recipe(
-    recipe: TestInferenceRecipe,
-) -> YoloInferenceProfileCandidate:
-    profile = recipe.yolo.profile
-    return YoloInferenceProfileCandidate(
-        postprocess_type=profile.postprocess_type,
-        match_metric=profile.match_metric,
-        match_threshold=profile.match_threshold,
-        conf=recipe.yolo.conf,
-        mask_threshold=profile.mask_threshold,
-    )
-
-
-def parse_yolo_profile_candidate_mapping(
-    profile_raw: dict[str, Any], *, context: str
-) -> YoloInferenceProfileCandidate:
-    prefix = f"{context}." if context else ""
-    profile = parse_yolo_inference_profile(profile_raw)
-    return YoloInferenceProfileCandidate(
-        postprocess_type=profile.postprocess_type,
-        match_metric=profile.match_metric,
-        match_threshold=profile.match_threshold,
-        conf=yv.require_float(profile_raw.get("conf"), context=f"{prefix}conf"),
-        mask_threshold=profile.mask_threshold,
-    )
-
-
-_YOLO_PROFILE_SCALAR_KEYS = frozenset(
-    {
-        "conf",
-        "mask_threshold",
-        "postprocess_type",
-        "match_metric",
-        "match_threshold",
-    }
-)
+_YOLO_PROFILE_SCALAR_KEYS = frozenset({"conf", "mask_threshold"})
 
 
 def _yaml_scalar(value: float | str) -> str:
@@ -183,15 +145,11 @@ def profile_tune_candidate_from_conf(
     conf: float,
     recipe: TestInferenceRecipe | None = None,
 ) -> YoloInferenceProfileCandidate:
-    """Build a profile-selection candidate; non-conf fields come from the test recipe."""
+    """Build a profile-selection candidate; mask threshold comes from the test recipe."""
     resolved = recipe or load_test_inference_recipe()
-    profile = resolved.yolo.profile
     return YoloInferenceProfileCandidate(
-        postprocess_type=profile.postprocess_type,
-        match_metric=profile.match_metric,
-        match_threshold=profile.match_threshold,
         conf=conf,
-        mask_threshold=profile.mask_threshold,
+        mask_threshold=resolved.yolo.profile.mask_threshold,
     )
 
 
@@ -201,13 +159,7 @@ def rewrite_yolo_conf_in_recipe_text(
     """Update train-selected conf and fixed mask threshold without touching other yolo keys."""
     return rewrite_yolo_profile_in_recipe_text(
         text,
-        YoloInferenceProfileCandidate(
-            postprocess_type="",
-            match_metric="",
-            match_threshold=0.0,
-            conf=conf,
-            mask_threshold=mask_threshold,
-        ),
+        YoloInferenceProfileCandidate(conf=conf, mask_threshold=mask_threshold),
         keys=("conf", "mask_threshold"),
     )
 
@@ -222,9 +174,6 @@ def rewrite_yolo_profile_in_recipe_text(
     all_replacements = {
         "conf": candidate.conf,
         "mask_threshold": candidate.mask_threshold,
-        "postprocess_type": candidate.postprocess_type,
-        "match_metric": candidate.match_metric,
-        "match_threshold": candidate.match_threshold,
     }
     selected = frozenset(keys) if keys is not None else frozenset(all_replacements)
     replacements = {key: all_replacements[key] for key in selected}

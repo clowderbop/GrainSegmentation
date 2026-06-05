@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import TypedDict
 
 import numpy as np
@@ -29,7 +28,6 @@ __all__ = [
     "compute_merged_view_pq",
     "format_merged_view_pq_value",
     "instance_overlap_stats",
-    "merged_view_pq_from_instance_metric_bundle",
 ]
 
 MERGED_VIEW_PQ_RESULT_KEYS: tuple[str, ...] = (
@@ -168,67 +166,6 @@ def _overlap_forensics(
         "near_miss_gt_count": near_miss_gt_count,
         "avg_best_iou_unmatched_pred": avg_best_iou_unmatched_pred,
     }
-
-
-def _tp_fp_fn_from_bundle_counts(
-    bundle: Mapping[str, float | int],
-) -> tuple[int, int, int]:
-    gt = int(bundle["gt_instance_count"])
-    pred = int(bundle["pred_instance_count"])
-    if gt == 0 and pred == 0:
-        return 0, 0, 0
-    if gt == 0:
-        return 0, pred, 0
-    if pred == 0:
-        return 0, 0, gt
-    recall = float(bundle["recall_iou50"])
-    precision = float(bundle["precision_iou50"])
-    tp_from_recall = int(round(recall * gt))
-    tp_from_precision = int(round(precision * pred))
-    tp = tp_from_recall
-    if tp_from_recall != tp_from_precision:
-        tp = min(tp_from_recall, tp_from_precision, gt, pred)
-    fp = pred - tp
-    fn = gt - tp
-    return tp, fp, fn
-
-
-def merged_view_pq_from_instance_metric_bundle(
-    bundle: Mapping[str, float | int],
-) -> MergedViewPqResult:
-    """Project a full instance metric bundle onto ``MergedViewPqResult``.
-
-    For legacy ``run_grid_search`` rows sourced from ``evaluate_instances`` reports.
-    Shared PQ/count/IoU50 fields copy verbatim; ``tp``/``fp``/``fn`` are derived from
-    precision/recall and instance counts when absent. Overlap forensics and matched-IoU
-    spread are zero-filled (or ``sq`` when ``tp > 0``) because reports do not carry them.
-    """
-    tp, fp, fn = _tp_fp_fn_from_bundle_counts(bundle)
-    sq = float(bundle["sq"])
-    result: MergedViewPqResult = {
-        "pq": float(bundle["pq"]),
-        "dq": float(bundle["dq"]),
-        "sq": sq,
-        "tp": tp,
-        "fp": fp,
-        "fn": fn,
-        "precision_iou50": float(bundle["precision_iou50"]),
-        "recall_iou50": float(bundle["recall_iou50"]),
-        "f1_iou50": float(bundle["f1_iou50"]),
-        "gt_instance_count": int(bundle["gt_instance_count"]),
-        "pred_instance_count": int(bundle["pred_instance_count"]),
-        "pred_gt_instance_ratio": float(bundle["pred_gt_instance_ratio"]),
-        "min_matched_iou": sq if tp > 0 else 0.0,
-        "max_matched_iou": sq if tp > 0 else 0.0,
-        "median_matched_iou": sq if tp > 0 else 0.0,
-        "num_cooccurring_pairs": 0,
-        "num_pairs_above_pq_threshold": 0,
-        "near_miss_pred_count": 0,
-        "near_miss_gt_count": 0,
-        "avg_best_iou_unmatched_pred": 0.0,
-    }
-    assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
-    return result
 
 
 def compute_merged_view_pq(

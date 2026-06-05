@@ -181,10 +181,6 @@ _Avoid:_ per-variant profiles (confounds **variant test ranking**), tuning on ov
 Train-side search for the shared **YOLO inference profile** on the whole **train** section, maximizing mean **whole-section PQ** averaged across input variants. Winner feeds **profile promotion**; audit trail on scratch records per-variant **`MergedViewPqResult`** diagnostics for each candidate (ADR 0005).
 _Avoid:_ tuning on overlapping **detector proposals** as the headline objective, scoring with the full **instance metric bundle**
 
-**Profile selection result row**:
-One grid candidate’s audit record: `conf`, fixed `mask_threshold`, per-variant and mean train **whole-section PQ**, per-variant **`MergedViewPqResult`** fields, and what inputs the score depended on. Rows assemble into the tune-run audit table (ADR 0005).
-_Avoid:_ treating a stale row as valid after labels or weights change, expecting IoU75 / mP/mR/mF1 / **AJI+** on the row
-
 **Profile selection scoring**:
 Computing train **whole-section PQ** via `compute_merged_view_pq` (`compute_train_pq` in YOLO code) for one grid point: **tiled detector proposals** → **cross-tile association** → **merged instance view** → **`MergedViewPqResult`**, without persisting a full **instance prediction set** or the **instance metric bundle**. Held-out whole predict uses the same postprocess module; held-out **eval** computes the full bundle (ADR 0005).
 _Avoid:_ SAHI slice-merge + score-paint on the production path, requiring prediction-set JSON equality on every grid point, `compute_instance_metric_bundle` on the tune hot path

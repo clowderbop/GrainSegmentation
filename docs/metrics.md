@@ -65,19 +65,6 @@ Authoritative policy for train-side selection, held-out ranking, and reporting. 
 | Held-out **eval** / predict metrics | Headline **whole-section PQ** | Full **instance metric bundle** | YOLO / U-Net runbooks (test eval) |
 | **Post-eval reporting** | Headline **whole-section PQ** + [PQ diagnostics](#pq-diagnostics); AP/mAP in YOLO-only patch panel | From eval artifacts | [`runbooks/analysis.md`](runbooks/analysis.md) |
 
-### Stale AJI-selected scratch outputs
-
-Older artifacts may rank or promote by AJI or `mean_aji` instead of PQ:
-
-| Location | Do not use for final settings under PQ policy |
-|----------|-----------------------------------------------|
-| `runs/yolo_inference_profile_tune/` | AJI-era `grid/winner.json` or high-`mean_aji` rows for **profile promotion** |
-| `config/test_inference.yaml` | Values promoted from an AJI-selected winner |
-| `runs/watershed_tune/`, `eval/extraction_method_selection.json` | AJI-driven extraction winners |
-| `eval/yolo_*`, `eval/unet_*`, `eval/reporting/` | Pre-policy or AJI-headline held-out eval / reporting |
-
-Keep these trees for audit and explaining the policy change. Final thesis ranking, promoted **YOLO inference profile**, U-Net extraction choice, held-out test, and **reporting bundle** should come from PQ-centered train-side artifacts and matching held-out eval—then `analysis.build_report`. Runbooks link here for operational detail; they do not restate this table.
-
 ## Post-eval reporting
 
 After test eval jobs finish, build comparison tables and figures from scratch artifacts:

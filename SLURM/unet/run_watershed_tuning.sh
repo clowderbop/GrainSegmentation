@@ -11,6 +11,8 @@ set -euo pipefail
 source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/SLURM/utils/enter_job.sh"
 # shellcheck source=SLURM/utils/variants.sh
 source "$SLURM_ROOT/utils/variants.sh"
+# shellcheck source=SLURM/utils/manifest_shell.sh
+source "$SLURM_ROOT/utils/manifest_shell.sh"
 # shellcheck source=SLURM/utils/tensorflow.sh
 source "$SLURM_ROOT/utils/tensorflow.sh"
 mkdir -p "$REPO_ROOT/logs"
@@ -114,15 +116,16 @@ cp "$GT_GPKG" "$WORK_DIR/gt.gpkg"
 LOCAL_IMAGE_DIR="$WORK_DIR/dataset"
 LOCAL_GT_GPKG="$WORK_DIR/gt.gpkg"
 
-echo "Staging train whole manifest to $LOCAL_IMAGE_DIR ..."
-uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
-    "$CANONICAL_MANIFEST" "$LOCAL_IMAGE_DIR"
-STAGED_MANIFEST="$LOCAL_IMAGE_DIR/manifest.json"
-require_file "$STAGED_MANIFEST" "Staged train manifest missing"
-
 cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
 uv sync
+
+install_unet_tensorflow_wheel
+
+echo "Staging train whole manifest to $LOCAL_IMAGE_DIR ..."
+stage_manifest_run_in_unet_env "$CANONICAL_MANIFEST" "$LOCAL_IMAGE_DIR"
+STAGED_MANIFEST="$LOCAL_IMAGE_DIR/manifest.json"
+require_file "$STAGED_MANIFEST" "Staged train manifest missing"
 
 WATERSHED_SUBDIR="$(watershed_tune_subdir_for_variant "$VARIANT")"
 VARIANT_OUTPUT_DIR="$OUTPUT_DIR/$WATERSHED_SUBDIR"
@@ -130,8 +133,6 @@ mkdir -p "$VARIANT_OUTPUT_DIR"
 JOB_TAG="${SLURM_JOB_ID:-manual}"
 OUT_CSV="$VARIANT_OUTPUT_DIR/watershed_grid_${JOB_TAG}.csv"
 OUT_JSON="$VARIANT_OUTPUT_DIR/watershed_best_${JOB_TAG}.json"
-
-install_unet_tensorflow_wheel
 
 TUNE_CMD=(
     uv run --no-sync python -u -m unet.tune_watershed

@@ -15,6 +15,8 @@ source "$SLURM_ROOT/utils/assertions.sh"
 source "$SLURM_ROOT/utils/cancel_duplicate_jobs.sh"
 # shellcheck source=SLURM/utils/variants.sh
 source "$SLURM_ROOT/utils/variants.sh"
+# shellcheck source=SLURM/utils/manifest_shell.sh
+source "$SLURM_ROOT/utils/manifest_shell.sh"
 # shellcheck source=SLURM/utils/tensorflow.sh
 source "$SLURM_ROOT/utils/tensorflow.sh"
 
@@ -122,12 +124,6 @@ LOCAL_DIR="$TMPDIR/unet_train_${RUN_NAME}_${SLURM_JOB_ID:-local}"
 rm -rf "$LOCAL_DIR"
 mkdir -p "$LOCAL_DIR"
 
-echo "Staging train whole manifest to TMPDIR..."
-uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
-    "$CANONICAL_MANIFEST" "$LOCAL_DIR"
-STAGED_MANIFEST="$LOCAL_DIR/manifest.json"
-require_file "$STAGED_MANIFEST" "Staged train manifest missing"
-
 export TF_CPP_MIN_LOG_LEVEL=2
 
 echo "Syncing training environment..."
@@ -135,6 +131,11 @@ cd "$REPO_ROOT/src/unet"
 uv sync
 
 install_unet_tensorflow_wheel
+
+echo "Staging train whole manifest to TMPDIR..."
+stage_manifest_run_in_unet_env "$CANONICAL_MANIFEST" "$LOCAL_DIR"
+STAGED_MANIFEST="$LOCAL_DIR/manifest.json"
+require_file "$STAGED_MANIFEST" "Staged train manifest missing"
 
 LATEST_MODEL="${OUTPUT_MODEL%.keras}_latest.keras"
 

@@ -66,20 +66,19 @@ TMP_OUT="$WORK_ROOT/out"
 rm -rf "$WORK_ROOT"
 mkdir -p "$LOCAL_MODEL_DIR" "$TMP_OUT"
 
-echo "Staging U-Net patch manifest to TMPDIR ($STAGED_PATCH)..."
-uv run --directory "$REPO_ROOT" python -m common.stage_manifest run \
-    "$UNET_PATCH_MANIFEST" "$STAGED_PATCH"
-STAGED_MANIFEST="$STAGED_PATCH/manifest.json"
-require_file "$STAGED_MANIFEST" "Staged patch manifest missing"
-
-LOCAL_MODEL_PATH="$LOCAL_MODEL_DIR/$(basename "$MODEL_PATH")"
-cp -f "$MODEL_PATH" "$LOCAL_MODEL_PATH"
-
 cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
 uv sync
 
 install_unet_tensorflow_wheel
+
+echo "Staging U-Net patch manifest to TMPDIR ($STAGED_PATCH)..."
+stage_manifest_run_in_unet_env "$UNET_PATCH_MANIFEST" "$STAGED_PATCH"
+STAGED_MANIFEST="$STAGED_PATCH/manifest.json"
+require_file "$STAGED_MANIFEST" "Staged patch manifest missing"
+
+LOCAL_MODEL_PATH="$LOCAL_MODEL_DIR/$(basename "$MODEL_PATH")"
+cp -f "$MODEL_PATH" "$LOCAL_MODEL_PATH"
 
 WATERSHED_TUNE_ROOT="${WATERSHED_TUNE_ROOT:-$GRAINSEG_ROOT/runs/watershed_tune}"
 RESOLVED_WATERSHED_JSON="$(resolve_watershed_json_lenient "$MODEL_DIR" "${WATERSHED_JSON:-}" "$LOCAL_MODEL_PATH" "$WATERSHED_TUNE_ROOT")"

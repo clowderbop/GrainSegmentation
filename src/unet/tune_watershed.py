@@ -15,13 +15,8 @@ import numpy as np
 from common.geometry import load_image_space_polygons
 from common.ground_truth import polygons_to_instance_map
 from common.reporting import count_instances
-from common.image_io import (
-    load_tiff_single_channel_mask,
-    validate_input_images,
-    validate_semantic_labels,
-)
+from common.image_io import load_tiff_single_channel_mask, validate_semantic_labels
 from common.manifest_io import collect_manifest_unet_samples, load_dataset_manifest
-from common.samples import load_rgb_image
 from common.arg_errors import raise_cli_argument_error
 from common.merged_view_pq import (
     MERGED_VIEW_PQ_RESULT_KEYS,
@@ -209,24 +204,23 @@ def _collect_samples(
         if not pred_path.is_file():
             raise SystemExit(f"Missing prediction file: {pred_path}")
         _log(f"Loading pred: {pred_path}")
-        images = [load_rgb_image(p) for p in sample["images"]]
-        height, width = validate_input_images(images)
         pred_arr = _load_pred_tiff(pred_path)
-        if pred_arr.shape != (height, width):
-            raise ValueError(
-                f"Pred shape {pred_arr.shape} != image shape {(height, width)} for {sid}"
-            )
+        height, width = pred_arr.shape
         gt_map = polygons_to_instance_map(
             gt_scene_polygons,
             height=height,
             width=width,
         )
+        if gt_map.shape != pred_arr.shape:
+            raise ValueError(
+                f"GT shape {gt_map.shape} does not match prediction shape "
+                f"{pred_arr.shape} for sample {sid!r}"
+            )
         sample_ids.append(sid)
         true_instances.append(gt_map)
         pred_semantic.append(pred_arr)
         _log(
-            f"  {sid}: {width}×{height}, GT={count_instances(gt_map)} instances, "
-            f"{len(sample['images'])} input channel(s)"
+            f"  {sid}: {width}×{height}, GT={count_instances(gt_map)} instances"
         )
 
     return sample_ids, true_instances, pred_semantic

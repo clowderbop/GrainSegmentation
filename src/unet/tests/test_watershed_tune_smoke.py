@@ -1,0 +1,112 @@
+"""Lightweight watershed tune timing harness (issue 04)."""
+
+from __future__ import annotations
+
+import pytest
+
+from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
+from unet.extraction_tune_scoring import WatershedParamSet
+from unet.watershed_tune_fixtures import (
+    TRAIN_WHOLE_SECTION_SHAPE,
+    large_shape_sparse_two_grain_masks,
+)
+from unet.watershed_tune_smoke import (
+    DEFAULT_SMOKE_SHAPE,
+    default_smoke_watershed_params,
+    run_watershed_tune_smoke,
+)
+
+
+def test_large_shape_sparse_masks_use_declared_geometry_with_tiny_content() -> None:
+    height, width = 256, 1331
+    gt, semantic = large_shape_sparse_two_grain_masks(height=height, width=width)
+
+    assert gt.shape == (height, width)
+    assert semantic.shape == (height, width)
+    assert gt.dtype.name == "int32"
+    assert semantic.dtype.name == "uint8"
+    assert int(gt.max()) == 2
+    assert int(semantic.max()) == 1
+    assert (gt == 0).mean() > 0.99
+    assert (semantic == 0).mean() > 0.99
+    assert int(gt[:64, :64].max()) == 2
+    assert int(semantic[:64, :64].sum()) > 0
+
+
+def test_train_whole_section_shape_matches_documented_mosaic_extent() -> None:
+    assert TRAIN_WHOLE_SECTION_SHAPE == (10_000, 52_000)
+    assert DEFAULT_SMOKE_SHAPE[0] < TRAIN_WHOLE_SECTION_SHAPE[0]
+    assert DEFAULT_SMOKE_SHAPE[1] < TRAIN_WHOLE_SECTION_SHAPE[1]
+
+
+def test_run_watershed_tune_smoke_scores_one_combo_with_phase_timings(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    mean_pq, per_sample = run_watershed_tune_smoke(
+        default_smoke_watershed_params(),
+        height=64,
+        width=64,
+        sample_id="train",
+    )
+
+    out = capsys.readouterr().out
+    assert "watershed tune smoke" in out
+    assert "running watershed" in out
+    assert "running metrics" in out
+    assert "watershed" in out and "metrics" in out
+    assert "PQ=" in out
+    assert "smoke complete" in out
+
+    assert len(per_sample) == 1
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        assert key in mean_pq
+        assert key in per_sample[0]
+    assert mean_pq["pq"] == pytest.approx(per_sample[0]["pq"])
+    assert int(mean_pq["gt_instance_count"]) == 2
+
+
+def test_run_watershed_tune_smoke_uses_compute_merged_view_pq_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import unet.extraction_tune_scoring as scoring
+
+    pq_calls = 0
+    real_pq = scoring.compute_merged_view_pq
+
+    def spy_pq(gt, pred):
+        nonlocal pq_calls
+        pq_calls += 1
+        return real_pq(gt, pred)
+
+    monkeypatch.setattr(scoring, "compute_merged_view_pq", spy_pq)
+
+    run_watershed_tune_smoke(
+        WatershedParamSet(5, 0, 1, 0, False, None),
+        height=64,
+        width=64,
+    )
+
+    assert pq_calls == 1
+
+
+def test_watershed_tune_smoke_cli_runs_one_combo(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from unet.watershed_tune_smoke import main
+
+    main(
+        [
+            "--height",
+            "64",
+            "--width",
+            "64",
+            "--min-distance",
+            "5",
+        ]
+    )
+
+    out = capsys.readouterr().out
+    assert "watershed tune smoke" in out
+    assert "shape=(64, 64)" in out
+    assert "min_dist=5" in out
+    assert "smoke complete" in out

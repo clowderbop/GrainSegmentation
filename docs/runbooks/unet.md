@@ -81,6 +81,24 @@ Select the **U-Net extraction profile** by train **whole-section PQ** (`best_mea
 bash SLURM/unet/submit_watershed_tuning.sh
 ```
 
+### Pre-SLURM smoke check
+
+Before submitting the full watershed tune grid, exercise one parameter combo on synthetic large-shape masks (no cached preds, manifests, or GPKG reads):
+
+```bash
+uv run python -m unet.watershed_tune_smoke
+```
+
+Defaults: train-section aspect ratio at 1/10 scale (`1000×5200`), one representative grid point, real watershed extraction plus `compute_merged_view_pq`. Logs include per-phase `watershed` and `metrics` timings like the tune job.
+
+| Flag | Purpose |
+|------|---------|
+| `--full-shape` | Use train mosaic geometry `10000×52000` (slow; prefer `srun` on a compute node) |
+| `--height` / `--width` | Override declared geometry |
+| `--min-distance`, `--boundary-dilate-iter`, … | Override the single combo under test |
+
+Focused tests: `uv run pytest src/unet/tests/test_watershed_tune_smoke.py -q`
+
 ## CC vs watershed (train section)
 
 **Submit:** `sbatch SLURM/unet/submit_cc_vs_watershed_train_eval.sh`

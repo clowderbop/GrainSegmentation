@@ -64,6 +64,19 @@ class WatershedParamSet:
     ridge_level: float | None
 
 
+def format_watershed_ridge_level(ridge_level: float | None) -> str:
+    return "auto" if ridge_level is None else f"{ridge_level:g}"
+
+
+def format_watershed_param_set(params: WatershedParamSet) -> str:
+    return (
+        f"min_dist={params.min_distance}, dilate={params.boundary_dilate_iter}, "
+        f"conn={params.watershed_connectivity}, min_area={params.min_area_px}, "
+        f"exclude_border={params.exclude_border}, "
+        f"ridge={format_watershed_ridge_level(params.ridge_level)}"
+    )
+
+
 def _watershed_kwargs(
     params: WatershedParamSet,
     *,

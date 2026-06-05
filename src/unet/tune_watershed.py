@@ -25,6 +25,8 @@ from common.merged_view_pq import (
 from unet.extraction_tune_scoring import (
     WatershedParamSet,
     format_merged_view_pq_audit_line,
+    format_watershed_param_set,
+    format_watershed_ridge_level,
     mean_train_pq_for_watershed_params,
     select_best_watershed_tune_row,
     watershed_best_json_summary,
@@ -233,18 +235,6 @@ def _collect_samples(
     return sample_ids, true_instances, pred_semantic
 
 
-def _format_ridge_level(ridge_level: float | None) -> str:
-    return "auto" if ridge_level is None else f"{ridge_level:g}"
-
-
-def _format_param_set(params: WatershedParamSet) -> str:
-    return (
-        f"min_dist={params.min_distance}, dilate={params.boundary_dilate_iter}, "
-        f"conn={params.watershed_connectivity}, min_area={params.min_area_px}, "
-        f"exclude_border={params.exclude_border}, ridge={_format_ridge_level(params.ridge_level)}"
-    )
-
-
 def _iter_param_grid(args: argparse.Namespace) -> Iterable[WatershedParamSet]:
     ridge_levels = _ridge_level_grid(args)
     for tup in itertools.product(
@@ -308,7 +298,7 @@ def main() -> None:
         for combo_idx, params in enumerate(_iter_param_grid(args), start=1):
             _log(
                 f"[{combo_idx}/{grid_size}] scoring "
-                f"({_format_param_set(params)}) …"
+                f"({format_watershed_param_set(params)}) …"
             )
             t0 = time.perf_counter()
             mean_pq, per_sample_pq = mean_train_pq_for_watershed_params(
@@ -331,7 +321,7 @@ def main() -> None:
             _log(
                 f"[{combo_idx}/{grid_size}] mean "
                 f"{format_merged_view_pq_audit_line(mean_pq)} "
-                f"({_format_param_set(params)}) {elapsed:.1f}s{best_note}"
+                f"({format_watershed_param_set(params)}) {elapsed:.1f}s{best_note}"
             )
             row = watershed_tune_row(
                 params,
@@ -365,7 +355,7 @@ def main() -> None:
     _log(f"  watershed_connectivity: {best_params.watershed_connectivity}")
     _log(f"  min_area_px: {best_params.min_area_px}")
     _log(f"  exclude_border: {best_params.exclude_border}")
-    _log(f"  ridge_level: {_format_ridge_level(best_params.ridge_level)}")
+    _log(f"  ridge_level: {format_watershed_ridge_level(best_params.ridge_level)}")
     _log(f"  {_mean_audit_line_from_tune_row(best_row)}")
     _log(f"\nWrote grid results to {out_path}")
 

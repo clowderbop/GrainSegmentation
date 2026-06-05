@@ -23,6 +23,8 @@ from unet.extraction_method_selection import (
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from unet.extraction_tune_scoring import (
     WatershedParamSet,
+    format_watershed_param_set,
+    format_watershed_ridge_level,
     mean_train_pq_for_watershed_params,
     select_best_watershed_tune_row,
     watershed_best_json_summary,
@@ -60,6 +62,14 @@ def _split_first_grain_pred(height: int = 64, width: int = 64) -> np.ndarray:
     _paint_box(pred, 2, 18, 8, 28, 28)
     _paint_box(pred, 3, 36, 36, 56, 56)
     return pred
+
+
+def test_format_watershed_param_set_matches_tune_job_log_style() -> None:
+    params = WatershedParamSet(5, 1, 2, 64, True, None)
+    assert format_watershed_ridge_level(None) == "auto"
+    assert format_watershed_param_set(params) == (
+        "min_dist=5, dilate=1, conn=2, min_area=64, exclude_border=True, ridge=auto"
+    )
 
 
 def test_mean_train_pq_for_watershed_params_returns_merged_view_pq_fields() -> None:

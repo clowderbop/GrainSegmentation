@@ -102,6 +102,51 @@ def _assert_pq_result_matches_bundle_subset(
         assert result[key] == pytest.approx(bundle[key], rel=0.0, abs=1e-9), key
 
 
+def _write_ppl_train_proposal_cache(
+    tmp_path: Path,
+    *,
+    records: list[TiledProposalRecord],
+    candidate: YoloInferenceProfileCandidate,
+    height: int,
+    width: int,
+) -> tuple[Path, Path, Path]:
+    """Write v3 train tiled-proposal cache; return (grainseg_root, run_root, work_root)."""
+    from common.test_inference import load_test_inference_recipe
+    from yolo.profile_tune_work import weights_path
+    from yolo.tiled_proposal_cache import (
+        proposal_cache_dir,
+        proposal_cache_record,
+        recipe_whole_window_fingerprint,
+        weights_sha256,
+        write_tiled_proposals,
+    )
+
+    grainseg_root = tmp_path / "grainseg"
+    run_root = grainseg_root / "runs" / "yolo26-seg"
+    weights = weights_path(grainseg_root, "PPL", run_root)
+    weights.parent.mkdir(parents=True)
+    weights.write_bytes(b"weights")
+    work_root = tmp_path / ".cache"
+    recipe = load_test_inference_recipe()
+    write_tiled_proposals(
+        proposal_cache_dir(
+            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
+        ),
+        records,
+        proposal_cache_record(
+            variant="PPL",
+            weights_sha256=weights_sha256(weights),
+            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
+            conf=candidate.conf,
+            mask_threshold=candidate.mask_threshold,
+            sample_id="train",
+            height=height,
+            width=width,
+        ),
+    )
+    return grainseg_root, run_root, work_root
+
+
 @pytest.mark.parametrize("variant", all_variant_names())
 def test_profile_selection_scoring_pq_matches_evaluate_instances(
     tmp_path: Path, variant: str
@@ -146,46 +191,20 @@ def test_tiled_proposal_cache_scoring_uses_cross_tile_postprocess(
     tmp_path: Path,
 ) -> None:
     """On-disk v3 caches score through cross-tile association, not SAHI+score-merge."""
-    from common.test_inference import load_test_inference_recipe
     from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
-    from yolo.tiled_proposal_cache import (
-        detector_cache_expected_record,
-        proposal_cache_dir,
-        proposal_cache_record,
-        recipe_whole_window_fingerprint,
-        weights_sha256,
-        write_tiled_proposals,
-    )
-    from yolo.profile_tune_work import weights_path
 
     height, width = 16, 16
     gt_map = tiny_train_gt_map(height, width)
     candidate = candidate_for_variant("PPL")
-    grainseg_root = tmp_path / "grainseg"
-    run_root = grainseg_root / "runs" / "yolo26-seg"
-    weights = run_root / "PPL" / "weights" / "best.pt"
-    weights.parent.mkdir(parents=True)
-    weights.write_bytes(b"weights")
-    work_root = tmp_path / ".cache"
-    recipe = load_test_inference_recipe()
     records = tiled_proposal_records_disjoint_via_collector(
         height, width, mask_threshold=candidate.mask_threshold
     )
-    write_tiled_proposals(
-        proposal_cache_dir(
-            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
-        ),
-        records,
-        proposal_cache_record(
-            variant="PPL",
-            weights_sha256=weights_sha256(weights),
-            recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
-            conf=candidate.conf,
-            mask_threshold=candidate.mask_threshold,
-            sample_id="train",
-            height=height,
-            width=width,
-        ),
+    grainseg_root, run_root, work_root = _write_ppl_train_proposal_cache(
+        tmp_path,
+        records=records,
+        candidate=candidate,
+        height=height,
+        width=width,
     )
     from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
     from yolo.profile_tune_scoring import compute_train_pq
@@ -363,3 +382,77 @@ def test_compute_train_pq_delegates_to_shared_merged_view_pq_scorer(
     assert len(captured) == 1
     assert captured[0] == (gt_map.shape, (height, width))
     assert result["pq"] == pytest.approx(0.75)
+
+
+def test_compute_train_pq_hot_path_avoids_instance_metric_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tune hot path scores MergedViewPqResult only, not the eval instance metric bundle."""
+    from yolo.profile_tune_scoring import compute_train_pq
+
+    def fail_bundle(*_args: object, **_kwargs: object) -> dict[str, float]:
+        raise AssertionError(
+            "profile selection scoring must not call compute_instance_metric_bundle"
+        )
+
+    monkeypatch.setattr(
+        "common.instance_metric_bundle.compute_instance_metric_bundle",
+        fail_bundle,
+    )
+
+    height, width = 16, 16
+    gt_map = tiny_train_gt_map(height, width)
+    candidate = candidate_for_variant("PPL")
+    records = tiled_proposal_records_disjoint_via_collector(
+        height, width, mask_threshold=candidate.mask_threshold
+    )
+
+    result = compute_train_pq(
+        gt_map,
+        records,
+        candidate=candidate,
+        height=height,
+        width=width,
+    )
+
+    from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
+
+    assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+    assert "aji_plus" not in result
+    assert "f1_iou75" not in result
+
+
+def test_profile_selection_scoring_smoke_cached_records_merged_view_pq_schema(
+    tmp_path: Path,
+) -> None:
+    """Cached v3 proposals + small GT merged view → MergedViewPqResult schema (issue 04)."""
+    from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS, mean_merged_view_pq_results
+    from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
+
+    height, width = 16, 16
+    gt_map = tiny_train_gt_map(height, width)
+    candidate = candidate_for_variant("PPL")
+    records = tiled_proposal_records_disjoint_via_collector(
+        height, width, mask_threshold=candidate.mask_threshold
+    )
+    grainseg_root, run_root, work_root = _write_ppl_train_proposal_cache(
+        tmp_path,
+        records=records,
+        candidate=candidate,
+        height=height,
+        width=width,
+    )
+
+    result = score_variant_train_metrics_from_cache(
+        variant="PPL",
+        candidate=candidate,
+        grainseg_root=grainseg_root,
+        run_root=run_root,
+        work_root=work_root,
+        gt_map=gt_map,
+    )
+
+    assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+    mean_fields = mean_merged_view_pq_results([result])
+    assert tuple(mean_fields.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+    assert mean_fields["pq"] == pytest.approx(result["pq"])

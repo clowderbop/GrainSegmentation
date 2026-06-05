@@ -21,6 +21,7 @@ from common.tests.merged_view_fixtures import (
     BUNDLE_FIXTURE_BUILDERS,
     blank_map,
     paint_box,
+    scale_fixture_many_ids_few_co_occurring_pairs,
 )
 
 
@@ -181,6 +182,76 @@ def test_compute_merged_view_pq_matches_bundle_on_split_merge_overlap() -> None:
     assert result["min_matched_iou"] == result["max_matched_iou"] == result["median_matched_iou"]
     assert result["min_matched_iou"] == pytest.approx(5 / 9)
     assert result["sq"] == pytest.approx(5 / 9)
+
+
+_TUNE_SELECTION_PQ_FIELDS = (
+    "pq",
+    "tp",
+    "fp",
+    "fn",
+    "gt_instance_count",
+    "pred_instance_count",
+    "num_cooccurring_pairs",
+    "num_pairs_above_pq_threshold",
+)
+
+
+def test_compute_merged_view_pq_on_many_ids_few_co_occurring_pairs() -> None:
+    """Scale fixture: many ids, sparse overlaps, tune-path selection fields."""
+    num_gt = 120
+    num_pred = 1500
+    num_matched = 4
+    gt, pred = scale_fixture_many_ids_few_co_occurring_pairs(
+        num_gt=num_gt,
+        num_pred=num_pred,
+        num_matched=num_matched,
+    )
+
+    result = compute_merged_view_pq(gt, pred)
+
+    assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+    assert result["gt_instance_count"] == num_gt
+    assert result["pred_instance_count"] == num_pred
+    assert result["num_cooccurring_pairs"] == num_matched
+    assert result["num_pairs_above_pq_threshold"] == num_matched
+    assert result["tp"] == num_matched
+    assert result["fp"] == num_pred - num_matched
+    assert result["fn"] == num_gt - num_matched
+    for key in _TUNE_SELECTION_PQ_FIELDS:
+        assert key in result
+    assert result["pq"] == pytest.approx(result["dq"] * result["sq"])
+    _assert_pq_matches_bundle(gt, pred)
+
+
+def test_compute_merged_view_pq_avoids_dense_gt_by_pred_matrix_on_scale_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: tune-path PQ must not allocate or scan nt x np_ dense IoU work."""
+    import common.instance_overlap as overlap_mod
+    import common.metrics as metrics_mod
+
+    gt, pred = scale_fixture_many_ids_few_co_occurring_pairs()
+    stats = instance_overlap_stats(gt, pred)
+    nt, np_ = len(stats.gt_ids), len(stats.pred_ids)
+    assert nt * np_ > 10_000
+
+    def forbid_dense_iou_matrix(*_args: object, **_kwargs: object) -> np.ndarray:
+        raise AssertionError(
+            "tune-path PQ must not build a dense GT-by-prediction IoU matrix"
+        )
+
+    def forbid_dense_greedy_scan(*_args: object, **_kwargs: object) -> list[tuple[int, int]]:
+        raise AssertionError(
+            "tune-path PQ must not scan a dense GT-by-prediction IoU matrix"
+        )
+
+    monkeypatch.setattr(overlap_mod, "iou_matrix_from_overlap", forbid_dense_iou_matrix)
+    monkeypatch.setattr(metrics_mod, "greedy_one_to_one_matches", forbid_dense_greedy_scan)
+
+    result = compute_merged_view_pq(gt, pred)
+
+    assert result["num_cooccurring_pairs"] == 4
+    assert result["tp"] == 4
 
 
 @pytest.mark.parametrize("fixture_name", tuple(BUNDLE_FIXTURE_BUILDERS))

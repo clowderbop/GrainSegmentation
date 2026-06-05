@@ -8,7 +8,7 @@ YOLO whole-section inference uses sliding windows plus per-slice Ultralytics det
 
 ## Decision
 
-We select one shared **YOLO inference profile** on the whole train section. A **conf-only** grid from `config/yolo_inference_profile_tune.yaml` (~7 candidates) is scored by mean whole-section train PQ across all registry variants. Pre-merge proposal counts, patch metrics, and other diagnostics are audit information only. The winner is promoted into `config/test_inference.yaml` (train-selected `conf` plus fixed `mask_threshold`) and committed before held-out test.
+We select one shared **YOLO inference profile** on the whole train section. A **conf-only** grid from `config/yolo_inference_profile_tune.yaml` is scored by mean whole-section train PQ across all registry variants. Pre-merge proposal counts, patch metrics, and other diagnostics are audit information only. The winner is promoted into `config/test_inference.yaml` (train-selected `conf` plus fixed `mask_threshold`) and committed before held-out test.
 
 The profile is shared across variants. Per-variant profiles are rejected because they would confound **variant test ranking** with inference settings. Re-run profile selection when train labels or YOLO weights change materially, not after every single-variant training job.
 

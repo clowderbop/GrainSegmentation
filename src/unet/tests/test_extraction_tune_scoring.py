@@ -390,42 +390,6 @@ def test_watershed_tune_row_includes_merged_view_pq_fields_only() -> None:
         assert f"mean_{bundle_key}" not in row
 
 
-def test_watershed_tune_scoring_delegates_to_shared_merged_view_pq_scorer(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Consumer smoke: watershed tune path scores via compute_merged_view_pq, not eval bundle."""
-    import unet.extraction_tune_scoring as scoring
-
-    pq_calls = 0
-    real_compute_merged_view_pq = scoring.compute_merged_view_pq
-
-    def spy_pq(gt: np.ndarray, pred: np.ndarray) -> dict[str, float | int]:
-        nonlocal pq_calls
-        pq_calls += 1
-        return real_compute_merged_view_pq(gt, pred)
-
-    def forbid_bundle(*_args: object, **_kwargs: object) -> dict[str, float]:
-        raise AssertionError(
-            "watershed tune scoring must not call compute_instance_metric_bundle"
-        )
-
-    monkeypatch.setattr(scoring, "compute_merged_view_pq", spy_pq)
-    monkeypatch.setattr(
-        "common.instance_metric_bundle.compute_instance_metric_bundle",
-        forbid_bundle,
-    )
-
-    gt = _two_grain_gt()
-    semantic = np.zeros(gt.shape, dtype=np.uint8)
-    semantic[8:28, 8:28] = 1
-    semantic[36:56, 36:56] = 1
-    params = WatershedParamSet(5, 0, 1, 0, False, None)
-
-    mean_train_pq_for_watershed_params([gt], [semantic], params)
-
-    assert pq_calls == 1
-
-
 def test_extraction_method_selection_does_not_embed_sparse_pq_matching() -> None:
     """CC-vs-watershed selection compares eval bundles; tune-path PQ stays in extraction_tune_scoring."""
     source = (

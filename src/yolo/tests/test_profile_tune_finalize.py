@@ -71,6 +71,10 @@ def test_finalize_merges_rows_into_results_csv_and_winner(tmp_path: Path) -> Non
     payload = json.loads((grid_dir / "winner.json").read_text(encoding="utf-8"))
     assert payload["mean_pq"] == pytest.approx(0.9)
     assert payload["selection_objective"] == "pq"
+    assert "per_variant_pq" not in payload
+    ppl = payload["per_variant_pq_results"]["PPL"]
+    assert tuple(ppl.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+    assert ppl["pq"] == pytest.approx(0.9)
 
 
 def test_collect_profile_selection_rows_sorted_by_filename(tmp_path: Path) -> None:

@@ -383,11 +383,40 @@ def test_committed_tune_grid_is_conf_only_seven_candidates() -> None:
     )
 
 
+def test_write_grid_winner_json_persists_per_variant_merged_view_pq_results(
+    tmp_path: Path,
+) -> None:
+    profile = profile_tune_candidate_from_conf(0.25)
+    ppl_result = constant_merged_view_pq_result(0.7)
+    ppx_result = constant_merged_view_pq_result(0.5)
+    winner_path = tmp_path / "grid" / "winner.json"
+    write_grid_winner_json(
+        winner_path,
+        candidate=profile,
+        mean_pq=0.6,
+        per_variant_pq_results={"PPL": ppl_result, "PPL+AllPPX": ppx_result},
+    )
+    payload = json.loads(winner_path.read_text(encoding="utf-8"))
+    assert "per_variant_pq" not in payload
+    assert set(payload["per_variant_pq_results"].keys()) == {"PPL", "PPL+AllPPX"}
+    for variant, expected in (
+        ("PPL", ppl_result),
+        ("PPL+AllPPX", ppx_result),
+    ):
+        stored = payload["per_variant_pq_results"][variant]
+        assert tuple(stored.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+        for key in MERGED_VIEW_PQ_RESULT_KEYS:
+            assert stored[key] == expected[key]
+
+
 def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:
     profile = profile_tune_candidate_from_conf(0.25)
     winner_path = tmp_path / "grid" / "winner.json"
     write_grid_winner_json(
-        winner_path, candidate=profile, mean_pq=0.7, per_variant_pq={"PPL": 0.7}
+        winner_path,
+        candidate=profile,
+        mean_pq=0.7,
+        per_variant_pq_results={"PPL": constant_merged_view_pq_result(0.7)},
     )
     payload = json.loads(winner_path.read_text(encoding="utf-8"))
     assert payload["selection_objective"] == PROFILE_SELECTION_OBJECTIVE
@@ -679,6 +708,26 @@ def test_run_grid_search_resume_skips_when_fingerprint_matches(tmp_path: Path) -
             candidate=candidate, variant="PPL", context=resume_context
         ),
     )
+
+
+def test_finalize_grid_winner_writes_per_variant_pq_results_from_csv(tmp_path: Path) -> None:
+    from yolo.inference_profile_tune import finalize_grid_winner, load_grid_winner
+
+    grid_dir = tmp_path / "grid"
+    grid_dir.mkdir(parents=True)
+    row = grid_result_row_from_candidate_scoring(
+        candidate=profile_tune_candidate_from_conf(0.25),
+        per_variant_pq_results={
+            "PPL": constant_merged_view_pq_result(0.82),
+            "PPL+AllPPX": constant_merged_view_pq_result(0.58),
+        },
+    )
+    winner = finalize_grid_winner(grid_dir, [row], variant_names=("PPL", "PPL+AllPPX"))
+    assert winner.conf == pytest.approx(0.25)
+    payload = json.loads((grid_dir / "winner.json").read_text(encoding="utf-8"))
+    assert payload["mean_pq"] == pytest.approx(mean_pq_across_variants({"PPL": 0.82, "PPL+AllPPX": 0.58}))
+    assert payload["per_variant_pq_results"]["PPL"]["pq"] == pytest.approx(0.82)
+    assert load_grid_winner(grid_dir / "winner.json") == winner
 
 
 def test_recompute_winner_from_csv_picks_highest_mean_pq(tmp_path: Path) -> None:

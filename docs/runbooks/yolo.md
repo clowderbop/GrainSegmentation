@@ -81,7 +81,7 @@ Each grid candidate is scored by **profile selection scoring**: **cross-tile ass
 | `pq__{variant}` | Per-variant train PQ for audit |
 | Other bundle fields in each row | Full diagnostic record per variant (see metrics doc) |
 
-**Finalize** (`run_profile_tune_finalize.sh` / `yolo.profile_tune_finalize`) picks the highest `mean_pq` and writes `grid/winner.json`. **Profile promotion** must use that PQ-centered winner only. Pre-merge proposal counts, patch metrics, and legacy `mean_aji` on old rows are audit-only ([stale AJI-selected outputs](../metrics.md#stale-aji-selected-scratch-outputs)).
+**Finalize** (`run_profile_tune_finalize.sh` / `yolo.profile_tune_finalize`) picks the highest `mean_pq` and writes `grid/winner.json` with `selection_objective`, `mean_pq`, promoted `conf` / fixed `mask_threshold`, `profile_selection_axes`, `removed_grid_axes`, and `per_variant_pq_results` (per-variant **`MergedViewPqResult`** objects with every tune-path PQ field). **Profile promotion** reads only `conf` from that file and must use the PQ-centered winner. Pre-merge proposal counts, patch metrics, and legacy `mean_aji` on old rows are audit-only ([stale AJI-selected outputs](../metrics.md#stale-aji-selected-scratch-outputs)).
 
 ### 1. Detector array
 

@@ -171,6 +171,37 @@ def select_best_candidate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return max(rows, key=lambda row: float(row["mean_pq"]))
 
 
+def _coerce_merged_view_pq_value(key: str, value: Any) -> float | int:
+    if key in MERGED_VIEW_PQ_COUNT_KEYS:
+        return int(round(float(value)))
+    return float(value)
+
+
+def merged_view_pq_result_from_grid_row(
+    row: dict[str, Any],
+    *,
+    variant: str,
+) -> MergedViewPqResult:
+    result: dict[str, float | int] = {}
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        column = variant_metric_column(key, variant)
+        if column not in row:
+            raise KeyError(f"Missing {column!r} in grid row")
+        result[key] = _coerce_merged_view_pq_value(key, row[column])
+    return result  # type: ignore[return-value]
+
+
+def per_variant_pq_results_from_grid_row(
+    row: dict[str, Any],
+    *,
+    variant_names: tuple[str, ...],
+) -> dict[str, MergedViewPqResult]:
+    return {
+        variant: merged_view_pq_result_from_grid_row(row, variant=variant)
+        for variant in variant_names
+    }
+
+
 def mean_merged_view_pq_across_variants(
     results: list[MergedViewPqResult],
 ) -> dict[str, float | int]:
@@ -370,10 +401,9 @@ def finalize_grid_winner(
         grid_dir / "winner.json",
         candidate=winner,
         mean_pq=float(best_row["mean_pq"]),
-        per_variant_pq={
-            variant: float(best_row[variant_metric_column(PROFILE_SELECTION_OBJECTIVE, variant)])
-            for variant in variant_names
-        },
+        per_variant_pq_results=per_variant_pq_results_from_grid_row(
+            best_row, variant_names=variant_names
+        ),
     )
     return winner
 
@@ -453,7 +483,7 @@ def write_grid_winner_json(
     *,
     candidate: YoloInferenceProfileCandidate,
     mean_pq: float,
-    per_variant_pq: dict[str, float],
+    per_variant_pq_results: dict[str, MergedViewPqResult],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fixed_mask = profile_tune_fixed_mask_threshold()
@@ -465,7 +495,7 @@ def write_grid_winner_json(
         "profile_selection_axes": ["conf"],
         "fixed_mask_threshold": fixed_mask,
         "removed_grid_axes": list(_REMOVED_GRID_AXES),
-        "per_variant_pq": per_variant_pq,
+        "per_variant_pq_results": per_variant_pq_results,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

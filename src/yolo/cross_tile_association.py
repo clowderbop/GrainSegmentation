@@ -6,11 +6,21 @@ cluster-local fusion, and fixed IoS/centrality thresholds.
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+
+from yolo.phase_logging import (
+    PHASE_BUILD_CANDIDATE_PAIRS,
+    PHASE_CROSS_TILE_ASSOCIATION,
+    PHASE_ENRICH_PROPOSALS,
+    PHASE_MERGE_PREDICTIONS,
+    log_phase_done,
+    log_phase_start,
+)
 
 from common.prediction_set import (
     GRAIN_CLASS_ID,
@@ -433,6 +443,7 @@ def associate_tiled_proposals(
     *,
     height: int,
     width: int,
+    log_timings: bool = False,
 ) -> PredictionSet:
     """Fuse tiled detector proposals into a canonical non-overlapping prediction set."""
     if height <= 0 or width <= 0:
@@ -446,10 +457,35 @@ def associate_tiled_proposals(
             detections=(),
         )
 
-    enriched = _enrich_proposals(proposals)
+    t_assoc = time.perf_counter()
 
+    if log_timings:
+        log_phase_start(PHASE_ENRICH_PROPOSALS)
+    t0 = time.perf_counter()
+    enriched = _enrich_proposals(proposals)
+    if log_timings:
+        log_phase_done(
+            PHASE_ENRICH_PROPOSALS,
+            time.perf_counter() - t0,
+            detail=f"n={len(enriched)}",
+        )
+
+    if log_timings:
+        log_phase_start(PHASE_BUILD_CANDIDATE_PAIRS)
+    t0 = time.perf_counter()
+    candidate_pairs = generate_association_candidate_pairs(enriched)
+    if log_timings:
+        log_phase_done(
+            PHASE_BUILD_CANDIDATE_PAIRS,
+            time.perf_counter() - t0,
+            detail=f"{len(candidate_pairs)} pairs",
+        )
+
+    if log_timings:
+        log_phase_start(PHASE_MERGE_PREDICTIONS)
+    t0 = time.perf_counter()
     parent = list(range(len(enriched)))
-    for left_index, right_index in generate_association_candidate_pairs(enriched):
+    for left_index, right_index in candidate_pairs:
         if _should_associate(enriched[left_index], enriched[right_index]):
             _union_find_merge(parent, left_index, right_index)
 
@@ -459,9 +495,20 @@ def associate_tiled_proposals(
         members = [enriched[index] for index in member_indices]
         fused_clusters.append(_fuse_cluster(members))
 
-    return _build_yolo_prediction_set_from_fused_clusters(
+    result = _build_yolo_prediction_set_from_fused_clusters(
         fused_clusters, height=height, width=width
     )
+    if log_timings:
+        log_phase_done(
+            PHASE_MERGE_PREDICTIONS,
+            time.perf_counter() - t0,
+            detail=f"{len(fused_clusters)} clusters",
+        )
+        log_phase_done(
+            PHASE_CROSS_TILE_ASSOCIATION,
+            time.perf_counter() - t_assoc,
+        )
+    return result
 
 
 def _enrich_proposals(

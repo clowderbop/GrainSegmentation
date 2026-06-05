@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from common.prediction_set import (
     save_prediction_set,
 )
 from yolo.cross_tile_postprocess import prediction_set_from_tiled_proposal_records
+from yolo.phase_logging import PHASE_PREDICTING_TILES, log_phase_done, log_phase_start
 from yolo.tiled_proposal_cache import collect_tiled_detector_proposals
 from common.run_provenance import write_run_provenance
 from common.test_inference import load_test_inference_recipe, sahi_overlap_ratio
@@ -137,10 +139,11 @@ def _write_whole_prediction_set(
     records: list[Any],
     height: int,
     width: int,
+    log_timings: bool = False,
 ) -> None:
     path = prediction_set_path(output_dir, sample_id)
     pred_set = prediction_set_from_tiled_proposal_records(
-        records, height=height, width=width
+        records, height=height, width=width, log_timings=log_timings
     )
     assert_yolo_grains_non_overlapping(pred_set)
     save_prediction_set(path, pred_set)
@@ -349,6 +352,8 @@ def run_whole_predict(args: argparse.Namespace) -> None:
         print(f"Predicting {sample_id} ({idx + 1}/{n_samples})...", flush=True)
         image = load_image_for_yolo(tiff_path)
         height, width = image.shape[:2]
+        log_phase_start(PHASE_PREDICTING_TILES)
+        t_tiles = time.perf_counter()
         records = collect_tiled_detector_proposals(
             image,
             detection_model,
@@ -358,12 +363,18 @@ def run_whole_predict(args: argparse.Namespace) -> None:
             overlap_width_ratio=args.overlap_width_ratio,
             mask_threshold=float(args.mask_threshold),
         )
+        log_phase_done(
+            PHASE_PREDICTING_TILES,
+            time.perf_counter() - t_tiles,
+            detail=f"{len(records)} proposals",
+        )
         _write_whole_prediction_set(
             output_dir=args.output_dir,
             sample_id=sample_id,
             records=records,
             height=height,
             width=width,
+            log_timings=True,
         )
 
 

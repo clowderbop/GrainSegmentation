@@ -44,6 +44,7 @@ from yolo.inference_profile_tune import (
     write_profile_selection_row,
 )
 from yolo.profile_tune_cli import parse_profile_tune_variants
+from yolo.phase_logging import PHASE_LOADING_PROPOSALS, log_phase_done, log_phase_start
 from yolo.profile_tune_scoring import compute_train_pq
 from yolo.profile_tune_work import (
     default_grainseg_and_run_roots,
@@ -195,16 +196,19 @@ def score_variant_train_metrics_from_cache(
         mask_threshold=fixed_mask,
         sample_id="train",
     )
+    log_phase_start(PHASE_LOADING_PROPOSALS, prefix=f"{prefix}  ")
     t_load = time.perf_counter()
     records, _meta = load_tiled_proposals(cache_dir, expected=expected_proposals)
     load_proposals_s = time.perf_counter() - t_load
     height, width = int(gt_map.shape[0]), int(gt_map.shape[1])
     gt_n = count_instances(gt_map)
-    _log(
-        f"{prefix}  load proposals {load_proposals_s:.1f}s "
-        f"({len(records)} from v{TILED_PROPOSAL_CACHE_SCHEMA_VERSION} cache), "
-        f"GT {height}×{width} ({gt_n} instances)"
+    log_phase_done(
+        PHASE_LOADING_PROPOSALS,
+        load_proposals_s,
+        prefix=f"{prefix}  ",
+        detail=f"{len(records)} records",
     )
+    _log(f"{prefix}  GT {height}×{width} ({gt_n} instances)")
     pq_result = compute_train_pq(
         gt_map,
         records,

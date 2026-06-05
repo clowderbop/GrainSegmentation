@@ -296,6 +296,10 @@ def test_compute_train_pq_logs_cross_tile_and_metrics_phases(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     from yolo.profile_tune_scoring import compute_train_pq
+    from yolo.tests.phase_logging_assertions import (
+        assert_done_timing_lines,
+        assert_substrings_in_order,
+    )
 
     height, width = 16, 16
     gt_map = tiny_train_gt_map(height, width)
@@ -311,8 +315,19 @@ def test_compute_train_pq_logs_cross_tile_and_metrics_phases(
         log_timings=True,
     )
     captured = capsys.readouterr().out
-    assert "cross-tile association" in captured
-    assert "metrics" in captured
+    assert_substrings_in_order(
+        captured,
+        "Evaluating train PQ …",
+        "running cross-tile association …",
+        "Enriching proposals …",
+        "Cross-tile association done",
+        "Rasterizing merged instance view done",
+        "    cross-tile association ",
+        "running metrics …",
+        "    metrics ",
+        "Evaluating train PQ done",
+    )
+    assert_done_timing_lines(captured, min_count=6)
 
 
 @pytest.mark.parametrize("variant", all_variant_names())

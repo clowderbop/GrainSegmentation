@@ -1,6 +1,14 @@
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
+from common.instance_overlap import (
+    OverlapStats,
+    instance_ids as _instance_ids,
+    instance_overlap_stats,
+    iou_matrix_from_overlap,
+    pair_intersection_lookup,
+)
+
 IOU_THRESHOLDS_50_95 = tuple(np.arange(0.50, 1.0, 0.05))
 PQ_MATCH_IOU = 0.5
 
@@ -14,37 +22,11 @@ def _index_for_reported_threshold(threshold: float) -> int:
     )
 
 
-def _instance_ids(instance_map: np.ndarray) -> list[int]:
-    return sorted(int(x) for x in np.unique(instance_map) if x != 0)
-
-
 def build_instance_iou_matrix(
     true_instances: np.ndarray, pred_instances: np.ndarray
 ) -> tuple[np.ndarray, list[int], list[int]]:
-    true_ids = _instance_ids(true_instances)
-    pred_ids = _instance_ids(pred_instances)
-    nt, np_ = len(true_ids), len(pred_ids)
-    mat = np.zeros((nt, np_), dtype=np.float64)
-    if nt == 0 or np_ == 0:
-        return mat, true_ids, pred_ids
-
-    max_true = int(true_instances.max())
-    max_pred = int(pred_instances.max())
-    intersection_matrix = np.histogram2d(
-        true_instances.flatten(),
-        pred_instances.flatten(),
-        bins=(max_true + 1, max_pred + 1),
-        range=((0, max_true + 1), (0, max_pred + 1)),
-    )[0]
-    true_areas = intersection_matrix.sum(axis=1)
-    pred_areas = intersection_matrix.sum(axis=0)
-
-    for i, tid in enumerate(true_ids):
-        for j, pid in enumerate(pred_ids):
-            inter = float(intersection_matrix[tid, pid])
-            union = float(true_areas[tid] + pred_areas[pid] - inter)
-            mat[i, j] = inter / union if union > 0 else 0.0
-    return mat, true_ids, pred_ids
+    stats = instance_overlap_stats(true_instances, pred_instances)
+    return iou_matrix_from_overlap(stats), stats.gt_ids, stats.pred_ids
 
 
 def _strict_iou_exceeds(value: float, iou_threshold: float) -> bool:
@@ -235,28 +217,27 @@ def compute_aji(true_instances: np.ndarray, pred_instances: np.ndarray):
     return float(overall_intersection / overall_union)
 
 
-def compute_aji_plus(true_instances: np.ndarray, pred_instances: np.ndarray) -> float:
+def compute_aji_plus(
+    true_instances: np.ndarray,
+    pred_instances: np.ndarray,
+    *,
+    overlap_stats: OverlapStats | None = None,
+) -> float:
     """AJI+ with maximal unique GT/pred pairing (HoVer-Net-style)."""
-    true_ids = _instance_ids(true_instances)
-    pred_ids = _instance_ids(pred_instances)
+    stats = overlap_stats or instance_overlap_stats(true_instances, pred_instances)
+    true_ids = stats.gt_ids
+    pred_ids = stats.pred_ids
     if not true_ids and not pred_ids:
         return 1.0
     if not true_ids or not pred_ids:
         return 0.0
 
-    iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
+    iou_matrix = iou_matrix_from_overlap(stats)
     nt, np_ = iou_matrix.shape
     if nt == 0 or np_ == 0:
         return 0.0
 
-    max_true = int(true_instances.max())
-    max_pred = int(pred_instances.max())
-    intersection_matrix = np.histogram2d(
-        true_instances.flatten(),
-        pred_instances.flatten(),
-        bins=(max_true + 1, max_pred + 1),
-        range=((0, max_true + 1), (0, max_pred + 1)),
-    )[0]
+    intersections = pair_intersection_lookup(stats)
 
     paired_true, paired_pred = linear_sum_assignment(-iou_matrix)
     paired_iou = iou_matrix[paired_true, paired_pred]
@@ -268,9 +249,9 @@ def compute_aji_plus(true_instances: np.ndarray, pred_instances: np.ndarray) -> 
     overall_union = 0.0
     for i, j in zip(paired_true, paired_pred, strict=True):
         tid, pid = true_ids[i], pred_ids[j]
-        inter = float(intersection_matrix[tid, pid])
-        true_area = float((true_instances == tid).sum())
-        pred_area = float((pred_instances == pid).sum())
+        inter = intersections.get((tid, pid), 0.0)
+        true_area = float(stats.gt_areas[tid])
+        pred_area = float(stats.pred_areas[pid])
         overall_inter += inter
         overall_union += true_area + pred_area - inter
 
@@ -278,10 +259,10 @@ def compute_aji_plus(true_instances: np.ndarray, pred_instances: np.ndarray) -> 
     paired_pred_ids = {pred_ids[j] for j in paired_pred}
     for tid in true_ids:
         if tid not in paired_true_ids:
-            overall_union += float((true_instances == tid).sum())
+            overall_union += float(stats.gt_areas[tid])
     for pid in pred_ids:
         if pid not in paired_pred_ids:
-            overall_union += float((pred_instances == pid).sum())
+            overall_union += float(stats.pred_areas[pid])
 
     if overall_union <= 0:
         return 0.0

@@ -10,12 +10,11 @@ from common.instance_pq_core import (
     pq_from_match_counts,
     pred_gt_instance_ratio as compute_pred_gt_instance_ratio,
 )
+from common.instance_overlap import instance_overlap_stats, iou_matrix_from_overlap
 from common.metrics import (
     IOU_THRESHOLDS_50_95,
     PQ_MATCH_IOU,
     _index_for_reported_threshold,
-    _instance_ids,
-    build_instance_iou_matrix,
     compute_aji_plus,
     greedy_one_to_one_matches,
     precision_recall_f1_from_iou_matrix,
@@ -121,9 +120,8 @@ def compute_instance_metric_bundle(
     Use this for eval and reporting (multi-threshold PR/F1, AJI+). For tune-path
     whole-section PQ scoring only, use ``compute_merged_view_pq`` instead.
     """
-    true_ids = _instance_ids(true_instances)
-    pred_ids = _instance_ids(pred_instances)
-    nt, np_ = len(true_ids), len(pred_ids)
+    overlap = instance_overlap_stats(true_instances, pred_instances)
+    nt, np_ = len(overlap.gt_ids), len(overlap.pred_ids)
 
     gt_instance_count = nt
     pred_instance_count = np_
@@ -134,7 +132,7 @@ def compute_instance_metric_bundle(
         prf = _thresholded_prf_bundle(np.zeros((0, 0)), 0, 0)
         aji_plus = 1.0
     else:
-        iou_matrix, _, _ = build_instance_iou_matrix(true_instances, pred_instances)
+        iou_matrix = iou_matrix_from_overlap(overlap)
         prf = _thresholded_prf_bundle(iou_matrix, nt, np_)
 
         matched = greedy_one_to_one_matches(iou_matrix, PQ_MATCH_IOU)
@@ -143,7 +141,11 @@ def compute_instance_metric_bundle(
         fn = nt - tp
         matched_ious = [float(iou_matrix[i, j]) for i, j in matched]
         pq, dq, sq = pq_from_match_counts(tp, fp, fn, matched_ious)
-        aji_plus = float(compute_aji_plus(true_instances, pred_instances))
+        aji_plus = float(
+            compute_aji_plus(
+                true_instances, pred_instances, overlap_stats=overlap
+            )
+        )
 
     bundle: InstanceMetricBundle = {
         "pq": float(pq),

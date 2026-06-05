@@ -9,23 +9,22 @@ from common.instance_metric_bundle import (
     INSTANCE_METRIC_BUNDLE_KEYS,
     compute_instance_metric_bundle,
 )
-
-
-def _blank_map(height: int, width: int) -> np.ndarray:
-    return np.zeros((height, width), dtype=np.int32)
-
-
-def _paint_box(
-    instance_map: np.ndarray, label: int, y0: int, x0: int, y1: int, x1: int
-) -> None:
-    instance_map[y0:y1, x0:x1] = label
+from common.tests.instance_map_fixtures import (
+    bundle_fixture_aji_plus_duplicates,
+    bundle_fixture_both_empty,
+    bundle_fixture_duplicate_preds,
+    bundle_fixture_empty_gt,
+    bundle_fixture_empty_pred,
+    bundle_fixture_missed_grain,
+    bundle_fixture_perfect_single,
+    bundle_fixture_poor_mask,
+    bundle_fixture_pq_decomposition,
+    bundle_fixture_split_merge,
+)
 
 
 def test_perfect_single_grain_match_has_unit_pq() -> None:
-    gt = _blank_map(32, 32)
-    pred = _blank_map(32, 32)
-    _paint_box(gt, 1, 4, 4, 20, 20)
-    _paint_box(pred, 1, 4, 4, 20, 20)
+    gt, pred = bundle_fixture_perfect_single()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
@@ -42,8 +41,7 @@ def test_perfect_single_grain_match_has_unit_pq() -> None:
 
 
 def test_both_empty_maps_score_perfectly() -> None:
-    gt = _blank_map(16, 16)
-    pred = _blank_map(16, 16)
+    gt, pred = bundle_fixture_both_empty()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
@@ -58,10 +56,7 @@ def test_both_empty_maps_score_perfectly() -> None:
 
 
 def test_empty_prediction_yields_zero_pq_and_recall() -> None:
-    gt = _blank_map(24, 24)
-    pred = _blank_map(24, 24)
-    _paint_box(gt, 1, 2, 2, 14, 14)
-    _paint_box(gt, 2, 16, 16, 22, 22)
+    gt, pred = bundle_fixture_empty_pred()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
@@ -76,9 +71,7 @@ def test_empty_prediction_yields_zero_pq_and_recall() -> None:
 
 
 def test_empty_ground_truth_with_predictions_scores_zero_pq() -> None:
-    gt = _blank_map(20, 20)
-    pred = _blank_map(20, 20)
-    _paint_box(pred, 1, 4, 4, 16, 16)
+    gt, pred = bundle_fixture_empty_gt()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
@@ -91,11 +84,7 @@ def test_empty_ground_truth_with_predictions_scores_zero_pq() -> None:
 
 
 def test_missed_grain_lowers_dq_and_recall() -> None:
-    gt = _blank_map(32, 32)
-    pred = _blank_map(32, 32)
-    _paint_box(gt, 1, 4, 4, 14, 14)
-    _paint_box(gt, 2, 18, 18, 28, 28)
-    _paint_box(pred, 1, 4, 4, 14, 14)
+    gt, pred = bundle_fixture_missed_grain()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
@@ -110,11 +99,7 @@ def test_missed_grain_lowers_dq_and_recall() -> None:
 
 
 def test_duplicate_predictions_penalize_precision() -> None:
-    gt = _blank_map(32, 32)
-    pred = _blank_map(32, 32)
-    _paint_box(gt, 1, 6, 6, 22, 22)
-    _paint_box(pred, 1, 6, 6, 22, 22)
-    _paint_box(pred, 2, 8, 8, 20, 20)
+    gt, pred = bundle_fixture_duplicate_preds()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
@@ -129,13 +114,7 @@ def test_duplicate_predictions_penalize_precision() -> None:
 
 def test_one_prediction_covering_two_grains_counts_one_match() -> None:
     """One predicted instance overlaps both GT grains; only one strict IoU>0.5 match."""
-    gt = _blank_map(48, 48)
-    pred = _blank_map(48, 48)
-    _paint_box(gt, 1, 10, 10, 20, 20)
-    _paint_box(gt, 2, 28, 28, 38, 38)
-    _paint_box(pred, 1, 10, 10, 20, 20)
-    _paint_box(pred, 1, 20, 20, 28, 28)
-    _paint_box(pred, 1, 28, 28, 32, 32)
+    gt, pred = bundle_fixture_split_merge()
 
     assert np.any((pred > 0) & (gt == 1))
     assert np.any((pred > 0) & (gt == 2))
@@ -153,10 +132,7 @@ def test_one_prediction_covering_two_grains_counts_one_match() -> None:
 
 
 def test_poor_mask_match_below_iou50_is_false_negative() -> None:
-    gt = _blank_map(32, 32)
-    pred = _blank_map(32, 32)
-    _paint_box(gt, 1, 8, 8, 24, 24)
-    _paint_box(pred, 1, 8, 8, 18, 18)
+    gt, pred = bundle_fixture_poor_mask()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
@@ -179,13 +155,7 @@ def test_iou_exactly_equal_to_threshold_does_not_match() -> None:
 
 
 def test_pq_decomposition_matches_hand_computed_tp_fp_fn() -> None:
-    gt = _blank_map(48, 48)
-    pred = _blank_map(48, 48)
-    _paint_box(gt, 1, 4, 4, 18, 18)
-    _paint_box(gt, 2, 28, 28, 44, 44)
-    _paint_box(pred, 1, 4, 4, 18, 18)
-    _paint_box(pred, 2, 28, 28, 44, 44)
-    _paint_box(pred, 3, 4, 28, 18, 44)
+    gt, pred = bundle_fixture_pq_decomposition()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 
@@ -199,11 +169,7 @@ def test_pq_decomposition_matches_hand_computed_tp_fp_fn() -> None:
 
 def test_aji_plus_pairs_at_most_one_prediction_per_ground_truth() -> None:
     """Duplicate predictions: only one pred pairs; the other counts in the union."""
-    gt = _blank_map(24, 24)
-    pred = _blank_map(24, 24)
-    _paint_box(gt, 1, 4, 4, 16, 16)
-    _paint_box(pred, 1, 4, 4, 16, 16)
-    _paint_box(pred, 2, 6, 6, 12, 12)
+    gt, pred = bundle_fixture_aji_plus_duplicates()
 
     bundle = compute_instance_metric_bundle(gt, pred)
 

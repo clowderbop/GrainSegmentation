@@ -32,6 +32,13 @@ from unet.extraction_tune_scoring import (
     watershed_tune_fieldnames,
     watershed_tune_row,
 )
+from unet.watershed_tune_grid import (
+    DEFAULT_BOUNDARY_DILATE_ITER,
+    DEFAULT_EXCLUDE_BORDER,
+    DEFAULT_MIN_AREA_PX,
+    DEFAULT_MIN_DISTANCE,
+    DEFAULT_WATERSHED_CONNECTIVITY,
+)
 
 
 def _log(*parts: object) -> None:
@@ -72,32 +79,32 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--min-distance",
         type=int,
         nargs="+",
-        default=[1, 3, 5],
+        default=list(DEFAULT_MIN_DISTANCE),
         )
     parser.add_argument(
         "--boundary-dilate-iter",
         type=int,
         nargs="+",
-        default=[0, 1],
+        default=list(DEFAULT_BOUNDARY_DILATE_ITER),
         )
     parser.add_argument(
         "--watershed-connectivity",
         type=int,
         nargs="+",
-        default=[1, 2],
+        default=list(DEFAULT_WATERSHED_CONNECTIVITY),
         choices=[1, 2],
         )
     parser.add_argument(
         "--min-area-px",
         type=int,
         nargs="+",
-        default=[0],
+        default=list(DEFAULT_MIN_AREA_PX),
         )
     parser.add_argument(
         "--exclude-border",
         type=int,
         nargs="+",
-        default=[0, 1],
+        default=list(DEFAULT_EXCLUDE_BORDER),
         choices=[0, 1],
         )
     parser.add_argument(

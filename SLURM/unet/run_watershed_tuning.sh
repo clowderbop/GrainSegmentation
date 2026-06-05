@@ -3,7 +3,6 @@
 #SBATCH --output=logs/%x-%j.log
 #SBATCH --mem=256G
 #SBATCH --cpus-per-task=8
-#SBATCH --gpus-per-node=rtx_pro_6000:1
 #SBATCH --time=04:00:00
 
 set -euo pipefail
@@ -13,21 +12,14 @@ source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 source "$SLURM_ROOT/utils/variants.sh"
 # shellcheck source=SLURM/utils/manifest_shell.sh
 source "$SLURM_ROOT/utils/manifest_shell.sh"
-# shellcheck source=SLURM/utils/tensorflow.sh
-source "$SLURM_ROOT/utils/tensorflow.sh"
 mkdir -p "$REPO_ROOT/logs"
 
 GRAINSEG_ROOT="$(grainseg_root)"
 DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
 GT_GPKG="${GT_GPKG:-$DATASET_DIR/train_labels.gpkg}"
-MODEL_PATH="$GRAINSEG_ROOT/models/unet/unet_finetuned_PPL+AllPPX.keras"
 OUTPUT_DIR="$GRAINSEG_ROOT/runs/watershed_tune"
 
-PREDS_DIR=""
-
-PATCH_SIZE=1024
-STRIDE=512
-BATCH_SIZE=1
+PREDS_DIR="${PREDS_DIR:-}"
 
 MIN_DISTANCE=(1 3 5)
 BOUNDARY_DILATE_ITER=(0 1)
@@ -40,12 +32,15 @@ function usage {
     cat <<EOF >&2
 Usage: run_watershed_tuning.sh [options]
 
-Tune watershed postprocessing on U-Net semantic predictions for the train
-section. Requires dataset/train/manifests/{variant}.whole.json.
+Tune watershed postprocessing from cached train whole-section semantic
+predictions. Requires dataset/train/manifests/{variant}.whole.json.
+
+Cached preds default to runs/watershed_tune_preds/{slug}/semantic/ (override
+with --preds-dir or PREDS_DIR). Run run_watershed_tune_predict.sh first.
 
 Options:
   --variant NAME         registry variant (default: VARIANT env)
-  --model-path PATH
+  --preds-dir PATH       directory with {sample_id}_pred.tif files
   --dataset-dir PATH
   --gt-gpkg PATH
   --output-dir PATH
@@ -62,8 +57,8 @@ while [[ $# -gt 0 ]]; do
             VARIANT="$2"
             shift 2
             ;;
-        --model-path)
-            MODEL_PATH="$2"
+        --preds-dir)
+            PREDS_DIR="$2"
             shift 2
             ;;
         --dataset-dir)
@@ -94,11 +89,11 @@ CANONICAL_MANIFEST="$GRAINSEG_ROOT/dataset/train/manifests/${VARIANT}.whole.json
 require_file "$CANONICAL_MANIFEST" \
     "Train whole manifest missing for $VARIANT; run write_whole_manifests.py"
 
+WATERSHED_SUBDIR="$(watershed_tune_subdir_for_variant "$VARIANT")"
 if [ -z "$PREDS_DIR" ]; then
-    require_file "$MODEL_PATH" "Model not found"
-else
-    require_dir "$PREDS_DIR" "PREDS_DIR is not a directory"
+    PREDS_DIR="$GRAINSEG_ROOT/runs/watershed_tune_preds/$WATERSHED_SUBDIR/semantic"
 fi
+require_dir "$PREDS_DIR" "PREDS_DIR is not a directory: $PREDS_DIR"
 
 require_dir "$DATASET_DIR" "Dataset dir not found"
 require_file "$GT_GPKG" "Ground-truth GeoPackage not found"
@@ -108,7 +103,6 @@ if [ ! -f "$SLURM_ROOT/prepare_env.sh" ]; then
     exit 1
 fi
 source "$SLURM_ROOT/prepare_env.sh"
-export TF_CPP_MIN_LOG_LEVEL=2
 
 WORK_DIR="${TMPDIR:-/tmp}/tune_watershed_${SLURM_JOB_ID:-$$}"
 mkdir -p "$WORK_DIR"
@@ -120,14 +114,11 @@ cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
 uv sync
 
-install_unet_tensorflow_wheel
-
 echo "Staging train whole manifest to $LOCAL_IMAGE_DIR ..."
 stage_manifest_run_in_unet_env "$CANONICAL_MANIFEST" "$LOCAL_IMAGE_DIR"
 STAGED_MANIFEST="$LOCAL_IMAGE_DIR/manifest.json"
 require_file "$STAGED_MANIFEST" "Staged train manifest missing"
 
-WATERSHED_SUBDIR="$(watershed_tune_subdir_for_variant "$VARIANT")"
 VARIANT_OUTPUT_DIR="$OUTPUT_DIR/$WATERSHED_SUBDIR"
 mkdir -p "$VARIANT_OUTPUT_DIR"
 JOB_TAG="${SLURM_JOB_ID:-manual}"
@@ -140,10 +131,8 @@ TUNE_CMD=(
     --gt-gpkg "$LOCAL_GT_GPKG"
     --output-csv "$OUT_CSV"
     --output-json "$OUT_JSON"
+    --preds-dir "$PREDS_DIR"
     --num-inputs "$NUM_INPUTS"
-    --patch-size "$PATCH_SIZE"
-    --stride "$STRIDE"
-    --batch-size "$BATCH_SIZE"
     --min-distance "${MIN_DISTANCE[@]}"
     --boundary-dilate-iter "${BOUNDARY_DILATE_ITER[@]}"
     --watershed-connectivity "${WATERSHED_CONNECTIVITY[@]}"
@@ -151,19 +140,11 @@ TUNE_CMD=(
     --exclude-border "${EXCLUDE_BORDER[@]}"
 )
 
-if [ -n "$PREDS_DIR" ]; then
-    TUNE_CMD+=(--preds-dir "$PREDS_DIR")
-else
-    LOCAL_MODEL="$WORK_DIR/model.keras"
-    cp "$MODEL_PATH" "$LOCAL_MODEL"
-    TUNE_CMD+=(--model-path "$LOCAL_MODEL")
-fi
-
 echo "Running watershed tuning (variant=$VARIANT, subdir=$WATERSHED_SUBDIR)..."
-echo "  dataset: $DATASET_DIR"
-echo "  model:   $MODEL_PATH"
-echo "  CSV:     $OUT_CSV"
-echo "  JSON:    $OUT_JSON"
+echo "  dataset:  $DATASET_DIR"
+echo "  preds:    $PREDS_DIR"
+echo "  CSV:      $OUT_CSV"
+echo "  JSON:     $OUT_JSON"
 "${TUNE_CMD[@]}"
 
 echo "Done."

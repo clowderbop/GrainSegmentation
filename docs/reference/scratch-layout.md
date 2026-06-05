@@ -43,6 +43,8 @@ $SCRATCH/GrainSeg/
 │   ├── yolo26-seg/{variant}/weights/best.pt             # YOLO training outputs
 │   ├── yolo26-seg-val/{variant}/                       # YOLO patch eval run dirs (optional layout)
 │   ├── yolo_inference_profile_tune/<run_id>/            # profile selection audit (see YOLO runbook)
+│   ├── watershed_tune_preds/{slugs.job}/                  # train semantic preds for watershed grid (see U-Net runbook)
+│   │   └── semantic/{sample_id}_pred.tif
 │   └── watershed_tune/{slugs.job}/                      # e.g. PPL_AllPPX, PPL_PlusPPXblend
 │       └── watershed_best_*.json
 ├── tuning_logs/                                         # U-Net hyperparameter search (per run_name)

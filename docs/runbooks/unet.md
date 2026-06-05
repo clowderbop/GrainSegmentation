@@ -25,6 +25,7 @@ flowchart TD
 | Phase | Submit script | Run script |
 |-------|---------------|------------|
 | Tune + train | `submit_tune_and_train_variants.sh` | `run_tune_and_train_variant.sh` |
+| Watershed predict | `submit_watershed_tuning.sh` | `run_watershed_tune_predict.sh` |
 | Watershed tune | `submit_watershed_tuning.sh` | `run_watershed_tuning.sh` |
 | Train instance compare | `submit_cc_vs_watershed_train_eval.sh` | `run_whole_test_eval.sh` ×2 |
 | Test whole | `submit_whole_test_eval.sh` | `run_whole_test_eval.sh` |
@@ -60,10 +61,18 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 
 **Submit:** `bash SLURM/unet/submit_watershed_tuning.sh`
 
-Grid search on **train** section (cached semantic predictions vs `train_labels.gpkg`). One job per variant. Select the **U-Net extraction profile** by train **whole-section PQ** (`best_mean_pq` in `watershed_best_*.json`) and record all `MergedViewPqResult` diagnostics (`best_mean_*` / `best_per_sample_*` in JSON; `mean_*` / `{field}__{sample_id}` in the grid CSV). Train/test **eval** still uses the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
+Required **two-phase** workflow per **input configuration** (registry variant):
+
+1. **Predict** — `run_watershed_tune_predict.sh` runs sliding-window U-Net inference once on the train whole section and writes durable semantic predictions to scratch.
+2. **Tune** — `run_watershed_tuning.sh` reads cached preds via `--preds-dir` only and scores the default 24-candidate watershed grid. The tune job never runs U-Net inference.
+
+`submit_watershed_tuning.sh` submits predict then tune with `--dependency=afterok` per variant. A combined predict+tune single job is not the default path.
+
+Select the **U-Net extraction profile** by train **whole-section PQ** (`best_mean_pq` in `watershed_best_*.json`) and record all `MergedViewPqResult` diagnostics (`best_mean_*` / `best_per_sample_*` in JSON; `mean_*` / `{field}__{sample_id}` in the grid CSV). Train/test **eval** still uses the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
 
 | Output | Path |
 |--------|------|
+| Cached preds | `runs/watershed_tune_preds/{slugs.job}/semantic/{sample_id}_pred.tif` |
 | Best params | `runs/watershed_tune/{slugs.job}/watershed_best_*.json` |
 
 `--dry-run` prints `sbatch` commands without submitting.

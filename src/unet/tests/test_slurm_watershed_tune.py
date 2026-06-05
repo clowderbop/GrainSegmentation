@@ -1,0 +1,115 @@
+"""SLURM wrapper contracts for U-Net watershed predict-then-tune workflow."""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from common.variants import repo_root
+from unet.slurm_watershed_tune import (
+    WATERSHED_SEMANTIC_PREDS_DIR_NAME,
+    WATERSHED_TUNE_PREDICT_RESOURCES,
+    WATERSHED_TUNE_PREDS_ROOT_REL,
+    WATERSHED_TUNE_RUNBOOK_REL,
+    WATERSHED_TUNE_TUNE_RESOURCES,
+    run_watershed_tune_predict_script_path,
+    run_watershed_tuning_script_path,
+    submit_watershed_tuning_script_path,
+    watershed_tune_preds_semantic_dir,
+    watershed_tune_runbook_path,
+)
+
+
+def test_watershed_tune_preds_semantic_dir_is_per_variant_scratch_layout() -> None:
+    root = Path("/scratch/example/GrainSeg")
+    assert watershed_tune_preds_semantic_dir(root, "PPL_AllPPX") == (
+        root / "runs/watershed_tune_preds/PPL_AllPPX/semantic"
+    )
+
+
+def test_run_watershed_tune_predict_script_writes_semantic_predictions() -> None:
+    script = run_watershed_tune_predict_script_path()
+    assert script.is_file(), f"Missing SLURM job script: {script}"
+    text = script.read_text(encoding="utf-8")
+    assert "unet.predict" in text
+    assert "--unit whole" in text
+    assert WATERSHED_TUNE_PREDS_ROOT_REL in text
+    assert 'VARIANT_PREDS_DIR="$PREDS_ROOT/$WATERSHED_SUBDIR"' in text
+    assert f'$VARIANT_PREDS_DIR/{WATERSHED_SEMANTIC_PREDS_DIR_NAME}/' in text
+    for key in ("mem", "cpus-per-task", "gpus-per-node", "time"):
+        assert key in WATERSHED_TUNE_PREDICT_RESOURCES
+        assert f"#SBATCH --{key}={WATERSHED_TUNE_PREDICT_RESOURCES[key]}" in text
+
+
+def test_shell_scripts_share_preds_root_with_python_helper() -> None:
+    for script in (
+        run_watershed_tune_predict_script_path(),
+        run_watershed_tuning_script_path(),
+        submit_watershed_tuning_script_path(),
+    ):
+        assert WATERSHED_TUNE_PREDS_ROOT_REL in script.read_text(encoding="utf-8")
+
+    tune_text = run_watershed_tuning_script_path().read_text(encoding="utf-8")
+    assert (
+        f'runs/watershed_tune_preds/$WATERSHED_SUBDIR/{WATERSHED_SEMANTIC_PREDS_DIR_NAME}'
+        in tune_text
+    )
+    example = watershed_tune_preds_semantic_dir(
+        Path("/scratch/example/GrainSeg"), "PPL_AllPPX"
+    )
+    assert str(example).endswith(
+        f"{WATERSHED_TUNE_PREDS_ROOT_REL}/PPL_AllPPX/{WATERSHED_SEMANTIC_PREDS_DIR_NAME}"
+    )
+
+
+def test_run_watershed_tuning_requires_preds_dir_not_model_path() -> None:
+    script = run_watershed_tuning_script_path()
+    text = script.read_text(encoding="utf-8")
+    assert "--preds-dir" in text
+    assert "--model-path" not in text
+    assert "unet.tune_watershed" in text
+    assert "unet.predict" not in text
+    assert "gpus-per-node" not in text
+    assert "tensorflow.sh" not in text
+    assert "install_unet_tensorflow_wheel" not in text
+    assert "--patch-size" not in text
+    for key in ("mem", "cpus-per-task", "time"):
+        assert key in WATERSHED_TUNE_TUNE_RESOURCES
+        assert f"#SBATCH --{key}={WATERSHED_TUNE_TUNE_RESOURCES[key]}" in text
+
+
+def test_submit_watershed_tuning_submits_predict_then_tune_with_dependency() -> None:
+    text = submit_watershed_tuning_script_path().read_text(encoding="utf-8")
+    assert "run_watershed_tune_predict.sh" in text
+    assert "run_watershed_tuning.sh" in text
+    assert "predict_job_id" in text
+    assert "--dependency=afterok:${predict_job_id}" in text
+    assert "watershed_tune_preds" in text
+    assert "PREDS_DIR" in text
+
+
+def test_submit_watershed_tuning_usage_points_at_runbook() -> None:
+    result = subprocess.run(
+        ["bash", str(submit_watershed_tuning_script_path()), "--help"],
+        cwd=repo_root(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    usage = result.stderr
+    assert str(WATERSHED_TUNE_RUNBOOK_REL) in usage
+    assert "watershed-tuning" in usage
+    assert "predict" in usage.lower()
+
+
+def test_unet_runbook_documents_predict_then_tune_workflow() -> None:
+    path = watershed_tune_runbook_path()
+    assert path.is_file(), f"missing runbook: {path}"
+    text = path.read_text(encoding="utf-8")
+    section = text.split("## Watershed tuning", 1)[1].split("## CC vs watershed", 1)[0]
+    assert "run_watershed_tune_predict.sh" in section
+    assert "run_watershed_tuning.sh" in section
+    assert "watershed_tune_preds" in section
+    assert "predict" in section.lower()
+    assert "--preds-dir" in section

@@ -6,14 +6,19 @@ import numpy as np
 import pytest
 
 from common.instance_metric_bundle import compute_instance_metric_bundle
-from common.metrics import PQ_MATCH_IOU
+from common.instance_overlap import instance_overlap_stats, iou_matrix_from_overlap
+from common.metrics import PQ_MATCH_IOU, greedy_one_to_one_matches
 from common.merged_view_pq import (
     MERGED_VIEW_PQ_COUNT_KEYS,
     MERGED_VIEW_PQ_RESULT_KEYS,
     compute_merged_view_pq,
     format_merged_view_pq_value,
 )
-from common.tests.merged_view_fixtures import blank_map, paint_box
+from common.tests.merged_view_fixtures import (
+    BUNDLE_FIXTURE_BUILDERS,
+    blank_map,
+    paint_box,
+)
 
 
 def test_merged_view_pq_count_keys_are_subset_of_result_keys() -> None:
@@ -173,6 +178,18 @@ def test_compute_merged_view_pq_matches_bundle_on_split_merge_overlap() -> None:
     assert result["min_matched_iou"] == result["max_matched_iou"] == result["median_matched_iou"]
     assert result["min_matched_iou"] == pytest.approx(5 / 9)
     assert result["sq"] == pytest.approx(5 / 9)
+
+
+@pytest.mark.parametrize("fixture_name", tuple(BUNDLE_FIXTURE_BUILDERS))
+def test_sparse_greedy_matching_matches_dense_semantics(fixture_name: str) -> None:
+    from common.metrics import greedy_one_to_one_matches_from_overlap
+
+    gt, pred = BUNDLE_FIXTURE_BUILDERS[fixture_name]()
+    stats = instance_overlap_stats(gt, pred)
+    dense_matrix = iou_matrix_from_overlap(stats)
+    dense_matches = greedy_one_to_one_matches(dense_matrix, PQ_MATCH_IOU)
+    sparse_matches = greedy_one_to_one_matches_from_overlap(stats, PQ_MATCH_IOU)
+    assert sparse_matches == dense_matches
 
 
 def test_near_miss_counts_when_best_iou_is_positive_but_not_a_match() -> None:

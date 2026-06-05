@@ -5,6 +5,7 @@ from common.instance_overlap import (
     OverlapStats,
     instance_ids as _instance_ids,
     instance_overlap_stats,
+    iou_from_intersection,
     iou_matrix_from_overlap,
     pair_intersection_lookup,
 )
@@ -33,6 +34,22 @@ def _strict_iou_exceeds(value: float, iou_threshold: float) -> bool:
     return value > iou_threshold
 
 
+def _greedy_select_from_candidates(
+    candidates: list[tuple[float, int, int]],
+) -> list[tuple[int, int]]:
+    candidates.sort(key=lambda x: -x[0])
+    used_row: set[int] = set()
+    used_col: set[int] = set()
+    matched: list[tuple[int, int]] = []
+    for _, i, j in candidates:
+        if i in used_row or j in used_col:
+            continue
+        used_row.add(i)
+        used_col.add(j)
+        matched.append((i, j))
+    return matched
+
+
 def greedy_one_to_one_matches(
     iou_matrix: np.ndarray, iou_threshold: float
 ) -> list[tuple[int, int]]:
@@ -46,17 +63,84 @@ def greedy_one_to_one_matches(
             v = float(iou_matrix[i, j])
             if _strict_iou_exceeds(v, iou_threshold):
                 candidates.append((v, i, j))
-    candidates.sort(key=lambda x: -x[0])
-    used_row: set[int] = set()
-    used_col: set[int] = set()
-    matched: list[tuple[int, int]] = []
-    for _, i, j in candidates:
-        if i in used_row or j in used_col:
-            continue
-        used_row.add(i)
-        used_col.add(j)
-        matched.append((i, j))
-    return matched
+    return _greedy_select_from_candidates(candidates)
+
+
+def greedy_one_to_one_matches_from_overlap(
+    stats: OverlapStats, iou_threshold: float
+) -> list[tuple[int, int]]:
+    """Greedy one-to-one matches from sparse co-occurring pairs only."""
+    nt, np_ = len(stats.gt_ids), len(stats.pred_ids)
+    if nt == 0 or np_ == 0:
+        return []
+
+    gt_index = {tid: i for i, tid in enumerate(stats.gt_ids)}
+    pred_index = {pid: j for j, pid in enumerate(stats.pred_ids)}
+    candidates: list[tuple[float, int, int]] = []
+    for tid, pid, inter in zip(
+        stats.pair_gt_ids,
+        stats.pair_pred_ids,
+        stats.pair_intersections,
+        strict=True,
+    ):
+        gt_id, pred_id = int(tid), int(pid)
+        iou = iou_from_intersection(
+            float(inter), stats.gt_areas[gt_id], stats.pred_areas[pred_id]
+        )
+        if _strict_iou_exceeds(iou, iou_threshold):
+            candidates.append((iou, gt_index[gt_id], pred_index[pred_id]))
+    return _greedy_select_from_candidates(candidates)
+
+
+def best_iou_per_instance_from_overlap(
+    stats: OverlapStats,
+) -> tuple[list[float], list[float]]:
+    """Per-instance best IoU from co-occurring pairs only (zero when no overlap)."""
+    nt, np_ = len(stats.gt_ids), len(stats.pred_ids)
+    best_gt = [0.0] * nt
+    best_pred = [0.0] * np_
+    if nt == 0 or np_ == 0:
+        return best_gt, best_pred
+
+    gt_index = {tid: i for i, tid in enumerate(stats.gt_ids)}
+    pred_index = {pid: j for j, pid in enumerate(stats.pred_ids)}
+    for tid, pid, inter in zip(
+        stats.pair_gt_ids,
+        stats.pair_pred_ids,
+        stats.pair_intersections,
+        strict=True,
+    ):
+        gt_id, pred_id = int(tid), int(pid)
+        iou = iou_from_intersection(
+            float(inter), stats.gt_areas[gt_id], stats.pred_areas[pred_id]
+        )
+        i = gt_index[gt_id]
+        j = pred_index[pred_id]
+        if iou > best_gt[i]:
+            best_gt[i] = iou
+        if iou > best_pred[j]:
+            best_pred[j] = iou
+    return best_gt, best_pred
+
+
+def precision_recall_f1_from_overlap(
+    stats: OverlapStats, iou_threshold: float
+) -> tuple[float, float, float]:
+    nt, np_ = len(stats.gt_ids), len(stats.pred_ids)
+    if nt == 0 and np_ == 0:
+        return 1.0, 1.0, 1.0
+    if nt == 0 or np_ == 0:
+        return 0.0, 0.0, 0.0
+
+    tp = len(greedy_one_to_one_matches_from_overlap(stats, iou_threshold))
+    fp = np_ - tp
+    fn = nt - tp
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+    if precision + recall == 0:
+        return precision, recall, 0.0
+    f1 = 2.0 * precision * recall / (precision + recall)
+    return float(precision), float(recall), float(f1)
 
 
 def greedy_one_to_one_tp_count(iou_matrix: np.ndarray, iou_threshold: float) -> int:

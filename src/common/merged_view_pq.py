@@ -11,13 +11,14 @@ from common.instance_overlap import (
     OverlapStats,
     instance_overlap_stats,
     iou_from_intersection,
-    iou_matrix_from_overlap,
+    pair_intersection_lookup,
 )
 from common.instance_pq_core import pq_from_match_counts, pred_gt_instance_ratio
 from common.metrics import (
     PQ_MATCH_IOU,
-    greedy_one_to_one_matches,
-    precision_recall_f1_from_iou_matrix,
+    best_iou_per_instance_from_overlap,
+    greedy_one_to_one_matches_from_overlap,
+    precision_recall_f1_from_overlap,
 )
 
 # Re-export overlap primitives for callers that import from this module.
@@ -161,7 +162,6 @@ def _matched_iou_spread(matched_ious: list[float]) -> tuple[float, float, float]
 
 def _overlap_forensics(
     stats: OverlapStats,
-    iou_matrix: np.ndarray,
     matched: list[tuple[int, int]],
 ) -> dict[str, int | float]:
     num_cooccurring_pairs = int(len(stats.pair_intersections))
@@ -178,22 +178,10 @@ def _overlap_forensics(
         if iou > PQ_MATCH_IOU:
             num_pairs_above_pq_threshold += 1
 
-    nt, np_ = iou_matrix.shape
+    np_ = len(stats.pred_ids)
     matched_rows = {i for i, _ in matched}
     matched_cols = {j for _, j in matched}
-
-    def _best_iou_per_row() -> list[float]:
-        if nt == 0:
-            return []
-        return [float(iou_matrix[i, :].max()) if np_ > 0 else 0.0 for i in range(nt)]
-
-    def _best_iou_per_col() -> list[float]:
-        if np_ == 0:
-            return []
-        return [float(iou_matrix[:, j].max()) if nt > 0 else 0.0 for j in range(np_)]
-
-    best_gt = _best_iou_per_row()
-    best_pred = _best_iou_per_col()
+    best_gt, best_pred = best_iou_per_instance_from_overlap(stats)
 
     near_miss_gt_count = sum(
         1
@@ -220,6 +208,23 @@ def _overlap_forensics(
         "near_miss_gt_count": near_miss_gt_count,
         "avg_best_iou_unmatched_pred": avg_best_iou_unmatched_pred,
     }
+
+
+def _matched_ious_from_overlap(
+    stats: OverlapStats, matched: list[tuple[int, int]]
+) -> list[float]:
+    if not matched:
+        return []
+    intersections = pair_intersection_lookup(stats)
+    matched_ious: list[float] = []
+    for i, j in matched:
+        tid = stats.gt_ids[i]
+        pid = stats.pred_ids[j]
+        inter = intersections.get((tid, pid), 0.0)
+        matched_ious.append(
+            iou_from_intersection(inter, stats.gt_areas[tid], stats.pred_areas[pid])
+        )
+    return matched_ious
 
 
 def compute_merged_view_pq(
@@ -249,18 +254,15 @@ def compute_merged_view_pq(
             "avg_best_iou_unmatched_pred": 0.0,
         }
     else:
-        iou_matrix = iou_matrix_from_overlap(stats)
-        precision, recall, f1 = precision_recall_f1_from_iou_matrix(
-            iou_matrix, PQ_MATCH_IOU
-        )
-        matched = greedy_one_to_one_matches(iou_matrix, PQ_MATCH_IOU)
+        precision, recall, f1 = precision_recall_f1_from_overlap(stats, PQ_MATCH_IOU)
+        matched = greedy_one_to_one_matches_from_overlap(stats, PQ_MATCH_IOU)
         tp = len(matched)
         fp = np_ - tp
         fn = nt - tp
-        matched_ious = [float(iou_matrix[i, j]) for i, j in matched]
+        matched_ious = _matched_ious_from_overlap(stats, matched)
         pq, dq, sq = pq_from_match_counts(tp, fp, fn, matched_ious)
         min_iou, max_iou, median_iou = _matched_iou_spread(matched_ious)
-        forensics = _overlap_forensics(stats, iou_matrix, matched)
+        forensics = _overlap_forensics(stats, matched)
 
     result: MergedViewPqResult = {
         "pq": float(pq),

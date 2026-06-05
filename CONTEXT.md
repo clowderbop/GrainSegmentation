@@ -170,15 +170,15 @@ _Avoid:_ per-variant inference settings on test, duplicating recipe constants in
 ### YOLO profile selection
 
 **YOLO inference profile**:
-The five train-selected YOLO inference knobs beyond shared **sliding window** geometry in the **test inference recipe**: slice-merge postprocess settings, minimum **score**, and **mask threshold**. One profile shared across all input variants on held-out test. Chosen via **profile selection**, then **profile promotion** into the recipe. Recorded in **run provenance**. Re-run **profile selection** when train labels or YOLO weights change materially.
-_Avoid:_ per-variant profiles (confounds **variant test ranking**), tuning on overlapping **detector proposals** as the primary objective
+The train-selected detector minimum **score** (`conf`) plus the fixed **mask threshold** from the **test inference recipe** (not a grid axis). **Profile selection** searches only `conf` on the grid in `config/yolo_inference_profile_tune.yaml` (~7 candidates); SAHI slice-merge postprocess axes are not tuned on the whole-section path. One profile shared across all input variants on held-out test. Chosen via **profile selection**, then **profile promotion** into the recipe. Recorded in **run provenance**. Re-run **profile selection** when train labels or YOLO weights change materially.
+_Avoid:_ per-variant profiles (confounds **variant test ranking**), tuning on overlapping **detector proposals** as the primary objective, multi-axis SAHI merge grids on whole-section output
 
 **Profile selection**:
 Train-side search for the shared **YOLO inference profile** on the whole **train** section, maximizing mean **whole-section PQ** averaged across input variants. Winner feeds **profile promotion**; audit trail on scratch records the **PQ diagnostics** for each candidate (ADR 0005).
 _Avoid:_ tuning on overlapping **detector proposals** as the headline objective
 
 **Profile selection result row**:
-One grid candidate’s audit record: profile knob values, per-variant and mean train **whole-section PQ**, **PQ diagnostics**, and what inputs the score depended on. Rows assemble into the tune-run audit table (ADR 0005).
+One grid candidate’s audit record: `conf`, fixed `mask_threshold`, per-variant and mean train **whole-section PQ**, **PQ diagnostics**, and what inputs the score depended on. Rows assemble into the tune-run audit table (ADR 0005).
 _Avoid:_ treating a stale row as valid after labels or weights change
 
 **Profile selection scoring**:
@@ -190,8 +190,8 @@ The canonical train ground-truth **merged instance view** for a tune run, built 
 _Avoid:_ per-variant GT caches when label geometry is shared, using semantic TIFFs as GT for profile selection
 
 **Profile promotion**:
-Installing the **profile selection** winner into the **test inference recipe** for git commit and held-out test (all five profile knobs). ADR 0005.
-_Avoid:_ partial promotion (only merge or only score/mask without the full profile)
+Installing the **profile selection** winner’s train-selected **`conf`** and the fixed **`mask_threshold`** into the **test inference recipe** for git commit and held-out test (`rewrite_yolo_conf_in_recipe_text`; other recipe YOLO keys unchanged). ADR 0005.
+_Avoid:_ partial promotion (only `conf` without the paired fixed `mask_threshold`), promoting legacy five-knob or SAHI-merge-grid winners
 
 ### Post-eval reporting
 

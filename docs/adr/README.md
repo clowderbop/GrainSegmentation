@@ -4,7 +4,7 @@ This directory records decisions, not operational runbooks or glossary entries.
 
 | Decision | File |
 | --- | --- |
-| Canonical instance output and YOLO score merge | [0001](0001-instance-prediction-set.md) |
+| Canonical instance output (YOLO cross-tile / patch score merge) | [0001](0001-instance-prediction-set.md) |
 | Self-contained manifest staging for cluster eval | [0002](0002-self-contained-manifest-staging.md) |
 | Test evaluation and ranking policy | [0003](0003-test-evaluation-policy.md) |
 | YOLO profile selection architecture | [0005](0005-yolo-inference-profile-train-selection.md) |

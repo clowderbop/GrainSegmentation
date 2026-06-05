@@ -155,7 +155,7 @@ uv run --directory src/yolo python -m yolo.promote_inference_profile \
   --winner-json "$SCRATCH/GrainSeg/runs/yolo_inference_profile_tune/<run_id>/grid/winner.json"
 ```
 
-Commit `config/test_inference.yaml` after promotion. The five **YOLO inference profile** knobs in git are the frozen held-out test settings; geometry stays in the shared **test inference recipe**.
+Commit `config/test_inference.yaml` after promotion. Git records the promoted train-selected **`conf`** and the fixed **`mask_threshold`**; other YOLO keys and shared **sliding window** geometry stay in the **test inference recipe** unchanged.
 
 ### Rerun without detectors
 

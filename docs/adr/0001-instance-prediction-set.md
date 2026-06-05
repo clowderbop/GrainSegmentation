@@ -10,7 +10,8 @@ Whole-image YOLO inference once materialized dense `(N, H, W)` mask stacks, whic
 
 The canonical output is one **instance prediction set** per sample: JSON (`schema_version: 1`) at `prediction_sets/{sample_id}.json`, with COCO RLE mask geometry and manifest field `instance_prediction_set`.
 
-- **YOLO** writes non-overlapping grains after **score merge** at predict time. Each grain keeps the winning proposal **score**.
+- **YOLO (whole section)** writes non-overlapping grains after **cross-tile association** at predict time. Each grain keeps the associated proposal **score**.
+- **YOLO (patch)** writes non-overlapping grains after **score merge** at predict time. Each grain keeps the winning proposal **score**.
 - **U-Net** writes non-overlapping **extracted grains** after instance extraction from a **semantic prediction**. U-Net instance entries do not carry scores.
 - Evaluation, overlays, and reporting all read the same prediction set. YOLO is not merged a second time at evaluation.
 - Run parameters live once in a **run provenance** sidecar beside `prediction_sets/`, not duplicated in every prediction file.

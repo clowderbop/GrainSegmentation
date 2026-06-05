@@ -12,6 +12,8 @@ source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 source "$SLURM_ROOT/utils/variants.sh"
 # shellcheck source=SLURM/utils/manifest_shell.sh
 source "$SLURM_ROOT/utils/manifest_shell.sh"
+# shellcheck source=SLURM/utils/assertions.sh
+source "$SLURM_ROOT/utils/assertions.sh"
 mkdir -p "$REPO_ROOT/logs"
 
 GRAINSEG_ROOT="$(grainseg_root)"

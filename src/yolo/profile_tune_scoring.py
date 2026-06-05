@@ -1,4 +1,4 @@
-"""In-process train instance metrics for YOLO profile selection scoring (ADR 0005, 0007)."""
+"""In-process train merged-view PQ scoring for YOLO profile selection (ADR 0005, 0007)."""
 
 from __future__ import annotations
 
@@ -9,10 +9,7 @@ from pathlib import Path
 
 import numpy as np
 
-from common.instance_metric_bundle import (
-    InstanceMetricBundle,
-    compute_instance_metric_bundle,
-)
+from common.merged_view_pq import MergedViewPqResult, compute_merged_view_pq
 from common.test_inference import YoloInferenceProfileCandidate
 from yolo.cross_tile_postprocess import (
     materialize_cross_tile_prediction_set,
@@ -52,7 +49,7 @@ def merged_instance_view_from_tiled_records(
     return pred_map
 
 
-def compute_train_instance_metric_bundle(
+def compute_train_pq(
     gt_instance_map: np.ndarray,
     records: Sequence[TiledProposalRecord],
     *,
@@ -60,8 +57,8 @@ def compute_train_instance_metric_bundle(
     height: int,
     width: int,
     log_timings: bool = False,
-) -> InstanceMetricBundle:
-    """Train whole-section bundle for one variant/grid point without a prediction set."""
+) -> MergedViewPqResult:
+    """Train whole-section PQ for one variant/grid point (profile selection hot path)."""
     del candidate  # cross-tile thresholds are fixed; conf/mask_threshold affect detector cache only
     timings = ProfileSelectionScoringTimings() if log_timings else None
     pred_map = merged_instance_view_from_tiled_records(
@@ -76,32 +73,12 @@ def compute_train_instance_metric_bundle(
         raise ValueError(
             f"GT shape {gt.shape} does not match prediction shape {pred_map.shape}"
         )
-    bundle = compute_instance_metric_bundle(gt, pred_map)
+    result = compute_merged_view_pq(gt, pred_map)
     if timings is not None:
         timings.metrics_s = time.perf_counter() - t0
         _log_timing("cross-tile association", timings.cross_tile_association_s)
         _log_timing("metrics", timings.metrics_s)
-    return bundle
-
-
-def compute_train_pq(
-    gt_instance_map: np.ndarray,
-    records: Sequence[TiledProposalRecord],
-    *,
-    candidate: YoloInferenceProfileCandidate,
-    height: int,
-    width: int,
-    log_timings: bool = False,
-) -> float:
-    bundle = compute_train_instance_metric_bundle(
-        gt_instance_map,
-        records,
-        candidate=candidate,
-        height=height,
-        width=width,
-        log_timings=log_timings,
-    )
-    return float(bundle["pq"])
+    return result
 
 
 def materialize_cross_tile_prediction_set_from_records(

@@ -19,6 +19,7 @@ from common.test_inference import (
 from common.variants import repo_root
 
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from yolo.inference_profile_tune import (
     GridResumeContext,
     PROFILE_SELECTION_OBJECTIVE,
@@ -50,6 +51,7 @@ from yolo.inference_profile_tune import (
     write_variant_eval_resume_meta,
 )
 from yolo.tests.profile_tune_fixtures import (
+    constant_merged_view_pq_result,
     constant_metric_bundle,
     instance_metrics_report_for_pq,
 )
@@ -157,6 +159,18 @@ def test_iter_grid_candidates_one_per_conf(tmp_path: Path) -> None:
 def test_mean_pq_across_variants_equal_weights_per_variant() -> None:
     scores = {"PPL": 0.8, "PPL+AllPPX": 0.6}
     assert mean_pq_across_variants(scores) == pytest.approx(0.7)
+
+
+def test_grid_results_fieldnames_use_merged_view_pq_only() -> None:
+    fieldnames = grid_results_fieldnames(("PPL",))
+    assert "mean_pq" in fieldnames
+    assert "mean_tp" in fieldnames
+    assert "aji_plus__PPL" not in fieldnames
+    assert "f1_iou75__PPL" not in fieldnames
+    assert "mF1_iou50_95__PPL" not in fieldnames
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        assert f"mean_{key}" in fieldnames
+        assert variant_metric_column(key, "PPL") in fieldnames
 
 
 def test_extract_mean_pq_from_single_sample_report() -> None:
@@ -580,8 +594,7 @@ def test_append_grid_result_row_writes_incrementally(tmp_path: Path) -> None:
     profile = profile_tune_candidate_from_conf(0.25)
     row_a = grid_result_row_from_candidate_scoring(
         candidate=profile,
-        mean_pq=0.7,
-        per_variant_bundles={"PPL": constant_metric_bundle(0.7)},
+        per_variant_pq_results={"PPL": constant_merged_view_pq_result(0.7)},
     )
     row_a["candidate_id"] = "a"
     append_grid_result_row(csv_path, row_a, variant_names=("PPL",))
@@ -674,14 +687,14 @@ def test_recompute_winner_from_csv_picks_highest_mean_pq(tmp_path: Path) -> None
     grid_dir = tmp_path / "grid"
     grid_dir.mkdir(parents=True)
     fieldnames = grid_results_fieldnames(("PPL",))
+    mean_low = ",".join("0.4" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
+    per_variant_low = ",".join("0.4" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
+    mean_high = ",".join("0.9" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
+    per_variant_high = ",".join("0.9" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
     (grid_dir / "results.csv").write_text(
         ",".join(fieldnames) + "\n"
-        "low,0.25,0.4,0.4,"
-        + ",".join("0.4" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
-        + "\n"
-        "high,0.35,0.4,0.9,"
-        + ",".join("0.9" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
-        + "\n",
+        f"low,0.25,0.4,{mean_low},{per_variant_low}\n"
+        f"high,0.35,0.4,{mean_high},{per_variant_high}\n",
         encoding="utf-8",
     )
     winner = recompute_winner_from_csv(tmp_path, variant_names=("PPL",))
@@ -698,11 +711,11 @@ def test_profile_tune_finalize_cli_recompute_winner_from_csv(
     grid_dir = tmp_path / "grid"
     grid_dir.mkdir(parents=True)
     fieldnames = grid_results_fieldnames(("PPL",))
+    mean_values = ",".join("0.95" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
+    per_variant_values = ",".join("0.95" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
     (grid_dir / "results.csv").write_text(
         ",".join(fieldnames) + "\n"
-        "winner,0.2,0.4,0.95,"
-        + ",".join("0.95" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
-        + "\n",
+        f"winner,0.2,0.4,{mean_values},{per_variant_values}\n",
         encoding="utf-8",
     )
     main(

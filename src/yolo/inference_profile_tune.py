@@ -10,10 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+import numpy as np
 import yaml
 
 from common import yaml_validate as yv
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.merged_view_pq import (
+    MERGED_VIEW_PQ_COUNT_KEYS,
+    MERGED_VIEW_PQ_RESULT_KEYS,
+    MergedViewPqResult,
+    merged_view_pq_from_instance_metric_bundle,
+)
 from common.instance_eval_report import (
     extract_instance_metric_bundle_from_report,
     extract_metric_from_report,
@@ -165,13 +171,27 @@ def select_best_candidate(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return max(rows, key=lambda row: float(row["mean_pq"]))
 
 
-def flatten_per_variant_bundles(
-    per_variant_bundles: dict[str, dict[str, float]],
-) -> dict[str, float]:
-    flat: dict[str, float] = {}
-    for variant, bundle in per_variant_bundles.items():
-        for key, value in bundle.items():
-            flat[variant_metric_column(key, variant)] = float(value)
+def mean_merged_view_pq_across_variants(
+    results: list[MergedViewPqResult],
+) -> dict[str, float | int]:
+    if not results:
+        raise ValueError("results must not be empty")
+    out: dict[str, float | int] = {}
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        if key in MERGED_VIEW_PQ_COUNT_KEYS:
+            out[key] = int(round(float(np.mean([r[key] for r in results]))))
+        else:
+            out[key] = float(np.mean([float(r[key]) for r in results]))
+    return out
+
+
+def flatten_per_variant_pq_results(
+    per_variant_results: dict[str, MergedViewPqResult],
+) -> dict[str, float | int]:
+    flat: dict[str, float | int] = {}
+    for variant, result in per_variant_results.items():
+        for key in MERGED_VIEW_PQ_RESULT_KEYS:
+            flat[variant_metric_column(key, variant)] = result[key]
     return flat
 
 
@@ -199,27 +219,29 @@ def grid_results_fieldnames(variant_names: tuple[str, ...]) -> list[str]:
         "candidate_id",
         "conf",
         "mask_threshold",
-        "mean_pq",
     ]
-    metric_columns = [
+    mean_columns = [f"mean_{key}" for key in MERGED_VIEW_PQ_RESULT_KEYS]
+    per_variant_columns = [
         variant_metric_column(key, variant)
         for variant in variant_names
-        for key in INSTANCE_METRIC_BUNDLE_KEYS
+        for key in MERGED_VIEW_PQ_RESULT_KEYS
     ]
-    return base + metric_columns
+    return base + mean_columns + per_variant_columns
 
 
 def grid_result_row_from_candidate_scoring(
     *,
     candidate: YoloInferenceProfileCandidate,
-    mean_pq: float,
-    per_variant_bundles: dict[str, dict[str, float]],
+    per_variant_pq_results: dict[str, MergedViewPqResult],
 ) -> dict[str, Any]:
+    mean_pq_fields = mean_merged_view_pq_across_variants(
+        list(per_variant_pq_results.values())
+    )
     row: dict[str, Any] = {
         "candidate_id": candidate.candidate_id(),
         **candidate.to_dict(),
-        "mean_pq": mean_pq,
-        **flatten_per_variant_bundles(per_variant_bundles),
+        **{f"mean_{key}": value for key, value in mean_pq_fields.items()},
+        **flatten_per_variant_pq_results(per_variant_pq_results),
     }
     return row
 
@@ -408,8 +430,10 @@ def run_grid_search(
         mean_pq, per_variant_bundles = score_candidate_across_variants(variant_reports)
         row = grid_result_row_from_candidate_scoring(
             candidate=candidate,
-            mean_pq=mean_pq,
-            per_variant_bundles=per_variant_bundles,
+            per_variant_pq_results={
+                variant: merged_view_pq_from_instance_metric_bundle(bundle)
+                for variant, bundle in per_variant_bundles.items()
+            },
         )
         rows.append(row)
         write_grid_results_csv(results_csv, rows, variant_names=variants)
@@ -493,10 +517,11 @@ def rows_to_grid_results(
             "candidate_id": row["candidate_id"],
             "conf": row["conf"],
             "mask_threshold": row["mask_threshold"],
-            "mean_pq": row["mean_pq"],
         }
+        for key in MERGED_VIEW_PQ_RESULT_KEYS:
+            csv_row[f"mean_{key}"] = row[f"mean_{key}"]
         for variant in variant_names:
-            for key in INSTANCE_METRIC_BUNDLE_KEYS:
+            for key in MERGED_VIEW_PQ_RESULT_KEYS:
                 column = variant_metric_column(key, variant)
                 csv_row[column] = row[column]
         normalized.append(csv_row)

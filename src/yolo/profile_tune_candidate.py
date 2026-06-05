@@ -6,11 +6,11 @@ import argparse
 import json
 import time
 from pathlib import Path
-
-from common.profile_tune_paths import profile_tune_cache_root
 from typing import Any
 
 import numpy as np
+
+from common.profile_tune_paths import profile_tune_cache_root
 
 from common.evaluate_instances import image_dimensions
 from common.profile_tune_gt_cache import (
@@ -26,21 +26,23 @@ from common.test_inference import (
     profile_tune_fixed_mask_threshold,
 )
 from common.variants import repo_root
+from common.merged_view_pq import MergedViewPqResult
 from yolo.inference_profile_tune import (
     PROFILE_SELECTION_OBJECTIVE,
     TuneGridSpec,
     candidate_at_grid_index,
-    flatten_per_variant_bundles,
+    flatten_per_variant_pq_results,
     iter_grid_candidates,
     load_profile_selection_row,
     load_tune_grid,
+    mean_merged_view_pq_across_variants,
     mean_pq_across_variants,
     profile_selection_row_path,
     tune_grid_fingerprint,
     write_profile_selection_row,
 )
 from yolo.profile_tune_cli import parse_profile_tune_variants
-from yolo.profile_tune_scoring import compute_train_instance_metric_bundle
+from yolo.profile_tune_scoring import compute_train_pq
 from yolo.profile_tune_work import (
     default_grainseg_and_run_roots,
     weights_path,
@@ -174,7 +176,7 @@ def score_variant_train_metrics_from_cache(
     gt_map: np.ndarray,
     variant_index: int | None = None,
     variant_count: int | None = None,
-) -> dict[str, float]:
+) -> MergedViewPqResult:
     prefix = ""
     if variant_index is not None and variant_count is not None:
         prefix = f"[{variant_index}/{variant_count}] "
@@ -201,7 +203,7 @@ def score_variant_train_metrics_from_cache(
         f"({len(records)} from v{TILED_PROPOSAL_CACHE_SCHEMA_VERSION} cache), "
         f"GT {height}×{width} ({gt_n} instances)"
     )
-    bundle = compute_train_instance_metric_bundle(
+    pq_result = compute_train_pq(
         gt_map,
         records,
         candidate=candidate,
@@ -209,29 +211,33 @@ def score_variant_train_metrics_from_cache(
         width=width,
         log_timings=True,
     )
-    pq = float(bundle[PROFILE_SELECTION_OBJECTIVE])
+    pq = float(pq_result[PROFILE_SELECTION_OBJECTIVE])
     elapsed = time.perf_counter() - t0
     _log(f"{prefix}  {variant}: train PQ={pq:.6f} ({elapsed:.1f}s)")
-    return dict(bundle)
+    return pq_result
 
 
 def build_profile_selection_row(
     *,
     candidate: YoloInferenceProfileCandidate,
-    per_variant_bundles: dict[str, dict[str, float]],
+    per_variant_pq_results: dict[str, MergedViewPqResult],
     fingerprint: dict[str, Any],
 ) -> dict[str, Any]:
     per_variant_pq = {
-        variant: float(bundle[PROFILE_SELECTION_OBJECTIVE])
-        for variant, bundle in per_variant_bundles.items()
+        variant: float(result[PROFILE_SELECTION_OBJECTIVE])
+        for variant, result in per_variant_pq_results.items()
     }
+    mean_pq_fields = mean_merged_view_pq_across_variants(
+        list(per_variant_pq_results.values())
+    )
     row: dict[str, Any] = {
         "candidate_id": candidate.candidate_id(),
         **candidate.to_dict(),
-        "mean_pq": mean_pq_across_variants(per_variant_pq),
+        **{f"mean_{key}": value for key, value in mean_pq_fields.items()},
         "fingerprint": fingerprint,
-        **flatten_per_variant_bundles(per_variant_bundles),
+        **flatten_per_variant_pq_results(per_variant_pq_results),
     }
+    assert row["mean_pq"] == mean_pq_across_variants(per_variant_pq)
     return row
 
 
@@ -279,10 +285,10 @@ def score_profile_selection_candidate(
     )
     t_all = time.perf_counter()
     gt_map = load_shared_train_gt_map(work_root=work_root, grainseg_root=grainseg_root)
-    per_variant_bundles: dict[str, dict[str, float]] = {}
+    per_variant_pq_results: dict[str, MergedViewPqResult] = {}
     n_variants = len(variants)
     for idx, variant in enumerate(variants, start=1):
-        per_variant_bundles[variant] = score_variant_train_metrics_from_cache(
+        per_variant_pq_results[variant] = score_variant_train_metrics_from_cache(
             variant=variant,
             candidate=candidate,
             grainseg_root=grainseg_root,
@@ -293,8 +299,8 @@ def score_profile_selection_candidate(
             variant_count=n_variants,
         )
     per_variant_pq = {
-        variant: float(bundle[PROFILE_SELECTION_OBJECTIVE])
-        for variant, bundle in per_variant_bundles.items()
+        variant: float(result[PROFILE_SELECTION_OBJECTIVE])
+        for variant, result in per_variant_pq_results.items()
     }
     mean_pq = mean_pq_across_variants(per_variant_pq)
     _log(
@@ -303,7 +309,7 @@ def score_profile_selection_candidate(
     )
     row = build_profile_selection_row(
         candidate=candidate,
-        per_variant_bundles=per_variant_bundles,
+        per_variant_pq_results=per_variant_pq_results,
         fingerprint=fingerprint,
     )
     write_profile_selection_row(row_path, row)

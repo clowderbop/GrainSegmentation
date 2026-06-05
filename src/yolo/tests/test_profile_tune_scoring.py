@@ -78,12 +78,39 @@ def _assert_bundles_equal(
         assert fast[key] == pytest.approx(canonical[key], rel=0.0, abs=1e-9), key
 
 
+_PROFILE_SELECTION_PQ_PARITY_KEYS = (
+    "pq",
+    "dq",
+    "sq",
+    "tp",
+    "fp",
+    "fn",
+    "precision_iou50",
+    "recall_iou50",
+    "f1_iou50",
+    "gt_instance_count",
+    "pred_instance_count",
+    "pred_gt_instance_ratio",
+)
+
+
+def _assert_pq_result_matches_bundle_subset(
+    result: dict[str, float | int], bundle: dict[str, float]
+) -> None:
+    from common.merged_view_pq import merged_view_pq_from_instance_metric_bundle
+
+    reference = merged_view_pq_from_instance_metric_bundle(bundle)
+    for key in _PROFILE_SELECTION_PQ_PARITY_KEYS:
+        expected = reference[key] if key in ("tp", "fp", "fn") else bundle[key]
+        assert result[key] == pytest.approx(expected, rel=0.0, abs=1e-9), key
+
+
 @pytest.mark.parametrize("variant", all_variant_names())
-def test_profile_selection_scoring_bundle_matches_evaluate_instances(
+def test_profile_selection_scoring_pq_matches_evaluate_instances(
     tmp_path: Path, variant: str
 ) -> None:
-    """In-process cross-tile scoring bundle matches evaluate_instances materialization."""
-    from yolo.profile_tune_scoring import compute_train_instance_metric_bundle
+    """In-process cross-tile PQ scoring matches evaluate_instances PQ fields."""
+    from yolo.profile_tune_scoring import compute_train_pq
 
     height, width = 16, 16
     gt_map = tiny_train_gt_map(height, width)
@@ -97,7 +124,7 @@ def test_profile_selection_scoring_bundle_matches_evaluate_instances(
     image_path.write_bytes(b"\x00")
     pred_path = variant_dir / "prediction_sets" / "train.json"
 
-    fast_bundle = compute_train_instance_metric_bundle(
+    fast_result = compute_train_pq(
         gt_map,
         records,
         candidate=candidate,
@@ -114,7 +141,7 @@ def test_profile_selection_scoring_bundle_matches_evaluate_instances(
         image_path=image_path,
         prediction_set_path=pred_path,
     )
-    _assert_bundles_equal(fast_bundle, canonical_bundle)
+    _assert_pq_result_matches_bundle_subset(fast_result, canonical_bundle)
     assert pred_path.is_file()
 
 
@@ -163,16 +190,17 @@ def test_tiled_proposal_cache_scoring_uses_cross_tile_postprocess(
             width=width,
         ),
     )
-    from yolo.profile_tune_scoring import compute_train_instance_metric_bundle
+    from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
+    from yolo.profile_tune_scoring import compute_train_pq
 
-    expected = compute_train_instance_metric_bundle(
+    expected = compute_train_pq(
         gt_map,
         records,
         candidate=candidate,
         height=height,
         width=width,
     )
-    bundle = score_variant_train_metrics_from_cache(
+    result = score_variant_train_metrics_from_cache(
         variant="PPL",
         candidate=candidate,
         grainseg_root=grainseg_root,
@@ -180,15 +208,19 @@ def test_tiled_proposal_cache_scoring_uses_cross_tile_postprocess(
         work_root=work_root,
         gt_map=gt_map,
     )
-    _assert_bundles_equal(bundle, expected)
+    assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+    assert "aji_plus" not in result
+    assert "f1_iou75" not in result
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        assert result[key] == pytest.approx(expected[key], rel=0.0, abs=1e-9), key
 
 
 @pytest.mark.parametrize("variant", all_variant_names())
 def test_overlapping_tiled_records_scoring_matches_evaluate_instances(
     tmp_path: Path, variant: str
 ) -> None:
-    """Cross-tile association on overlapping single-tile records matches evaluate_instances."""
-    from yolo.profile_tune_scoring import compute_train_instance_metric_bundle
+    """Cross-tile association on overlapping single-tile records matches evaluate_instances PQ."""
+    from yolo.profile_tune_scoring import compute_train_pq
 
     height, width = 16, 16
     gt_map = tiny_train_gt_map(height, width)
@@ -200,7 +232,7 @@ def test_overlapping_tiled_records_scoring_matches_evaluate_instances(
     image_path.write_bytes(b"\x00")
     pred_path = variant_dir / "prediction_sets" / "train.json"
 
-    fast_bundle = compute_train_instance_metric_bundle(
+    fast_result = compute_train_pq(
         gt_map,
         records,
         candidate=candidate,
@@ -217,7 +249,7 @@ def test_overlapping_tiled_records_scoring_matches_evaluate_instances(
         image_path=image_path,
         prediction_set_path=pred_path,
     )
-    _assert_bundles_equal(fast_bundle, canonical_bundle)
+    _assert_pq_result_matches_bundle_subset(fast_result, canonical_bundle)
 
 
 def _train_pq_via_evaluate_instances(
@@ -242,3 +274,61 @@ def _train_pq_via_evaluate_instances(
         prediction_set_path=prediction_set_path,
     )
     return float(bundle["pq"])
+
+
+def test_compute_train_pq_logs_cross_tile_and_metrics_phases(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from yolo.profile_tune_scoring import compute_train_pq
+
+    height, width = 16, 16
+    gt_map = tiny_train_gt_map(height, width)
+    records = tiled_proposal_records_disjoint_via_collector(
+        height, width, mask_threshold=candidate_for_variant("PPL").mask_threshold
+    )
+    compute_train_pq(
+        gt_map,
+        records,
+        candidate=candidate_for_variant("PPL"),
+        height=height,
+        width=width,
+        log_timings=True,
+    )
+    captured = capsys.readouterr().out
+    assert "cross-tile association" in captured
+    assert "metrics" in captured
+
+
+@pytest.mark.parametrize("variant", all_variant_names())
+def test_compute_train_pq_matches_bundle_pq_fields_on_fixtures(
+    variant: str,
+) -> None:
+    """Profile selection hot path returns MergedViewPqResult aligned with bundle PQ fields."""
+    from common.instance_metric_bundle import compute_instance_metric_bundle
+    from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
+    from yolo.profile_tune_scoring import (
+        compute_train_pq,
+        merged_instance_view_from_tiled_records,
+    )
+
+    height, width = 16, 16
+    gt_map = tiny_train_gt_map(height, width)
+    records = tiled_proposal_records_disjoint_via_collector(
+        height, width, mask_threshold=candidate_for_variant(variant).mask_threshold
+    )
+    candidate = candidate_for_variant(variant)
+    pred_map = merged_instance_view_from_tiled_records(
+        records, height=height, width=width
+    )
+    bundle = compute_instance_metric_bundle(gt_map, pred_map)
+
+    result = compute_train_pq(
+        gt_map,
+        records,
+        candidate=candidate,
+        height=height,
+        width=width,
+    )
+
+    assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+    _assert_pq_result_matches_bundle_subset(result, bundle)

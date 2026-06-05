@@ -10,11 +10,22 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.merged_view_pq import MERGED_VIEW_PQ_COUNT_KEYS, MERGED_VIEW_PQ_RESULT_KEYS
 from common.test_inference import YoloInferenceProfileCandidate
 
 
 def constant_metric_bundle(value: float) -> dict[str, float]:
     return {key: float(value) for key in INSTANCE_METRIC_BUNDLE_KEYS}
+
+
+def constant_merged_view_pq_result(value: float) -> dict[str, float | int]:
+    result: dict[str, float | int] = {}
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        if key in MERGED_VIEW_PQ_COUNT_KEYS:
+            result[key] = int(round(value))
+        else:
+            result[key] = float(value)
+    return result
 
 
 def instance_metrics_report_for_pq(pq: float) -> dict[str, object]:

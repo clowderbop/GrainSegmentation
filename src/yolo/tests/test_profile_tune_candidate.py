@@ -9,7 +9,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from common.test_inference import YoloInferenceProfileCandidate
 from yolo.inference_profile_tune import (
     load_profile_selection_row,
@@ -22,10 +22,10 @@ from yolo.profile_tune_candidate import (
     row_fingerprint_matches,
     score_profile_selection_candidate,
 )
-from yolo.tests.profile_tune_fixtures import constant_metric_bundle
+from yolo.tests.profile_tune_fixtures import constant_merged_view_pq_result
 
 
-def test_build_profile_selection_row_includes_per_variant_bundle() -> None:
+def test_build_profile_selection_row_includes_per_variant_pq_results() -> None:
     candidate = YoloInferenceProfileCandidate(
         postprocess_type="GREEDYNMM",
         match_metric="IOS",
@@ -35,9 +35,9 @@ def test_build_profile_selection_row_includes_per_variant_bundle() -> None:
     )
     row = build_profile_selection_row(
         candidate=candidate,
-        per_variant_bundles={
-            "PPL": constant_metric_bundle(0.8),
-            "PPL+AllPPX": constant_metric_bundle(0.6),
+        per_variant_pq_results={
+            "PPL": constant_merged_view_pq_result(0.8),
+            "PPL+AllPPX": constant_merged_view_pq_result(0.6),
         },
         fingerprint={"candidate_id": candidate.candidate_id()},
     )
@@ -45,7 +45,10 @@ def test_build_profile_selection_row_includes_per_variant_bundle() -> None:
     assert row[variant_metric_column("pq", "PPL")] == pytest.approx(0.8)
     assert row[variant_metric_column("dq", "PPL+AllPPX")] == pytest.approx(0.6)
     assert row["candidate_id"] == candidate.candidate_id()
-    for key in INSTANCE_METRIC_BUNDLE_KEYS:
+    assert "aji_plus__PPL" not in row
+    assert "f1_iou75__PPL" not in row
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        assert f"mean_{key}" in row
         assert variant_metric_column(key, "PPL") in row
 
 
@@ -73,7 +76,7 @@ def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> No
         ),
         patch(
             "yolo.profile_tune_candidate.score_variant_train_metrics_from_cache",
-            side_effect=lambda **kwargs: constant_metric_bundle(
+            side_effect=lambda **kwargs: constant_merged_view_pq_result(
                 0.9 if kwargs["variant"] == "PPL" else 0.5
             ),
         ),
@@ -124,9 +127,9 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
     )
     calls: list[str] = []
 
-    def _fake_score(**kwargs) -> dict[str, float]:
+    def _fake_score(**kwargs) -> dict[str, float | int]:
         calls.append(kwargs["variant"])
-        return constant_metric_bundle(0.1)
+        return constant_merged_view_pq_result(0.1)
 
     with (
         patch(
@@ -185,7 +188,7 @@ def test_score_profile_selection_candidate_loads_gt_once(tmp_path: Path) -> None
         ),
         patch(
             "yolo.profile_tune_candidate.score_variant_train_metrics_from_cache",
-            side_effect=lambda **kwargs: constant_metric_bundle(0.8),
+            side_effect=lambda **kwargs: constant_merged_view_pq_result(0.8),
         ),
     ):
         score_profile_selection_candidate(
@@ -300,9 +303,9 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
     )
     score_calls: list[str] = []
 
-    def _fake_score(**kwargs: object) -> dict[str, float]:
+    def _fake_score(**kwargs: object) -> dict[str, float | int]:
         score_calls.append(str(kwargs["variant"]))
-        return constant_metric_bundle(0.42)
+        return constant_merged_view_pq_result(0.42)
 
     with (
         patch(

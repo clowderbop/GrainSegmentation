@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
@@ -23,7 +23,7 @@ from yolo.inference_profile_tune import (
     write_profile_selection_row,
 )
 from yolo.profile_tune_finalize import collect_profile_selection_rows, main
-from yolo.tests.profile_tune_fixtures import constant_metric_bundle
+from yolo.tests.profile_tune_fixtures import constant_merged_view_pq_result
 
 
 def _write_mini_grid(path: Path) -> None:
@@ -45,8 +45,7 @@ def test_finalize_merges_rows_into_results_csv_and_winner(tmp_path: Path) -> Non
             {
                 **grid_result_row_from_candidate_scoring(
                     candidate=candidate,
-                    mean_pq=pq,
-                    per_variant_bundles={"PPL": constant_metric_bundle(pq)},
+                    per_variant_pq_results={"PPL": constant_merged_view_pq_result(pq)},
                 ),
                 "fingerprint": {},
             },
@@ -88,11 +87,11 @@ def test_finalize_recompute_winner_from_csv(tmp_path: Path, capsys: pytest.Captu
     grid_dir = tmp_path / "grid"
     grid_dir.mkdir(parents=True)
     fieldnames = grid_results_fieldnames(("PPL",))
+    mean_values = ",".join("0.95" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
+    per_variant_values = ",".join("0.95" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
     (grid_dir / "results.csv").write_text(
         ",".join(fieldnames) + "\n"
-        "winner,0.2,0.4,0.95,"
-        + ",".join("0.95" for _ in INSTANCE_METRIC_BUNDLE_KEYS)
-        + "\n",
+        f"winner,0.2,0.4,{mean_values},{per_variant_values}\n",
         encoding="utf-8",
     )
     main(

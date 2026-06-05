@@ -11,10 +11,7 @@ from typing import Any, Literal, overload
 import numpy as np
 from pycocotools import mask as mask_utils
 
-from common.instance_maps import (
-    sahi_object_section_binary_mask,
-    yolo_detections_to_instance_map_by_score,
-)
+from common.instance_maps import yolo_detections_to_instance_map_by_score
 from common.mask_ops import masks_hw_to_binary, resize_mask_nearest
 
 PREDICTION_SETS_SUBDIR = "prediction_sets"
@@ -76,16 +73,6 @@ def _append_yolo_detection(
             "category_id": GRAIN_CLASS_ID,
         }
     )
-
-
-def _sahi_object_score(pred: Any) -> float:
-    score_obj = getattr(pred, "score", None)
-    if score_obj is None:
-        raise ValueError("SAHI object prediction missing score")
-    value = getattr(score_obj, "value", None)
-    if value is None:
-        raise ValueError("SAHI object prediction score has no value")
-    return float(value)
 
 
 def validate_prediction_set(payload: dict[str, Any]) -> PredictionSet:
@@ -202,32 +189,6 @@ def build_yolo_prediction_set_from_ultralytics(
         binary = masks_hw_to_binary(
             np.asarray(mask_plane)[None, ...], threshold=mask_threshold
         )[0]
-        _append_yolo_detection(detections, binary, score, height=height, width=width)
-    return PredictionSet(
-        schema_version=1,
-        height=height,
-        width=width,
-        producer="yolo",
-        detections=tuple(detections),
-    )
-
-
-def build_yolo_prediction_set_from_sahi_predictions(
-    predictions: list[Any],
-    *,
-    height: int,
-    width: int,
-    mask_threshold: float = 0.5,
-) -> PredictionSet:
-    """Encode SAHI object predictions one mask at a time (no dense ``(N, H, W)`` stack)."""
-    detections: list[dict[str, Any]] = []
-    for pred in predictions:
-        binary = sahi_object_section_binary_mask(
-            pred, height=height, width=width, mask_threshold=mask_threshold
-        )
-        if binary is None:
-            continue
-        score = _sahi_object_score(pred)
         _append_yolo_detection(detections, binary, score, height=height, width=width)
     return PredictionSet(
         schema_version=1,
@@ -411,7 +372,6 @@ __all__ = [
     "binary_mask_to_segmentation",
     "build_unet_prediction_set_from_instance_map",
     "build_yolo_prediction_set_from_instance_map",
-    "build_yolo_prediction_set_from_sahi_predictions",
     "build_yolo_prediction_set_from_ultralytics",
     "load_prediction_set",
     "merge_yolo_proposals_by_score",

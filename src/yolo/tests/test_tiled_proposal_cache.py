@@ -14,8 +14,13 @@ from yolo.tests.profile_tune_fixtures import (
     disjoint_sahi_proposals,
     write_on_disk_v1_proposal_cache,
 )
-from common.tests.profile_tune_fixtures import FakeBbox, FakeSahiPrediction
-from common.tests.test_prediction_set_sahi import _FakeCategory, _FakeMask, _FakeScore
+from common.tests.profile_tune_fixtures import (
+    FakeBbox,
+    FakeCategory,
+    FakeMask,
+    FakeSahiPrediction,
+    FakeScore,
+)
 from yolo.tests.profile_tune_fixtures import disjoint_tile_local_proposals
 from yolo.tiled_proposal_cache import (
     TILED_PROPOSAL_CACHE_SCHEMA_VERSION,
@@ -26,7 +31,6 @@ from yolo.tiled_proposal_cache import (
     proposal_cache_fingerprint,
     proposal_cache_record,
     recipe_whole_window_fingerprint,
-    sahi_predictions_from_tiled_proposal_records,
     tiled_proposal_record_from_binary_mask,
     tiled_proposal_record_from_tile_mask,
     tiled_proposal_records_from_tile_predictions,
@@ -285,9 +289,9 @@ def test_collect_tiled_detector_proposals_never_allocates_whole_section_plane() 
     tile_mask = np.zeros((slice_h, slice_w), dtype=bool)
     tile_mask[8:20, 8:20] = True
     pred = FakeSahiPrediction(
-        mask=_FakeMask(bool_mask=tile_mask),
-        score=_FakeScore(value=0.5),
-        category=_FakeCategory(id=0),
+        mask=FakeMask(bool_mask=tile_mask),
+        score=FakeScore(value=0.5),
+        category=FakeCategory(id=0),
         bbox=FakeBbox(8.0, 8.0, 20.0, 20.0),
     )
     resize_calls: list[tuple[int, int]] = []
@@ -339,9 +343,9 @@ def test_tile_encode_rejects_whole_section_bool_mask() -> None:
     huge = np.zeros((section_h, section_w), dtype=bool)
     huge[0:4, 0:4] = True
     pred = FakeSahiPrediction(
-        mask=_FakeMask(bool_mask=huge),
-        score=_FakeScore(value=0.5),
-        category=_FakeCategory(id=0),
+        mask=FakeMask(bool_mask=huge),
+        score=FakeScore(value=0.5),
+        category=FakeCategory(id=0),
     )
     with pytest.raises(ValueError, match="exceeds slice"):
         tiled_proposal_records_from_tile_predictions(
@@ -416,40 +420,6 @@ def test_load_tiled_proposals_rejects_v2_records_without_tile_bounds(
     )
     with pytest.raises(ValueError, match="tile bounds"):
         load_tiled_proposals(cache_dir, expected=record)
-
-
-def test_sahi_predictions_from_tiled_records_use_crop_local_masks() -> None:
-    """ADR 0005: scoring adapter must not materialize full-section bool_mask planes."""
-    section_h, section_w = 10_000, 52_000
-    crop = np.zeros((12, 12), dtype=bool)
-    crop[2:10, 2:10] = True
-    record = tiled_proposal_record_from_tile_mask(
-        crop,
-        score=0.6,
-        offset_y=100,
-        offset_x=200,
-        tile_y0=90,
-        tile_x0=190,
-        tile_y1=120,
-        tile_x1=220,
-    )
-    original_zeros = np.zeros
-
-    def guarded_zeros(shape, *args, **kwargs):
-        if len(shape) >= 2 and (int(shape[0]), int(shape[1])) == (section_h, section_w):
-            raise AssertionError("adapter must not allocate whole-section plane")
-        return original_zeros(shape, *args, **kwargs)
-
-    with patch("numpy.zeros", side_effect=guarded_zeros):
-        predictions = sahi_predictions_from_tiled_proposal_records(
-            [record], height=section_h, width=section_w
-        )
-
-    assert len(predictions) == 1
-    mask = predictions[0].mask.bool_mask
-    assert mask.shape == crop.shape
-    assert np.array_equal(mask, crop)
-    assert predictions[0].bbox.to_xyxy() == record["bbox"]
 
 
 def test_validate_tiled_proposal_cache_rejects_fingerprint_mismatch() -> None:

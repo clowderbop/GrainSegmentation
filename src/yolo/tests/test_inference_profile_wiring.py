@@ -14,7 +14,6 @@ from common.prediction_set import PredictionSet
 from common.run_provenance import load_run_provenance
 from common.test_inference import load_test_inference_recipe, sahi_overlap_ratio
 from yolo import predict as predict_module
-from yolo.sliced_detection import get_sliced_prediction_preserve_channels
 
 
 def _resolved_defaults(recipe_path: Path | None = None) -> dict[str, object]:
@@ -132,61 +131,6 @@ def test_whole_predict_applies_conf_and_mask_threshold_to_detector(
     assert mock_from_pretrained.call_args.kwargs["mask_threshold"] == 0.6
     mock_collect.assert_called_once()
     assert mock_collect.call_args.kwargs["mask_threshold"] == 0.6
-
-
-def test_whole_sliced_prediction_uses_profile_postprocess() -> None:
-    height, width = 32, 32
-    image = np.zeros((height, width, 3), dtype=np.uint8)
-    detection_model = MagicMock()
-    detection_model.confidence_threshold = 0.4
-    detection_model.device = "cpu"
-    detection_model.config_path = None
-    detection_model.image_size = 1024
-    detection_model.has_mask = True
-
-    fake_prediction = MagicMock()
-    fake_prediction.get_shifted_object_prediction.return_value = fake_prediction
-
-    accumulated: list[MagicMock] = []
-
-    def _convert(**_kwargs: object) -> None:
-        accumulated.append(fake_prediction)
-        detection_model.object_prediction_list = list(accumulated)
-
-    detection_model.convert_original_predictions.side_effect = _convert
-
-    mock_postprocess_cls = MagicMock()
-    mock_postprocess_cls.return_value = MagicMock(side_effect=lambda preds: preds)
-
-    with (
-        patch(
-            "sahi.slicing.get_slice_bboxes",
-            return_value=[(0, 0, 16, 16), (8, 8, 24, 24)],
-        ),
-        patch("sahi.predict.filter_predictions", side_effect=lambda preds, **_: preds),
-        patch.dict(
-            "sahi.predict.POSTPROCESS_NAME_TO_CLASS",
-            {"NMM": mock_postprocess_cls},
-            clear=False,
-        ),
-    ):
-        get_sliced_prediction_preserve_channels(
-            image,
-            detection_model,
-            slice_height=16,
-            slice_width=16,
-            overlap_height_ratio=0.5,
-            overlap_width_ratio=0.5,
-            postprocess_type="NMM",
-            match_metric="IOU",
-            match_threshold=0.7,
-        )
-
-    mock_postprocess_cls.assert_called_once_with(
-        match_threshold=0.7,
-        match_metric="IOU",
-        class_agnostic=False,
-    )
 
 
 @patch("yolo.predict.build_yolo_prediction_set_from_ultralytics")

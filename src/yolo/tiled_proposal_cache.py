@@ -8,7 +8,6 @@ import pickle
 import sys
 import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -361,108 +360,6 @@ def validate_tiled_proposal_records(
             )
         )
     return validated
-
-
-def _full_binary_mask_from_tiled_proposal_record(
-    record: TiledProposalRecord, *, height: int, width: int
-) -> np.ndarray:
-    """Reconstruct one full-section mask from crop-local RLE + offsets.
-
-    Not for profile selection scoring load (ADR 0005): materializing many planes
-    OOMs candidate jobs. Use ``sahi_predictions_from_tiled_proposal_records`` instead.
-    """
-    crop = crop_segmentation_to_binary_mask(record["segmentation"])
-    plane = np.zeros((height, width), dtype=bool)
-    offset_y = record["offset_y"]
-    offset_x = record["offset_x"]
-    crop_h, crop_w = crop.shape
-    plane[offset_y : offset_y + crop_h, offset_x : offset_x + crop_w] = crop
-    return plane
-
-
-@dataclass(frozen=True)
-class _AdaptedCategory:
-    id: int
-    name: str = "grain"
-
-
-@dataclass(frozen=True)
-class _AdaptedScore:
-    value: float
-
-
-@dataclass(frozen=True)
-class _AdaptedMask:
-    bool_mask: np.ndarray
-    segmentation: dict[str, Any]
-    full_shape: tuple[int, int]
-    shift_amount: tuple[int, int]
-
-
-@dataclass(frozen=True)
-class _AdaptedBbox:
-    minx: float
-    miny: float
-    maxx: float
-    maxy: float
-    shift_amount: tuple[int, int] = (0, 0)
-
-    def to_xyxy(self) -> list[float]:
-        return [self.minx, self.miny, self.maxx, self.maxy]
-
-
-@dataclass(frozen=True)
-class _AdaptedSahiPrediction:
-    mask: _AdaptedMask
-    score: _AdaptedScore
-    category: _AdaptedCategory
-    bbox: _AdaptedBbox
-
-    def tolist(self) -> _AdaptedSahiPrediction:
-        return self
-
-
-def sahi_predictions_from_tiled_proposal_records(
-    records: Sequence[TiledProposalRecord],
-    *,
-    height: int,
-    width: int,
-) -> list[Any]:
-    """Adapt v3 records to SAHI-shaped predictions with crop-local masks (ADR 0005)."""
-    from sahi.annotation import Mask as SahiMask
-
-    section_shape = (int(height), int(width))
-    predictions: list[Any] = []
-    for record in records:
-        crop = crop_segmentation_to_binary_mask(record["segmentation"])
-        x0, y0, x1, y1 = record["bbox"]
-        offset_x = int(record["offset_x"])
-        offset_y = int(record["offset_y"])
-        merge_mask = SahiMask.from_bool_mask(
-            crop,
-            full_shape=list(section_shape),
-            shift_amount=[offset_x, offset_y],
-        )
-        predictions.append(
-            _AdaptedSahiPrediction(
-                mask=_AdaptedMask(
-                    bool_mask=crop,
-                    segmentation=merge_mask.segmentation,
-                    full_shape=section_shape,
-                    shift_amount=(offset_x, offset_y),
-                ),
-                score=_AdaptedScore(value=record["score"]),
-                category=_AdaptedCategory(id=0),
-                bbox=_AdaptedBbox(
-                    minx=float(x0),
-                    miny=float(y0),
-                    maxx=float(x1),
-                    maxy=float(y1),
-                    shift_amount=(offset_x, offset_y),
-                ),
-            )
-        )
-    return predictions
 
 
 def write_tiled_proposals(

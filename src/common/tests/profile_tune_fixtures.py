@@ -6,11 +6,20 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from common.tests.test_prediction_set_sahi import (
-    _FakeCategory,
-    _FakeMask,
-    _FakeScore,
-)
+
+@dataclass
+class FakeMask:
+    bool_mask: np.ndarray
+
+
+@dataclass
+class FakeScore:
+    value: float
+
+
+@dataclass
+class FakeCategory:
+    id: int
 
 
 @dataclass
@@ -27,9 +36,9 @@ class FakeBbox:
 
 @dataclass
 class FakeSahiPrediction:
-    mask: _FakeMask
-    score: _FakeScore
-    category: _FakeCategory
+    mask: FakeMask
+    score: FakeScore
+    category: FakeCategory
     bbox: FakeBbox = field(default_factory=FakeBbox)
 
     def tolist(self) -> FakeSahiPrediction:
@@ -60,15 +69,15 @@ def overlapping_sahi_proposals(
     masks[1, 4:12, 4:12] = True
     return [
         FakeSahiPrediction(
-            mask=_FakeMask(bool_mask=masks[0]),
-            score=_FakeScore(value=0.2),
-            category=_FakeCategory(id=0),
+            mask=FakeMask(bool_mask=masks[0]),
+            score=FakeScore(value=0.2),
+            category=FakeCategory(id=0),
             bbox=FakeBbox(4.0, 4.0, 12.0, 12.0),
         ),
         FakeSahiPrediction(
-            mask=_FakeMask(bool_mask=masks[1]),
-            score=_FakeScore(value=0.9),
-            category=_FakeCategory(id=0),
+            mask=FakeMask(bool_mask=masks[1]),
+            score=FakeScore(value=0.9),
+            category=FakeCategory(id=0),
             bbox=FakeBbox(4.0, 4.0, 12.0, 12.0),
         ),
     ]
@@ -81,15 +90,15 @@ def disjoint_tile_local_proposals(slice_h: int, slice_w: int) -> list[FakeSahiPr
     masks[1, 10:14, 10:14] = True
     return [
         FakeSahiPrediction(
-            mask=_FakeMask(bool_mask=masks[0]),
-            score=_FakeScore(value=0.7),
-            category=_FakeCategory(id=0),
+            mask=FakeMask(bool_mask=masks[0]),
+            score=FakeScore(value=0.7),
+            category=FakeCategory(id=0),
             bbox=FakeBbox(2.0, 2.0, 8.0, 8.0),
         ),
         FakeSahiPrediction(
-            mask=_FakeMask(bool_mask=masks[1]),
-            score=_FakeScore(value=0.8),
-            category=_FakeCategory(id=0),
+            mask=FakeMask(bool_mask=masks[1]),
+            score=FakeScore(value=0.8),
+            category=FakeCategory(id=0),
             bbox=FakeBbox(10.0, 10.0, 14.0, 14.0),
         ),
     ]

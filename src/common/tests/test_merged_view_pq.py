@@ -8,11 +8,22 @@ import pytest
 from common.instance_metric_bundle import compute_instance_metric_bundle
 from common.metrics import PQ_MATCH_IOU
 from common.merged_view_pq import (
+    MERGED_VIEW_PQ_COUNT_KEYS,
     MERGED_VIEW_PQ_RESULT_KEYS,
     compute_merged_view_pq,
+    format_merged_view_pq_value,
     instance_overlap_stats,
 )
 from common.tests.instance_map_fixtures import blank_map, paint_box
+
+
+def test_merged_view_pq_count_keys_are_subset_of_result_keys() -> None:
+    assert MERGED_VIEW_PQ_COUNT_KEYS <= frozenset(MERGED_VIEW_PQ_RESULT_KEYS)
+
+
+def test_format_merged_view_pq_value_formats_counts_as_int_strings() -> None:
+    assert format_merged_view_pq_value("tp", 2) == "2"
+    assert format_merged_view_pq_value("pq", 0.82) == "0.82000000"
 
 
 def test_instance_overlap_stats_reports_co_occurring_pairs_and_areas() -> None:

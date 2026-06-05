@@ -60,7 +60,7 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 
 **Submit:** `bash SLURM/unet/submit_watershed_tuning.sh`
 
-Grid search on **train** section (sliding-window predictions vs `train_labels.gpkg`). One job per variant; needs finetuned model. Select the **U-Net extraction profile** by train **whole-section PQ** (`best_mean_pq` in `watershed_best_*.json`) and record the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) for audit. `best_mean_aji` / per-row `mean_aji`, when present, are audit-only ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
+Grid search on **train** section (cached semantic predictions vs `train_labels.gpkg`). One job per variant. Select the **U-Net extraction profile** by train **whole-section PQ** (`best_mean_pq` in `watershed_best_*.json`) and record all `MergedViewPqResult` diagnostics (`best_mean_*` / `best_per_sample_*` in JSON; `mean_*` / `{field}__{sample_id}` in the grid CSV). Train/test **eval** still uses the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
 
 | Output | Path |
 |--------|------|

@@ -19,11 +19,13 @@ from unet.extraction_method_selection import (
     select_train_extraction_method_from_reports,
     write_extraction_method_selection_json,
 )
+from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from unet.extraction_tune_scoring import (
     WatershedParamSet,
-    mean_aji_for_watershed_params,
-    mean_train_bundle_for_watershed_params,
+    mean_train_pq_for_watershed_params,
     select_best_watershed_tune_row,
+    watershed_best_json_summary,
+    watershed_per_sample_columns,
     watershed_tune_fieldnames,
     watershed_tune_row,
 )
@@ -59,7 +61,7 @@ def _split_first_grain_pred(height: int = 64, width: int = 64) -> np.ndarray:
     return pred
 
 
-def test_mean_train_bundle_for_watershed_params_returns_full_bundle() -> None:
+def test_mean_train_pq_for_watershed_params_returns_merged_view_pq_fields() -> None:
     gt = _two_grain_gt()
     semantic = np.zeros(gt.shape, dtype=np.uint8)
     semantic[8:28, 8:28] = 1
@@ -73,15 +75,45 @@ def test_mean_train_bundle_for_watershed_params_returns_full_bundle() -> None:
         ridge_level=None,
     )
 
-    mean_bundle, per_sample = mean_train_bundle_for_watershed_params(
-        [gt], [semantic], params
-    )
+    mean_pq, per_sample = mean_train_pq_for_watershed_params([gt], [semantic], params)
 
     assert len(per_sample) == 1
-    for key in INSTANCE_METRIC_BUNDLE_KEYS:
-        assert key in mean_bundle
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        assert key in mean_pq
         assert key in per_sample[0]
-    assert mean_bundle["pq"] == pytest.approx(per_sample[0]["pq"])
+    assert mean_pq["pq"] == pytest.approx(per_sample[0]["pq"])
+    for legacy in ("aji", "aji_plus", "iou75_precision", "mean_precision"):
+        assert legacy not in mean_pq
+
+
+def test_mean_train_pq_for_watershed_params_calls_watershed_once_per_sample(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import unet.extraction_tune_scoring as scoring
+
+    gt = _two_grain_gt()
+    semantic = np.zeros(gt.shape, dtype=np.uint8)
+    semantic[8:28, 8:28] = 1
+    semantic[36:56, 36:56] = 1
+    params = WatershedParamSet(5, 0, 1, 0, False, None)
+
+    watershed_calls = 0
+    real_map = scoring.instance_map_for_watershed_params
+
+    def counting_map(pred_semantic: np.ndarray, params: WatershedParamSet) -> np.ndarray:
+        nonlocal watershed_calls
+        watershed_calls += 1
+        return real_map(pred_semantic, params)
+
+    monkeypatch.setattr(scoring, "instance_map_for_watershed_params", counting_map)
+
+    mean_train_pq_for_watershed_params(
+        [gt, gt.copy()],
+        [semantic, semantic.copy()],
+        params,
+    )
+
+    assert watershed_calls == 2
 
 
 def test_select_best_watershed_tune_row_uses_mean_pq_not_mean_aji() -> None:
@@ -150,30 +182,33 @@ def _notched_two_grain_semantic(height: int = 64, width: int = 64) -> tuple[np.n
 
 def test_watershed_param_candidates_pq_winner_differs_from_aji_winner() -> None:
     """Synthetic watershed grid: mean PQ and legacy AJI pick different param sets."""
+    from unet.extraction_tune_scoring import instance_map_for_watershed_params
+
     gt, semantic = _notched_two_grain_semantic()
     params_pq = WatershedParamSet(5, 0, 1, 0, False, None)
     params_aji = WatershedParamSet(2, 0, 1, 20, False, None)
 
     rows: list[dict[str, float | int]] = []
     for params in (params_aji, params_pq):
-        mean_bundle, _ = mean_train_bundle_for_watershed_params([gt], [semantic], params)
-        mean_aji, _ = mean_aji_for_watershed_params([gt], [semantic], params)
+        mean_pq, _ = mean_train_pq_for_watershed_params([gt], [semantic], params)
+        pred_instances = instance_map_for_watershed_params(semantic, params)
+        legacy_aji = float(compute_aji(gt, pred_instances))
         rows.append(
             {
-                "mean_pq": mean_bundle["pq"],
-                "mean_aji": mean_aji,
+                "mean_pq": mean_pq["pq"],
+                "legacy_aji": legacy_aji,
                 "min_distance": params.min_distance,
                 "min_area_px": params.min_area_px,
             }
         )
 
     pq_winner = max(rows, key=lambda row: float(row["mean_pq"]))
-    aji_winner = max(rows, key=lambda row: float(row["mean_aji"]))
+    aji_winner = max(rows, key=lambda row: float(row["legacy_aji"]))
     assert pq_winner["min_distance"] == 5
     assert aji_winner["min_distance"] == 2
     assert int(aji_winner["min_area_px"]) == 20
     assert pq_winner["mean_pq"] > aji_winner["mean_pq"]
-    assert aji_winner["mean_aji"] > pq_winner["mean_aji"]
+    assert aji_winner["legacy_aji"] > pq_winner["legacy_aji"]
 
     best = select_best_watershed_tune_row(rows)
     assert best["min_distance"] == 5
@@ -270,22 +305,58 @@ def test_select_train_extraction_method_from_eval_dirs(tmp_path: Path) -> None:
     assert selection.selected_method in {"cc", "watershed"}
 
 
-def test_watershed_tune_row_includes_bundle_and_audit_fields() -> None:
+def test_watershed_best_json_summary_uses_merged_view_pq_not_bundle() -> None:
     params = WatershedParamSet(3, 0, 1, 0, False, None)
-    mean_bundle = {key: 0.5 for key in INSTANCE_METRIC_BUNDLE_KEYS}
-    mean_bundle["pq"] = 0.82
-    mean_bundle["gt_instance_count"] = 2
-    mean_bundle["pred_instance_count"] = 2
+    mean_pq = {key: 0.5 for key in MERGED_VIEW_PQ_RESULT_KEYS}
+    mean_pq["pq"] = 0.82
+    row = watershed_tune_row(
+        params,
+        mean_pq,
+        per_sample_pq=watershed_per_sample_columns(
+            ["train"], [dict(mean_pq)], sanitize_sample_id=lambda s: s
+        ),
+    )
+
+    summary = watershed_best_json_summary(
+        row, params, ["train"], sanitize_sample_id=lambda s: s
+    )
+
+    assert summary["selection_objective"] == "pq"
+    assert summary["best_mean_pq"] == pytest.approx(0.82)
+    assert summary["best_per_sample_pq"] == {"train": pytest.approx(0.82)}
+    assert isinstance(summary["best_mean_tp"], int)
+    assert isinstance(summary["best_per_sample_tp"]["train"], int)
+    assert "best_metric_bundle" not in summary
+    assert "best_mean_aji" not in summary
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        assert f"best_mean_{key}" in summary
+        assert f"best_per_sample_{key}" in summary
+
+
+def test_watershed_tune_row_includes_merged_view_pq_fields_only() -> None:
+    params = WatershedParamSet(3, 0, 1, 0, False, None)
+    mean_pq = {key: 0.5 for key in MERGED_VIEW_PQ_RESULT_KEYS}
+    mean_pq["pq"] = 0.82
+    mean_pq["gt_instance_count"] = 2
+    mean_pq["pred_instance_count"] = 2
+    mean_pq["tp"] = 2
+    per_sample = [dict(mean_pq)]
 
     row = watershed_tune_row(
         params,
-        mean_bundle,
-        mean_aji=0.91,
-        per_sample_aji={"aji__train": "0.91000000"},
+        mean_pq,
+        per_sample_pq=watershed_per_sample_columns(
+            ["train"], per_sample, sanitize_sample_id=lambda s: s
+        ),
     )
 
     fieldnames = watershed_tune_fieldnames(["train"], sanitize_sample_id=lambda s: s)
     assert set(row.keys()) == set(fieldnames)
     assert row["mean_pq"] == "0.82000000"
-    assert row["mean_aji"] == "0.91000000"
     assert row["mean_dq"] == "0.50000000"
+    assert row["mean_tp"] == "2"
+    assert row["pq__train"] == "0.82000000"
+    assert "mean_aji" not in row
+    assert "aji__train" not in row
+    for bundle_key in ("iou75_precision", "aji_plus", "mean_precision"):
+        assert f"mean_{bundle_key}" not in row

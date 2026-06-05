@@ -21,10 +21,12 @@ from common.metrics import (
 
 # Re-export overlap primitives for callers that import from this module.
 __all__ = [
+    "MERGED_VIEW_PQ_COUNT_KEYS",
     "MERGED_VIEW_PQ_RESULT_KEYS",
     "MergedViewPqResult",
     "OverlapStats",
     "compute_merged_view_pq",
+    "format_merged_view_pq_value",
     "instance_overlap_stats",
 ]
 
@@ -50,6 +52,27 @@ MERGED_VIEW_PQ_RESULT_KEYS: tuple[str, ...] = (
     "near_miss_gt_count",
     "avg_best_iou_unmatched_pred",
 )
+
+MERGED_VIEW_PQ_COUNT_KEYS: frozenset[str] = frozenset(
+    {
+        "tp",
+        "fp",
+        "fn",
+        "gt_instance_count",
+        "pred_instance_count",
+        "num_cooccurring_pairs",
+        "num_pairs_above_pq_threshold",
+        "near_miss_pred_count",
+        "near_miss_gt_count",
+    }
+)
+assert MERGED_VIEW_PQ_COUNT_KEYS <= frozenset(MERGED_VIEW_PQ_RESULT_KEYS)
+
+
+def format_merged_view_pq_value(key: str, value: float | int) -> str:
+    if key in MERGED_VIEW_PQ_COUNT_KEYS:
+        return str(int(value))
+    return f"{float(value):.8f}"
 
 
 class MergedViewPqResult(TypedDict):

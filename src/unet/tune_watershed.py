@@ -22,12 +22,12 @@ from common.image_io import (
 from common.manifest_io import collect_manifest_unet_samples, load_dataset_manifest
 from common.samples import load_rgb_image
 from common.arg_errors import raise_cli_argument_error
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 from unet.extraction_tune_scoring import (
     WatershedParamSet,
-    mean_aji_for_watershed_params,
-    mean_train_bundle_for_watershed_params,
+    mean_train_pq_for_watershed_params,
     select_best_watershed_tune_row,
+    watershed_best_json_summary,
+    watershed_per_sample_columns,
     watershed_tune_fieldnames,
     watershed_tune_row,
 )
@@ -323,31 +323,31 @@ def main() -> None:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for combo_idx, params in enumerate(_iter_param_grid(args), start=1):
-            t0 = time.perf_counter()
-            mean_bundle, _per_sample_bundles = mean_train_bundle_for_watershed_params(
-                true_instances, pred_semantic, params
+            print(
+                f"[{combo_idx}/{grid_size}] scoring "
+                f"({_format_param_set(params)}) ..."
             )
-            mean_aji, per_sample_aji_list = mean_aji_for_watershed_params(
+            t0 = time.perf_counter()
+            mean_pq, per_sample_pq = mean_train_pq_for_watershed_params(
                 true_instances, pred_semantic, params
             )
             elapsed = time.perf_counter() - t0
-            mean_pq = float(mean_bundle["pq"])
+            mean_pq_value = float(mean_pq["pq"])
             print(
-                f"[{combo_idx}/{grid_size}] mean_pq={mean_pq:.6f} "
-                f"mean_aji={mean_aji:.6f} "
+                f"[{combo_idx}/{grid_size}] mean_pq={mean_pq_value:.6f} "
                 f"({_format_param_set(params)}) {elapsed:.2f}s"
             )
-            per_sample_aji = {
-                f"aji__{_sanitize_csv_key(sid)}": f"{a:.8f}"
-                for sid, a in zip(sample_ids, per_sample_aji_list, strict=True)
-            }
             row = watershed_tune_row(
                 params,
-                mean_bundle,
-                mean_aji=mean_aji,
-                per_sample_aji=per_sample_aji,
+                mean_pq,
+                per_sample_pq=watershed_per_sample_columns(
+                    sample_ids,
+                    per_sample_pq,
+                    sanitize_sample_id=_sanitize_csv_key,
+                ),
             )
             writer.writerow(row)
+            f.flush()
             grid_rows.append(row)
 
     best_row = select_best_watershed_tune_row(grid_rows)
@@ -364,7 +364,6 @@ def main() -> None:
         ),
     )
     best_mean_pq = float(best_row["mean_pq"])
-    best_mean_aji = float(best_row["mean_aji"])
 
     print("\nBest watershed parameters (max mean train whole-section PQ):")
     print(f"  min_distance: {best_params.min_distance}")
@@ -374,35 +373,15 @@ def main() -> None:
     print(f"  exclude_border: {best_params.exclude_border}")
     print(f"  ridge_level: {_format_ridge_level(best_params.ridge_level)}")
     print(f"  mean_pq: {best_mean_pq:.6f}")
-    print(f"  mean_aji: {best_mean_aji:.6f} (audit)")
-    for sid in sample_ids:
-        key = f"aji__{_sanitize_csv_key(sid)}"
-        print(f"    {sid}: {float(best_row[key]):.6f}")
     print(f"\nWrote grid results to {out_path}")
 
     if args.output_json:
-        summary = {
-            "selection_objective": "pq",
-            "best_mean_pq": best_mean_pq,
-            "best_mean_aji": best_mean_aji,
-            "best_params": {
-                "min_distance": best_params.min_distance,
-                "boundary_dilate_iter": best_params.boundary_dilate_iter,
-                "watershed_connectivity": best_params.watershed_connectivity,
-                "min_area_px": best_params.min_area_px,
-                "exclude_border": best_params.exclude_border,
-                "ridge_level": best_params.ridge_level,
-            },
-            "best_metric_bundle": {
-                key: float(best_row[f"mean_{key}"])
-                for key in INSTANCE_METRIC_BUNDLE_KEYS
-            },
-            "best_per_sample_aji": {
-                sid: float(best_row[f"aji__{_sanitize_csv_key(sid)}"])
-                for sid in sample_ids
-            },
-            "sample_ids": sample_ids,
-        }
+        summary = watershed_best_json_summary(
+            best_row,
+            best_params,
+            sample_ids,
+            sanitize_sample_id=_sanitize_csv_key,
+        )
         jp = Path(args.output_json)
         jp.parent.mkdir(parents=True, exist_ok=True)
         with jp.open("w") as jf:

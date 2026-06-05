@@ -1,7 +1,11 @@
-This repository is a VERY EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged. Long term maintainability is a core priority. If you add new functionality, first check if there is shared logic that can be extracted to a separate module. Duplicate logic across multiple files is a code smell and should be avoided. Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem.
-- Don't code for backwards compatibility; don't keep legacy code. If a breaking change is introduced, adapt the rest of the code
-- Agents for this project run on a SLURM login node. Do not run long, intensive, or training jobs directly on the node. Keep direct terminal commands lightweight. For substantial work, use `srun` for interactive runs or `sbatch` for scheduled jobs
-- Use brief conventional commits for commit messages
+This codebase contains the work for a thesis with the following Research Qeustion: How do different multi-modal microscopy input configurations affect instance grain segmentation accuracy in sandstone thin-section images, when using U-Net semantic segmentation with postprocessing-based instance extraction versus YOLO direct instance segmentation?
+
+This repo is a EARLY WIP. Proposing sweeping changes that improve long-term maintainability is encouraged. Long term maintainability is a core priority. If you add new functionality, first check if there is shared logic that can be extracted to a separate module. Duplicate logic across multiple files is a code smell and should be avoided. Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem.
+
+- Don't code for backwards compatibility. Don't keep legacy code. If a breaking change is introduced, adapt the rest of the code
+- This workplace is on a SLURM login node. Keep direct terminal commands lightweight: don't run long, intensive, scripts directly on the login node. For substantial work, use `srun` or `sbatch`
+- Use brief conventional commits for git
+- use `uv` for python
 
 ## Agent skills
 

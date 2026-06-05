@@ -1,7 +1,7 @@
 """Cross-tile instance association for tiled YOLO detector proposals.
 
-All-pairs association on full-section masks with fixed IoS/centrality thresholds.
-Spatial indexing and cluster-local fusion crops may be added later for scale.
+Crop-local proposal geometry with all-pairs association and fixed IoS/centrality
+thresholds. Spatial indexing and cluster-local fusion crops may be added later.
 """
 
 from __future__ import annotations
@@ -72,46 +72,76 @@ class TiledAssociationProposal:
 class _EnrichedProposal:
     index: int
     proposal: TiledAssociationProposal
-    mask: np.ndarray
+    local_mask: np.ndarray
     area: int
+    centroid_y: float
+    centroid_x: float
     centrality: float
     touches_border: bool
 
 
-def _full_mask(proposal: TiledAssociationProposal, *, height: int, width: int) -> np.ndarray:
-    plane = np.zeros((height, width), dtype=bool)
-    crop = segmentation_to_binary_mask(proposal.segmentation)
-    oy, ox = proposal.offset_y, proposal.offset_x
-    ch, cw = crop.shape
-    plane[oy : oy + ch, ox : ox + cw] = crop
-    return plane
-
-
-def _mask_ios(left: np.ndarray, right: np.ndarray) -> float:
-    intersection = int(np.count_nonzero(left & right))
+def mask_ios_crop_local(
+    left_mask: np.ndarray,
+    left_offset_y: int,
+    left_offset_x: int,
+    right_mask: np.ndarray,
+    right_offset_y: int,
+    right_offset_x: int,
+    *,
+    left_area: int,
+    right_area: int,
+) -> float:
+    """Intersection-over-smaller for two crop-local masks in whole-image coordinates."""
+    left_h, left_w = left_mask.shape
+    right_h, right_w = right_mask.shape
+    left_y1 = left_offset_y + left_h
+    left_x1 = left_offset_x + left_w
+    right_y1 = right_offset_y + right_h
+    right_x1 = right_offset_x + right_w
+    intersect_y0 = max(left_offset_y, right_offset_y)
+    intersect_x0 = max(left_offset_x, right_offset_x)
+    intersect_y1 = min(left_y1, right_y1)
+    intersect_x1 = min(left_x1, right_x1)
+    if intersect_y0 >= intersect_y1 or intersect_x0 >= intersect_x1:
+        return 0.0
+    left_slice = left_mask[
+        intersect_y0 - left_offset_y : intersect_y1 - left_offset_y,
+        intersect_x0 - left_offset_x : intersect_x1 - left_offset_x,
+    ]
+    right_slice = right_mask[
+        intersect_y0 - right_offset_y : intersect_y1 - right_offset_y,
+        intersect_x0 - right_offset_x : intersect_x1 - right_offset_x,
+    ]
+    intersection = int(np.count_nonzero(left_slice & right_slice))
     if intersection == 0:
         return 0.0
-    smaller = min(int(left.sum()), int(right.sum()))
+    smaller = min(left_area, right_area)
     if smaller == 0:
         return 0.0
     return intersection / smaller
 
 
-def _mask_centroid(mask: np.ndarray) -> tuple[float, float]:
-    ys, xs = np.where(mask)
+def _mask_centroid_whole_image(
+    local_mask: np.ndarray, *, offset_y: int, offset_x: int
+) -> tuple[float, float]:
+    ys, xs = np.where(local_mask)
     if ys.size == 0:
         return 0.0, 0.0
-    return float(ys.mean()), float(xs.mean())
+    return float(ys.mean() + offset_y), float(xs.mean() + offset_x)
 
 
 def _centrality(
-    proposal: TiledAssociationProposal, mask: np.ndarray
+    proposal: TiledAssociationProposal,
+    local_mask: np.ndarray,
+    *,
+    offset_y: int,
+    offset_x: int,
 ) -> float:
     tile_h = max(proposal.tile_y1 - proposal.tile_y0, 1)
     tile_w = max(proposal.tile_x1 - proposal.tile_x0, 1)
     tile_cy = proposal.tile_y0 + tile_h / 2.0
     tile_cx = proposal.tile_x0 + tile_w / 2.0
-    cy, cx = _mask_centroid(mask)
+    cy, cx = _mask_centroid_whole_image(local_mask, offset_y=offset_y, offset_x=offset_x)
     dy = abs(cy - tile_cy) / (tile_h / 2.0)
     dx = abs(cx - tile_cx) / (tile_w / 2.0)
     distance = min(1.0, (dy * dy + dx * dx) ** 0.5)
@@ -119,17 +149,21 @@ def _centrality(
 
 
 def _touches_tile_border(
-    proposal: TiledAssociationProposal, mask: np.ndarray
+    proposal: TiledAssociationProposal,
+    local_mask: np.ndarray,
+    *,
+    offset_y: int,
+    offset_x: int,
 ) -> bool:
-    ys, xs = np.where(mask)
+    ys, xs = np.where(local_mask)
     if ys.size == 0:
         return False
     tile_h = proposal.tile_y1 - proposal.tile_y0
     tile_w = proposal.tile_x1 - proposal.tile_x0
     margin_y = max(1, int(round(tile_h * _BORDER_MARGIN_FRAC)))
     margin_x = max(1, int(round(tile_w * _BORDER_MARGIN_FRAC)))
-    y0, y1 = int(ys.min()), int(ys.max())
-    x0, x1 = int(xs.min()), int(xs.max())
+    y0, y1 = int(ys.min()) + offset_y, int(ys.max()) + offset_y
+    x0, x1 = int(xs.min()) + offset_x, int(xs.max()) + offset_x
     local_y0 = y0 - proposal.tile_y0
     local_y1 = y1 - proposal.tile_y0
     local_x0 = x0 - proposal.tile_x0
@@ -142,8 +176,37 @@ def _touches_tile_border(
     )
 
 
+def _crop_local_ios(left: _EnrichedProposal, right: _EnrichedProposal) -> float:
+    left_prop = left.proposal
+    right_prop = right.proposal
+    return mask_ios_crop_local(
+        left.local_mask,
+        left_prop.offset_y,
+        left_prop.offset_x,
+        right.local_mask,
+        right_prop.offset_y,
+        right_prop.offset_x,
+        left_area=left.area,
+        right_area=right.area,
+    )
+
+
+def _place_local_mask_in_section(
+    local_mask: np.ndarray,
+    *,
+    offset_y: int,
+    offset_x: int,
+    height: int,
+    width: int,
+) -> np.ndarray:
+    plane = np.zeros((height, width), dtype=bool)
+    crop_h, crop_w = local_mask.shape
+    plane[offset_y : offset_y + crop_h, offset_x : offset_x + crop_w] = local_mask
+    return plane
+
+
 def _should_associate(left: _EnrichedProposal, right: _EnrichedProposal) -> bool:
-    ios = _mask_ios(left.mask, right.mask)
+    ios = _crop_local_ios(left, right)
     if ios >= _MIN_PAIR_IOS:
         return True
     if ios < _BORDER_PARTIAL_IOS:
@@ -181,10 +244,21 @@ def _cluster_members(parent: list[int], count: int) -> dict[int, list[int]]:
 
 def _fuse_cluster(
     members: Sequence[_EnrichedProposal],
+    *,
+    height: int,
+    width: int,
 ) -> tuple[np.ndarray, float]:
-    fused = np.zeros_like(members[0].mask)
+    fused = np.zeros((height, width), dtype=bool)
     for member in members:
-        fused |= member.mask
+        prop = member.proposal
+        placed = _place_local_mask_in_section(
+            member.local_mask,
+            offset_y=prop.offset_y,
+            offset_x=prop.offset_x,
+            height=height,
+            width=width,
+        )
+        fused |= placed
     score = max(member.proposal.score for member in members)
     return fused, score
 
@@ -226,7 +300,7 @@ def associate_tiled_proposals(
             detections=(),
         )
 
-    enriched = _enrich_proposals(proposals, height=height, width=width)
+    enriched = _enrich_proposals(proposals)
 
     parent = list(range(len(enriched)))
     for left_index in range(len(enriched)):
@@ -238,7 +312,7 @@ def associate_tiled_proposals(
     fused_clusters: list[tuple[np.ndarray, float]] = []
     for member_indices in clusters.values():
         members = [enriched[index] for index in member_indices]
-        fused_clusters.append(_fuse_cluster(members))
+        fused_clusters.append(_fuse_cluster(members, height=height, width=width))
 
     instance_map, scores = _rasterize_clusters_non_overlapping(
         fused_clusters, height=height, width=width
@@ -251,24 +325,36 @@ def associate_tiled_proposals(
 
 def _enrich_proposals(
     proposals: Sequence[TiledAssociationProposal],
-    *,
-    height: int,
-    width: int,
 ) -> list[_EnrichedProposal]:
     enriched: list[_EnrichedProposal] = []
     for index, proposal in enumerate(proposals):
-        mask = _full_mask(proposal, height=height, width=width)
+        local_mask = segmentation_to_binary_mask(proposal.segmentation)
+        area = int(local_mask.sum())
+        offset_y, offset_x = proposal.offset_y, proposal.offset_x
+        centroid_y, centroid_x = _mask_centroid_whole_image(
+            local_mask, offset_y=offset_y, offset_x=offset_x
+        )
         enriched.append(
             _EnrichedProposal(
                 index=index,
                 proposal=proposal,
-                mask=mask,
-                area=int(mask.sum()),
-                centrality=_centrality(proposal, mask),
-                touches_border=_touches_tile_border(proposal, mask),
+                local_mask=local_mask,
+                area=area,
+                centroid_y=centroid_y,
+                centroid_x=centroid_x,
+                centrality=_centrality(
+                    proposal, local_mask, offset_y=offset_y, offset_x=offset_x
+                ),
+                touches_border=_touches_tile_border(
+                    proposal, local_mask, offset_y=offset_y, offset_x=offset_x
+                ),
             )
         )
     return enriched
 
 
-__all__ = ["TiledAssociationProposal", "associate_tiled_proposals"]
+__all__ = [
+    "TiledAssociationProposal",
+    "associate_tiled_proposals",
+    "mask_ios_crop_local",
+]

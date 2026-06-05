@@ -3,7 +3,7 @@
 #SBATCH --output=logs/%x-%j.log
 #SBATCH --mem=256G
 #SBATCH --cpus-per-task=8
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 
 set -euo pipefail
 # shellcheck source=SLURM/utils/enter_job.sh

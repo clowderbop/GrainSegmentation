@@ -64,11 +64,15 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 Required **two-phase** workflow per **input configuration** (registry variant):
 
 1. **Predict** — `run_watershed_tune_predict.sh` runs sliding-window U-Net inference once on the train whole section and writes durable semantic predictions to scratch.
-2. **Tune** — `run_watershed_tuning.sh` reads cached preds via `--preds-dir` only and scores the default 24-candidate watershed grid. The tune job never runs U-Net inference.
+2. **Tune** — `run_watershed_tuning.sh` reads cached preds via `--preds-dir` only and scores the production default **72-candidate** watershed grid. The tune job never runs U-Net inference.
 
 `submit_watershed_tuning.sh` submits predict then tune with `--dependency=afterok` per variant. A combined predict+tune single job is not the default path.
 
-Select the **U-Net extraction profile** by train **whole-section PQ** (`best_mean_pq` in `watershed_best_*.json`) and record all `MergedViewPqResult` diagnostics (`best_mean_*` / `best_per_sample_*` in JSON; `mean_*` / `{field}__{sample_id}` in the grid CSV). Train/test **eval** still uses the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
+**Default grid axes** (grain-scale; omits pixel-scale `min_distance=1`): `min_distance=(3, 5, 9)`, `boundary_dilate_iter=(0, 1)`, `watershed_connectivity=(1, 2)`, `min_area_px=(0, 64, 256)`, `exclude_border=(0, 1)`, `ridge_level=(None)` — see `unet.watershed_tune_grid` and `run_watershed_tuning.sh` bash arrays.
+
+Train-side watershed tuning still selects by **whole-section PQ** on the train **merged instance view** and persists **`MergedViewPqResult`** audit fields (`best_mean_pq` / `best_mean_*` / `best_per_sample_*` in `watershed_best_*.json`; `mean_*` / `{field}__{sample_id}` in the grid CSV). Selection uses **`pq` / `mean_pq` only**; other fields are diagnostics. Held-out **eval** still uses the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
+
+**Runtime (order of magnitude):** expect **many hours per registry variant** on the train whole section (~10k×52k merged view): roughly tens of minutes per grid combo before multiply by 72. The tune SLURM job requests **12 hours** wall time (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
 
 | Output | Path |
 |--------|------|

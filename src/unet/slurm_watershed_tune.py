@@ -18,7 +18,7 @@ WATERSHED_TUNE_TUNE_RESOURCES: dict[str, str] = {
     "job-name": "TuneWatershed",
     "mem": "256G",
     "cpus-per-task": "8",
-    "time": "04:00:00",
+    "time": "12:00:00",
 }
 
 WATERSHED_TUNE_RUNBOOK_REL = Path("docs/runbooks/unet.md")

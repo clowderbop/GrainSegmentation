@@ -114,6 +114,12 @@ def test_submit_watershed_tuning_usage_points_at_runbook() -> None:
     assert "predict" in usage.lower()
 
 
+def test_watershed_tune_slurm_wall_time_covers_production_grid() -> None:
+    assert WATERSHED_TUNE_TUNE_RESOURCES["time"] == "12:00:00"
+    text = run_watershed_tuning_script_path().read_text(encoding="utf-8")
+    assert "#SBATCH --time=12:00:00" in text
+
+
 def test_unet_runbook_documents_predict_then_tune_workflow() -> None:
     path = watershed_tune_runbook_path()
     assert path.is_file(), f"missing runbook: {path}"
@@ -124,3 +130,18 @@ def test_unet_runbook_documents_predict_then_tune_workflow() -> None:
     assert "watershed_tune_preds" in section
     assert "predict" in section.lower()
     assert "--preds-dir" in section
+
+
+def test_unet_runbook_documents_production_grid_runtime_and_login_node_policy() -> (
+    None
+):
+    section = watershed_tune_runbook_path().read_text(encoding="utf-8").split(
+        "## Watershed tuning", 1
+    )[1].split("## CC vs watershed", 1)[0]
+    assert "72" in section
+    assert "min_distance" in section
+    assert "min_area_px" in section
+    assert "whole-section PQ" in section
+    assert "MergedViewPqResult" in section
+    assert "login node" in section.lower()
+    assert "SLURM" in section

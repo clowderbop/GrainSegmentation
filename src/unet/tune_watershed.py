@@ -14,6 +14,7 @@ import numpy as np
 
 from common.geometry import load_image_space_polygons
 from common.ground_truth import polygons_to_instance_map
+from common.reporting import count_instances
 from common.image_io import (
     load_tiff_single_channel_mask,
     validate_input_images,
@@ -22,8 +23,13 @@ from common.image_io import (
 from common.manifest_io import collect_manifest_unet_samples, load_dataset_manifest
 from common.samples import load_rgb_image
 from common.arg_errors import raise_cli_argument_error
+from common.merged_view_pq import (
+    MERGED_VIEW_PQ_RESULT_KEYS,
+    coerce_merged_view_pq_value,
+)
 from unet.extraction_tune_scoring import (
     WatershedParamSet,
+    format_merged_view_pq_audit_line,
     mean_train_pq_for_watershed_params,
     select_best_watershed_tune_row,
     watershed_best_json_summary,
@@ -31,6 +37,19 @@ from unet.extraction_tune_scoring import (
     watershed_tune_fieldnames,
     watershed_tune_row,
 )
+
+
+def _log(*parts: object) -> None:
+    print(*parts, flush=True)
+
+
+def _mean_audit_line_from_tune_row(row: dict[str, Any]) -> str:
+    return format_merged_view_pq_audit_line(
+        {
+            key: coerce_merged_view_pq_value(key, row[f"mean_{key}"])
+            for key in MERGED_VIEW_PQ_RESULT_KEYS
+        }
+    )
 
 
 def _sanitize_csv_key(sample_id: str) -> str:
@@ -189,7 +208,7 @@ def _collect_samples(
         pred_path = preds_dir / f"{sid}_pred.tif"
         if not pred_path.is_file():
             raise SystemExit(f"Missing prediction file: {pred_path}")
-        print(f"Loading pred: {pred_path}")
+        _log(f"Loading pred: {pred_path}")
         images = [load_rgb_image(p) for p in sample["images"]]
         height, width = validate_input_images(images)
         pred_arr = _load_pred_tiff(pred_path)
@@ -197,15 +216,18 @@ def _collect_samples(
             raise ValueError(
                 f"Pred shape {pred_arr.shape} != image shape {(height, width)} for {sid}"
             )
-        sample_ids.append(sid)
-        true_instances.append(
-            polygons_to_instance_map(
-                gt_scene_polygons,
-                height=height,
-                width=width,
-            )
+        gt_map = polygons_to_instance_map(
+            gt_scene_polygons,
+            height=height,
+            width=width,
         )
+        sample_ids.append(sid)
+        true_instances.append(gt_map)
         pred_semantic.append(pred_arr)
+        _log(
+            f"  {sid}: {width}×{height}, GT={count_instances(gt_map)} instances, "
+            f"{len(sample['images'])} input channel(s)"
+        )
 
     return sample_ids, true_instances, pred_semantic
 
@@ -258,9 +280,20 @@ def main() -> None:
         * len(args.exclude_border)
         * len(ridge_levels)
     )
-    print(f"Grid size: {grid_size} combinations on {len(sample_ids)} sample(s).")
+    _log(f"Grid size: {grid_size} combinations on {len(sample_ids)} sample(s).")
+    _log(
+        "Grid axes: "
+        f"min_distance={list(args.min_distance)}, "
+        f"boundary_dilate_iter={list(args.boundary_dilate_iter)}, "
+        f"watershed_connectivity={list(args.watershed_connectivity)}, "
+        f"min_area_px={list(args.min_area_px)}, "
+        f"exclude_border={list(args.exclude_border)}, "
+        f"ridge_level={list(ridge_levels)}"
+    )
 
     grid_rows: list[dict[str, Any]] = []
+    best_so_far_pq: float | None = None
+    best_so_far_idx: int | None = None
 
     out_path = Path(args.output_csv)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -272,19 +305,32 @@ def main() -> None:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for combo_idx, params in enumerate(_iter_param_grid(args), start=1):
-            print(
+            _log(
                 f"[{combo_idx}/{grid_size}] scoring "
-                f"({_format_param_set(params)}) ..."
+                f"({_format_param_set(params)}) …"
             )
             t0 = time.perf_counter()
             mean_pq, per_sample_pq = mean_train_pq_for_watershed_params(
-                true_instances, pred_semantic, params
+                true_instances,
+                pred_semantic,
+                params,
+                sample_ids=sample_ids,
+                log=True,
             )
             elapsed = time.perf_counter() - t0
             mean_pq_value = float(mean_pq["pq"])
-            print(
-                f"[{combo_idx}/{grid_size}] mean_pq={mean_pq_value:.6f} "
-                f"({_format_param_set(params)}) {elapsed:.2f}s"
+            if best_so_far_pq is None or mean_pq_value > best_so_far_pq:
+                best_so_far_pq = mean_pq_value
+                best_so_far_idx = combo_idx
+            best_note = (
+                f" | best: {best_so_far_pq:.6f} @ #{best_so_far_idx}"
+                if best_so_far_pq is not None and best_so_far_idx is not None
+                else ""
+            )
+            _log(
+                f"[{combo_idx}/{grid_size}] mean "
+                f"{format_merged_view_pq_audit_line(mean_pq)} "
+                f"({_format_param_set(params)}) {elapsed:.1f}s{best_note}"
             )
             row = watershed_tune_row(
                 params,
@@ -312,17 +358,15 @@ def main() -> None:
             else float(best_row["ridge_level"])
         ),
     )
-    best_mean_pq = float(best_row["mean_pq"])
-
-    print("\nBest watershed parameters (max mean train whole-section PQ):")
-    print(f"  min_distance: {best_params.min_distance}")
-    print(f"  boundary_dilate_iter: {best_params.boundary_dilate_iter}")
-    print(f"  watershed_connectivity: {best_params.watershed_connectivity}")
-    print(f"  min_area_px: {best_params.min_area_px}")
-    print(f"  exclude_border: {best_params.exclude_border}")
-    print(f"  ridge_level: {_format_ridge_level(best_params.ridge_level)}")
-    print(f"  mean_pq: {best_mean_pq:.6f}")
-    print(f"\nWrote grid results to {out_path}")
+    _log("\nBest watershed parameters (max mean train whole-section PQ):")
+    _log(f"  min_distance: {best_params.min_distance}")
+    _log(f"  boundary_dilate_iter: {best_params.boundary_dilate_iter}")
+    _log(f"  watershed_connectivity: {best_params.watershed_connectivity}")
+    _log(f"  min_area_px: {best_params.min_area_px}")
+    _log(f"  exclude_border: {best_params.exclude_border}")
+    _log(f"  ridge_level: {_format_ridge_level(best_params.ridge_level)}")
+    _log(f"  {_mean_audit_line_from_tune_row(best_row)}")
+    _log(f"\nWrote grid results to {out_path}")
 
     if args.output_json:
         summary = watershed_best_json_summary(
@@ -335,7 +379,7 @@ def main() -> None:
         jp.parent.mkdir(parents=True, exist_ok=True)
         with jp.open("w") as jf:
             json.dump(summary, jf, indent=2)
-        print(f"Wrote summary to {jp}")
+        _log(f"Wrote summary to {jp}")
 
 
 if __name__ == "__main__":

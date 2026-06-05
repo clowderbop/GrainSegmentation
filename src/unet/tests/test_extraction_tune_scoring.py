@@ -116,6 +116,33 @@ def test_mean_train_pq_for_watershed_params_calls_watershed_once_per_sample(
     assert watershed_calls == 2
 
 
+def test_mean_train_pq_for_watershed_params_logs_phase_timings(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    gt = _two_grain_gt()
+    semantic = np.zeros(gt.shape, dtype=np.uint8)
+    semantic[8:28, 8:28] = 1
+    semantic[36:56, 36:56] = 1
+    params = WatershedParamSet(5, 0, 1, 0, False, None)
+
+    mean_train_pq_for_watershed_params(
+        [gt],
+        [semantic],
+        params,
+        sample_ids=["train"],
+        log=True,
+    )
+
+    out = capsys.readouterr().out
+    assert "running watershed" in out
+    assert "running metrics" in out
+    assert "watershed" in out
+    assert "metrics" in out
+    assert "PQ=" in out
+    assert "DQ=" in out
+    assert "pred=" in out
+
+
 def test_select_best_watershed_tune_row_uses_mean_pq_not_mean_aji() -> None:
     rows = [
         {

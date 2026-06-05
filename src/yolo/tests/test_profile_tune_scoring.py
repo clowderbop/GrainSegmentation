@@ -15,6 +15,7 @@ from common.instance_eval_report import extract_instance_metric_bundle_from_repo
 from yolo.tiled_proposal_cache import TiledProposalRecord
 from yolo.tests.profile_tune_fixtures import (
     candidate_for_variant,
+    constant_merged_view_pq_result,
     tiny_train_gt_map,
     tiled_proposal_records_disjoint_via_collector,
     tiled_proposal_records_from_overlapping_masks,
@@ -328,3 +329,37 @@ def test_compute_train_pq_matches_bundle_pq_fields_on_fixtures(
 
     assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
     _assert_pq_result_matches_bundle_subset(result, bundle)
+
+
+def test_compute_train_pq_delegates_to_shared_merged_view_pq_scorer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Consumer smoke: profile selection hot path scores via compute_merged_view_pq."""
+    from yolo.profile_tune_scoring import compute_train_pq
+
+    captured: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+
+    def spy(gt: np.ndarray, pred: np.ndarray) -> dict[str, float | int]:
+        captured.append((gt.shape, pred.shape))
+        return constant_merged_view_pq_result(0.75)
+
+    monkeypatch.setattr("yolo.profile_tune_scoring.compute_merged_view_pq", spy)
+
+    height, width = 16, 16
+    gt_map = tiny_train_gt_map(height, width)
+    candidate = candidate_for_variant("PPL")
+    records = tiled_proposal_records_disjoint_via_collector(
+        height, width, mask_threshold=candidate.mask_threshold
+    )
+
+    result = compute_train_pq(
+        gt_map,
+        records,
+        candidate=candidate,
+        height=height,
+        width=width,
+    )
+
+    assert len(captured) == 1
+    assert captured[0] == (gt_map.shape, (height, width))
+    assert result["pq"] == pytest.approx(0.75)

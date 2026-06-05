@@ -66,7 +66,6 @@ def test_collect_samples_gpkg_gt_matches_golden(tmp_path: Path) -> None:
         manifest=manifest_path,
         gt_gpkg=_MICRO_GPKG,
         preds_dir=tmp_path / "preds",
-        model_path=None,
         max_samples=None,
         num_inputs=None,
     )

@@ -33,10 +33,6 @@ from unet.extraction_tune_scoring import (
 )
 
 
-def _validate_pred_semantic(pred: np.ndarray, mask_path: str) -> np.ndarray:
-    return validate_semantic_labels(pred, mask_path)
-
-
 def _sanitize_csv_key(sample_id: str) -> str:
     return re.sub(r"[^0-9A-Za-z_]+", "_", sample_id)
 
@@ -46,19 +42,9 @@ def _load_pred_tiff(path: Path) -> np.ndarray:
     return validate_semantic_labels(arr, str(path))
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        )
-    src = parser.add_mutually_exclusive_group(required=True)
-    src.add_argument(
-        "--model-path",
-        default=None,
-        )
-    src.add_argument(
-        "--preds-dir",
-        default=None,
-        )
-
+def _build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--preds-dir", type=Path, required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--gt-gpkg", required=True)
     parser.add_argument("--num-inputs", type=int, default=None)
@@ -67,9 +53,6 @@ def _parse_args() -> argparse.Namespace:
         nargs="+",
         default=["_PPL", "_PPX1", "_PPX2", "_PPX3", "_PPX4", "_PPX5", "_PPX6"],
     )
-    parser.add_argument("--patch-size", type=int, default=1024)
-    parser.add_argument("--stride", type=int, default=512)
-    parser.add_argument("--batch-size", type=int, default=4)
 
     parser.add_argument(
         "--min-distance",
@@ -124,7 +107,12 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         )
 
-    args = parser.parse_args()
+    return parser
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = _build_arg_parser()
+    args = parser.parse_args(argv)
     _validate_tune_args(args, parser)
     return args
 
@@ -136,12 +124,6 @@ def _validate_tune_args(
         raise_cli_argument_error(
             "num_inputs must be one of: 1, 2, 7", parser=parser
         )
-    if args.patch_size <= 0 or args.stride <= 0:
-        raise_cli_argument_error("patch_size and stride must be > 0", parser=parser)
-    if args.stride > args.patch_size:
-        raise_cli_argument_error("stride must be <= patch_size", parser=parser)
-    if args.batch_size <= 0:
-        raise_cli_argument_error("batch_size must be > 0", parser=parser)
     if not Path(args.gt_gpkg).is_file():
         raise_cli_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser)
     if any(v < 1 for v in args.min_distance):
@@ -157,6 +139,12 @@ def _validate_tune_args(
             raise_cli_argument_error(f"{name} values must be >= 0", parser=parser)
     if args.max_samples is not None and args.max_samples <= 0:
         raise_cli_argument_error("max_samples must be positive", parser=parser)
+    preds_dir = Path(args.preds_dir)
+    if not preds_dir.is_dir():
+        raise_cli_argument_error(
+            f"preds-dir is not a directory: {preds_dir.resolve()}",
+            parser=parser,
+        )
 
 
 def _ridge_level_grid(args: argparse.Namespace) -> list[float | None]:
@@ -195,68 +183,29 @@ def _collect_samples(
     true_instances: list[np.ndarray] = []
     pred_semantic: list[np.ndarray] = []
 
-    if args.model_path:
-        import tensorflow as tf
-
-        from unet.model import weighted_crossentropy
-        from unet.inference import predict_full_image
-
-        print(f"Loading model from {args.model_path}...")
-        model = tf.keras.models.load_model(
-            args.model_path,
-            custom_objects={"weighted_crossentropy": weighted_crossentropy},
+    preds_dir = Path(args.preds_dir).resolve()
+    for sample in samples:
+        sid = sample["id"]
+        pred_path = preds_dir / f"{sid}_pred.tif"
+        if not pred_path.is_file():
+            raise SystemExit(f"Missing prediction file: {pred_path}")
+        print(f"Loading pred: {pred_path}")
+        images = [load_rgb_image(p) for p in sample["images"]]
+        height, width = validate_input_images(images)
+        pred_arr = _load_pred_tiff(pred_path)
+        if pred_arr.shape != (height, width):
+            raise ValueError(
+                f"Pred shape {pred_arr.shape} != image shape {(height, width)} for {sid}"
+            )
+        sample_ids.append(sid)
+        true_instances.append(
+            polygons_to_instance_map(
+                gt_scene_polygons,
+                height=height,
+                width=width,
+            )
         )
-
-        for sample in samples:
-            sid = sample["id"]
-            print(f"Inference: {sid}")
-            images = [load_rgb_image(p) for p in sample["images"]]
-            if len(images) != args.num_inputs:
-                raise ValueError("Mismatch between num_inputs and loaded images.")
-            height, width = validate_input_images(images)
-            pred_classes, _ = predict_full_image(
-                model=model,
-                inputs=tuple(images),
-                patch_size=args.patch_size,
-                stride=args.stride,
-                batch_size=args.batch_size,
-            )
-            sample_ids.append(sid)
-            true_instances.append(
-                polygons_to_instance_map(
-                    gt_scene_polygons,
-                    height=height,
-                    width=width,
-                )
-            )
-            pred_semantic.append(_validate_pred_semantic(pred_classes, sid))
-    else:
-        preds_dir = Path(args.preds_dir).resolve()
-        if not preds_dir.is_dir():
-            raise SystemExit(f"preds-dir is not a directory: {preds_dir}")
-
-        for sample in samples:
-            sid = sample["id"]
-            pred_path = preds_dir / f"{sid}_pred.tif"
-            if not pred_path.is_file():
-                raise SystemExit(f"Missing prediction file: {pred_path}")
-            print(f"Loading pred: {pred_path}")
-            images = [load_rgb_image(p) for p in sample["images"]]
-            height, width = validate_input_images(images)
-            pred_arr = _load_pred_tiff(pred_path)
-            if pred_arr.shape != (height, width):
-                raise ValueError(
-                    f"Pred shape {pred_arr.shape} != image shape {(height, width)} for {sid}"
-                )
-            sample_ids.append(sid)
-            true_instances.append(
-                polygons_to_instance_map(
-                    gt_scene_polygons,
-                    height=height,
-                    width=width,
-                )
-            )
-            pred_semantic.append(pred_arr)
+        pred_semantic.append(pred_arr)
 
     return sample_ids, true_instances, pred_semantic
 

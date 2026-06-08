@@ -7,7 +7,10 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from common.profile_tune_paths import profile_tune_cache_root
-from common.test_inference import load_test_inference_recipe, profile_tune_fixed_mask_threshold
+from common.test_inference import (
+    load_test_inference_recipe,
+    profile_tune_fixed_mask_threshold,
+)
 from yolo.inference_profile_tune import (
     TuneGridSpec,
     detector_keys_per_variant,
@@ -80,9 +83,7 @@ def resolve_detector_variant(
 ) -> str:
     explicit_variant = variant
     if array_index is not None and (explicit_variant is not None or conf is not None):
-        raise ValueError(
-            "Specify either --array-index or --variant/--conf, not both"
-        )
+        raise ValueError("Specify either --array-index or --variant/--conf, not both")
     if array_index is not None:
         return variant_at_detector_array_index(variants, array_index)
     if explicit_variant is None:

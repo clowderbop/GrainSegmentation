@@ -5,16 +5,26 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from scipy.ndimage import binary_dilation, distance_transform_edt, generate_binary_structure
+from scipy.ndimage import (
+    binary_dilation,
+    distance_transform_edt,
+    generate_binary_structure,
+)
 
-from unet.extraction_tune_scoring import WatershedParamSet, instance_map_for_watershed_params
+from unet.extraction_tune_scoring import (
+    WatershedParamSet,
+    instance_map_for_watershed_params,
+)
 from unet.instance_masks import (
     WatershedConnectivity,
     build_watershed_semantic_prep,
     watershed_area_filter,
     watershed_base_extraction,
 )
-from unet.watershed_tune_grid import iter_watershed_tune_param_sets, load_watershed_tune_grid
+from unet.watershed_tune_grid import (
+    iter_watershed_tune_param_sets,
+    load_watershed_tune_grid,
+)
 
 
 def _two_grain_semantic(height: int = 64, width: int = 64) -> np.ndarray:
@@ -24,7 +34,9 @@ def _two_grain_semantic(height: int = 64, width: int = 64) -> np.ndarray:
     return semantic
 
 
-def _two_grain_semantic_with_boundaries(height: int = 64, width: int = 64) -> np.ndarray:
+def _two_grain_semantic_with_boundaries(
+    height: int = 64, width: int = 64
+) -> np.ndarray:
     semantic = _two_grain_semantic(height, width)
     for r0, c0, r1, c1 in ((8, 8, 28, 28), (36, 36, 56, 56)):
         semantic[r0, c0:c1] = 2

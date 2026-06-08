@@ -31,5 +31,7 @@ def log_nested_phase_start(phase: str, *, prefix: str = "  ") -> None:
     print(f"{prefix}running {phase} …", flush=True)
 
 
-def log_nested_phase_done(phase: str, elapsed_s: float, *, indent: str = "    ") -> None:
+def log_nested_phase_done(
+    phase: str, elapsed_s: float, *, indent: str = "    "
+) -> None:
     print(f"{indent}{phase} {elapsed_s:.1f}s", flush=True)

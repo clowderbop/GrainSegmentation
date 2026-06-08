@@ -210,7 +210,9 @@ def _whole_metric_value(row: pd.Series, metric_key: str) -> float:
 
 
 def _patch_weighted_metric_value(patch_row: pd.Series, metric_key: str) -> float | None:
-    source_key = "pred_gt_instance_ratio" if metric_key == "signed_count_bias" else metric_key
+    source_key = (
+        "pred_gt_instance_ratio" if metric_key == "signed_count_bias" else metric_key
+    )
     column = patch_aggregate_weighted_key(source_key)
     if column not in patch_row.index:
         return None
@@ -374,9 +376,12 @@ def precision_recall_iou75_points(df: pd.DataFrame) -> pd.DataFrame:
         "recall_iou75",
     ]
     whole = whole_section_instance_rows(df)
-    if whole.empty or not {"producer", "display_name", "precision_iou75", "recall_iou75"} <= set(
-        whole.columns
-    ):
+    if whole.empty or not {
+        "producer",
+        "display_name",
+        "precision_iou75",
+        "recall_iou75",
+    } <= set(whole.columns):
         return pd.DataFrame(columns=columns)
     whole = whole.copy()
     whole[MODEL_COL] = whole["producer"].map(model_display_name)

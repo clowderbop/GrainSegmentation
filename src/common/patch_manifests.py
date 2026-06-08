@@ -100,7 +100,10 @@ def _scan_split_images(
 
     rows: list[ManifestSampleRow] = []
     for image_path in sorted(images_dir.iterdir()):
-        if not image_path.is_file() or image_path.suffix.lower() not in _PATCH_IMAGE_SUFFIXES:
+        if (
+            not image_path.is_file()
+            or image_path.suffix.lower() not in _PATCH_IMAGE_SUFFIXES
+        ):
             continue
         stem = image_path.stem
         label_path = labels_dir / f"{stem}.txt"

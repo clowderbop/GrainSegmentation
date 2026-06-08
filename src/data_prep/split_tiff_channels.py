@@ -53,14 +53,17 @@ def split_tiff_channels(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        )
-    parser.add_argument("input_file", )
-    parser.add_argument("output_dir", )
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "input_file",
+    )
+    parser.add_argument(
+        "output_dir",
+    )
     parser.add_argument(
         "--prefix",
         default=None,
-        )
+    )
     args = parser.parse_args()
 
     try:

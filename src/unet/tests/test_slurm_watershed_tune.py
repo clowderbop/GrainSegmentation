@@ -41,7 +41,9 @@ def _three_axis_grid_yaml(tmp_path: Path) -> Path:
     return grid_path
 
 
-def test_submit_watershed_tuning_default_dry_run_submits_shard_array_and_merge() -> None:
+def test_submit_watershed_tuning_default_dry_run_submits_shard_array_and_merge() -> (
+    None
+):
     """INTENT: default dry-run chains predict → shard array → merge with afterok per variant."""
     result = subprocess.run(
         [
@@ -61,11 +63,21 @@ def test_submit_watershed_tuning_default_dry_run_submits_shard_array_and_merge()
     assert str(run_watershed_tune_merge_script_path().name) in stdout
     assert "--array=1-6%6" in stdout
 
-    predict_lines = [line for line in _sbatch_lines(stdout) if "run_watershed_tune_predict.sh" in line]
-    shard_lines = [line for line in _sbatch_lines(stdout) if "run_watershed_tune_shard.sh" in line]
-    merge_lines = [line for line in _sbatch_lines(stdout) if "run_watershed_tune_merge.sh" in line]
+    predict_lines = [
+        line
+        for line in _sbatch_lines(stdout)
+        if "run_watershed_tune_predict.sh" in line
+    ]
+    shard_lines = [
+        line for line in _sbatch_lines(stdout) if "run_watershed_tune_shard.sh" in line
+    ]
+    merge_lines = [
+        line for line in _sbatch_lines(stdout) if "run_watershed_tune_merge.sh" in line
+    ]
     assert len(predict_lines) == len(shard_lines) == len(merge_lines)
-    for predict, shard, merge in zip(predict_lines, shard_lines, merge_lines, strict=True):
+    for predict, shard, merge in zip(
+        predict_lines, shard_lines, merge_lines, strict=True
+    ):
         assert "--dependency=afterok" not in predict
         assert "--dependency=afterok:DRYRUN" in shard
         assert "--dependency=afterok:DRYRUN" in merge
@@ -93,7 +105,9 @@ def test_submit_watershed_tuning_single_job_dry_run_skips_shard_and_merge() -> N
     assert "--array=" not in stdout
 
 
-def test_submit_watershed_tuning_use_cached_preds_dry_run_submits_shard_array_and_merge() -> None:
+def test_submit_watershed_tuning_use_cached_preds_dry_run_submits_shard_array_and_merge() -> (
+    None
+):
     """INTENT: --use-cached-preds dry-run skips predict but chains shard array → merge."""
     result = subprocess.run(
         [
@@ -115,8 +129,12 @@ def test_submit_watershed_tuning_use_cached_preds_dry_run_submits_shard_array_an
     assert "--array=1-6%6" in stdout
     assert "DRY-RUN shard array from cached preds" in result.stderr
 
-    shard_lines = [line for line in _sbatch_lines(stdout) if "run_watershed_tune_shard.sh" in line]
-    merge_lines = [line for line in _sbatch_lines(stdout) if "run_watershed_tune_merge.sh" in line]
+    shard_lines = [
+        line for line in _sbatch_lines(stdout) if "run_watershed_tune_shard.sh" in line
+    ]
+    merge_lines = [
+        line for line in _sbatch_lines(stdout) if "run_watershed_tune_merge.sh" in line
+    ]
     assert len(shard_lines) == len(merge_lines)
     for shard, merge in zip(shard_lines, merge_lines, strict=True):
         assert "--dependency=afterok" not in shard

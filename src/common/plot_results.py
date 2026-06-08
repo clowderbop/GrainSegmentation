@@ -134,9 +134,7 @@ def generate_quantitative_plot(
 
 def main() -> None:
     args = parse_args()
-    print(
-        f"Quantitative plot: {len(args.json_files)} model(s) -> {args.output_plot}"
-    )
+    print(f"Quantitative plot: {len(args.json_files)} model(s) -> {args.output_plot}")
     for label, json_file in zip(args.labels, args.json_files):
         print(f"  loading metrics for {label}: {json_file}")
     generate_quantitative_plot(args.json_files, args.labels, args.output_plot)

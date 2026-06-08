@@ -7,7 +7,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from common.manifest_io import default_patch_manifest_path, default_whole_manifest_path, load_dataset_manifest
+from common.manifest_io import (
+    default_patch_manifest_path,
+    default_whole_manifest_path,
+    load_dataset_manifest,
+)
 from common.variants import all_variant_names, default_grainseg_root
 
 

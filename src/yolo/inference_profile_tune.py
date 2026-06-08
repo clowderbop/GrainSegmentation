@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-import numpy as np
 import yaml
 
 from common import yaml_validate as yv
@@ -21,7 +20,6 @@ from common.merged_view_pq import (
     merged_view_pq_column_name,
     merged_view_pq_result_from_prefixed_columns,
 )
-from common.instance_eval_report import extract_metric_from_report
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
@@ -272,7 +270,9 @@ def write_grid_winner_json(
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
-def candidate_from_winner_json(payload: dict[str, Any]) -> YoloInferenceProfileCandidate:
+def candidate_from_winner_json(
+    payload: dict[str, Any],
+) -> YoloInferenceProfileCandidate:
     return profile_tune_candidate_from_conf(
         yv.require_float(payload.get("conf"), context="conf")
     )

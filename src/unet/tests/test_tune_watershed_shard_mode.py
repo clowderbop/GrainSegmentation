@@ -13,7 +13,10 @@ from unet import tune_watershed
 from unet.tune_watershed import _parse_args
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from unet.extraction_tune_scoring import watershed_tune_fieldnames
-from unet.watershed_tune_grid import iter_watershed_tune_param_sets, load_watershed_tune_grid
+from unet.watershed_tune_grid import (
+    iter_watershed_tune_param_sets,
+    load_watershed_tune_grid,
+)
 from unet.watershed_tune_grid_shard import (
     iter_watershed_tune_param_sets_for_shard,
     iter_watershed_tune_shards,
@@ -158,7 +161,9 @@ def test_shard_mode_csv_rows_retain_merged_view_pq_fields(
     tune_watershed.main()
 
     sample_id = "train"
-    fieldnames = watershed_tune_fieldnames([sample_id], sanitize_sample_id=lambda sid: sid)
+    fieldnames = watershed_tune_fieldnames(
+        [sample_id], sanitize_sample_id=lambda sid: sid
+    )
     with out_csv.open(encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
 

@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 from analysis.artifact_qa import (
     PATCH_ARTIFACT,
@@ -63,22 +62,34 @@ def test_completeness_audit_reports_whole_patch_optional_and_val(
         root, runs=runs, val_refs=val_refs, variants=("PPL",)
     )
 
-    assert _audit_status(
-        audit, variant="PPL", producer="yolo", artifact=WHOLE_SECTION_ARTIFACT
-    ) == "found"
-    assert _audit_status(
-        audit, variant="PPL", producer="unet", artifact=WHOLE_SECTION_ARTIFACT
-    ) == "missing"
-    assert _audit_status(
-        audit, variant="PPL", producer="yolo", artifact=PATCH_ARTIFACT
-    ) == "found"
-    assert _audit_status(
-        audit, variant="PPL", producer="unet", artifact=PATCH_ARTIFACT
-    ) == "missing"
-    assert audit.loc[
-        (audit["Variant"] == "PPL") & (audit["Artifact"] == ULTRALYTICS_VAL_ARTIFACT),
-        "Status",
-    ].iloc[0] == "found"
+    assert (
+        _audit_status(
+            audit, variant="PPL", producer="yolo", artifact=WHOLE_SECTION_ARTIFACT
+        )
+        == "found"
+    )
+    assert (
+        _audit_status(
+            audit, variant="PPL", producer="unet", artifact=WHOLE_SECTION_ARTIFACT
+        )
+        == "missing"
+    )
+    assert (
+        _audit_status(audit, variant="PPL", producer="yolo", artifact=PATCH_ARTIFACT)
+        == "found"
+    )
+    assert (
+        _audit_status(audit, variant="PPL", producer="unet", artifact=PATCH_ARTIFACT)
+        == "missing"
+    )
+    assert (
+        audit.loc[
+            (audit["Variant"] == "PPL")
+            & (audit["Artifact"] == ULTRALYTICS_VAL_ARTIFACT),
+            "Status",
+        ].iloc[0]
+        == "found"
+    )
 
     optional_missing = audit.loc[
         (audit["Expected"] == "optional") & (audit["Status"] == "missing")

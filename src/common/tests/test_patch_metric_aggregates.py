@@ -23,15 +23,20 @@ def _bundle_row(
     f1_iou50: float | None = None,
     pred_gt_instance_ratio: float = 1.0,
 ) -> dict:
-    row = {key: pq for key in INSTANCE_METRIC_BUNDLE_KEYS if key not in (
-        "tp",
-        "fp",
-        "fn",
-        "gt_instance_count",
-        "pred_instance_count",
-        "pred_gt_instance_ratio",
-        "aji_plus",
-    )}
+    row = {
+        key: pq
+        for key in INSTANCE_METRIC_BUNDLE_KEYS
+        if key
+        not in (
+            "tp",
+            "fp",
+            "fn",
+            "gt_instance_count",
+            "pred_instance_count",
+            "pred_gt_instance_ratio",
+            "aji_plus",
+        )
+    }
     row["dq"] = dq if dq is not None else pq
     row["sq"] = pq
     row["f1_iou50"] = f1_iou50 if f1_iou50 is not None else pq
@@ -100,4 +105,6 @@ def test_patch_metric_aggregates_skip_non_finite_values() -> None:
         ),
     ]
     agg = compute_patch_metric_aggregates(rows)
-    assert agg[patch_aggregate_grainy_key("pred_gt_instance_ratio")] == pytest.approx(1.0)
+    assert agg[patch_aggregate_grainy_key("pred_gt_instance_ratio")] == pytest.approx(
+        1.0
+    )

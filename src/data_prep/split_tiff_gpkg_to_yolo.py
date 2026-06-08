@@ -234,7 +234,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--test",
         action="store_true",
         dest="test",
-        )
+    )
     return parser.parse_args(argv)
 
 

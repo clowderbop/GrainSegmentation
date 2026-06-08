@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import argparse
@@ -21,7 +20,6 @@ from common.merged_view_pq import (
     coerce_merged_view_pq_value,
 )
 from unet.extraction_tune_scoring import (
-    WatershedParamSet,
     format_merged_view_pq_audit_line,
     format_watershed_param_set,
     format_watershed_ridge_level,
@@ -95,16 +93,16 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-csv",
         required=True,
-        )
+    )
     parser.add_argument(
         "--output-json",
         default=None,
-        )
+    )
     parser.add_argument(
         "--max-samples",
         type=int,
         default=None,
-        )
+    )
     parser.add_argument(
         "--log-extraction-cache",
         action="store_true",
@@ -146,11 +144,11 @@ def _validate_tune_args(
     args: argparse.Namespace, parser: argparse.ArgumentParser | None = None
 ) -> None:
     if args.num_inputs is not None and args.num_inputs not in {1, 2, 7}:
-        raise_cli_argument_error(
-            "num_inputs must be one of: 1, 2, 7", parser=parser
-        )
+        raise_cli_argument_error("num_inputs must be one of: 1, 2, 7", parser=parser)
     if not Path(args.gt_gpkg).is_file():
-        raise_cli_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser)
+        raise_cli_argument_error(
+            f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser
+        )
     if args.max_samples is not None and args.max_samples <= 0:
         raise_cli_argument_error("max_samples must be positive", parser=parser)
     preds_dir = Path(args.preds_dir)
@@ -226,9 +224,7 @@ def _collect_samples(
         sample_ids.append(sid)
         true_instances.append(gt_map)
         pred_semantic.append(pred_arr)
-        _log(
-            f"  {sid}: {width}×{height}, GT={count_instances(gt_map)} instances"
-        )
+        _log(f"  {sid}: {width}×{height}, GT={count_instances(gt_map)} instances")
 
     return sample_ids, true_instances, pred_semantic
 
@@ -265,9 +261,7 @@ def _tune_combo_progress_label(
 ) -> str:
     if shard is None:
         return f"[{combo_idx}/{grid_size}]"
-    return (
-        f"shard {shard.index}/{shard_count}, combo {combo_idx}/{shard_size}"
-    )
+    return f"shard {shard.index}/{shard_count}, combo {combo_idx}/{shard_size}"
 
 
 def main() -> None:

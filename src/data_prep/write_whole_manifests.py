@@ -88,7 +88,10 @@ def main() -> int:
                 written.append(out_path)
 
     if args.dry_run:
-        print(f"Dry run: {len(variants) * len(splits)} manifest(s) validated.", file=sys.stderr)
+        print(
+            f"Dry run: {len(variants) * len(splits)} manifest(s) validated.",
+            file=sys.stderr,
+        )
     else:
         print(f"Wrote {len(written)} manifest(s) under {grainseg}", file=sys.stderr)
     return 0

@@ -15,7 +15,6 @@ from common.tests.profile_tune_fixtures import (
     FakeMask,
     FakeSahiPrediction,
     FakeScore,
-    disjoint_sahi_proposals,
     disjoint_tile_local_proposals,
 )
 from yolo.tests.profile_tune_fixtures import write_on_disk_v1_proposal_cache
@@ -29,7 +28,6 @@ from yolo.tiled_proposal_cache import (
     proposal_cache_record,
     recipe_whole_window_fingerprint,
     tiled_proposal_record_from_binary_mask,
-    tiled_proposal_record_from_tile_mask,
     tiled_proposal_records_from_tile_predictions,
     validate_tiled_proposal_cache,
     write_tiled_proposals,
@@ -219,7 +217,9 @@ def test_load_or_write_tiled_proposals_recomputes_on_fingerprint_mismatch(
     stale["conf"] = 0.99
     mask = np.zeros((16, 16), dtype=bool)
     mask[0:4, 0:4] = True
-    write_tiled_proposals(cache_dir, [tiled_proposal_record_from_binary_mask(mask, score=0.1)], stale)
+    write_tiled_proposals(
+        cache_dir, [tiled_proposal_record_from_binary_mask(mask, score=0.1)], stale
+    )
     mask2 = np.zeros((16, 16), dtype=bool)
     mask2[12:16, 12:16] = True
     updated = [tiled_proposal_record_from_binary_mask(mask2, score=0.5)]
@@ -268,7 +268,9 @@ def test_collect_tiled_detector_proposals_never_allocates_whole_section_plane() 
         yield 0, 0, slice_w, slice_h, [pred]
 
     with (
-        patch("yolo.sliced_detection.iter_whole_slice_predictions", side_effect=fake_iter),
+        patch(
+            "yolo.sliced_detection.iter_whole_slice_predictions", side_effect=fake_iter
+        ),
         patch("numpy.zeros", side_effect=guarded_zeros),
         patch("common.mask_ops.resize_mask_nearest", side_effect=tracked_resize),
     ):

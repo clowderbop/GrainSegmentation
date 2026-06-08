@@ -34,7 +34,9 @@ def _train_bundle_via_evaluate_instances(
 ) -> dict[str, float]:
     """Canonical path: materialize prediction set, then ``evaluate_instance_samples``."""
     from common.evaluate_instances import InstanceEvalSample, evaluate_instance_samples
-    from yolo.profile_tune_scoring import materialize_cross_tile_prediction_set_from_records
+    from yolo.profile_tune_scoring import (
+        materialize_cross_tile_prediction_set_from_records,
+    )
 
     materialize_cross_tile_prediction_set_from_records(
         records,
@@ -51,7 +53,9 @@ def _train_bundle_via_evaluate_instances(
     )
     gt = np.asarray(gt_instance_map)
 
-    def _fixed_gt(_sample: InstanceEvalSample, *, image_width: int, image_height: int) -> np.ndarray:
+    def _fixed_gt(
+        _sample: InstanceEvalSample, *, image_width: int, image_height: int
+    ) -> np.ndarray:
         if image_width != width or image_height != height:
             raise ValueError(
                 f"fixture GT size ({height}, {width}) != image ({image_height}, {image_width})"
@@ -59,7 +63,9 @@ def _train_bundle_via_evaluate_instances(
         return gt
 
     with (
-        patch("common.evaluate_instances.image_dimensions", return_value=(height, width)),
+        patch(
+            "common.evaluate_instances.image_dimensions", return_value=(height, width)
+        ),
         patch("common.evaluate_instances.load_gt_instance_map", side_effect=_fixed_gt),
     ):
         report = evaluate_instance_samples(
@@ -71,9 +77,7 @@ def _train_bundle_via_evaluate_instances(
     return extract_instance_metric_bundle_from_report(report)
 
 
-def _assert_bundles_equal(
-    fast: dict[str, float], canonical: dict[str, float]
-) -> None:
+def _assert_bundles_equal(fast: dict[str, float], canonical: dict[str, float]) -> None:
     for key in INSTANCE_METRIC_BUNDLE_KEYS:
         assert fast[key] == pytest.approx(canonical[key], rel=0.0, abs=1e-9), key
 
@@ -287,5 +291,3 @@ def _train_pq_via_evaluate_instances(
         prediction_set_path=prediction_set_path,
     )
     return float(bundle["pq"])
-
-

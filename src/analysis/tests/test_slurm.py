@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from analysis.slurm import (
     SLURM_JOB_RESOURCES,

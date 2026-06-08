@@ -40,13 +40,10 @@ def predict_full_image(
         )
         padded_inputs.append(pad_img)
 
-
-
     num_classes = model.output_shape[-1]
 
     prediction_map = np.zeros((padded_h, padded_w, num_classes), dtype=np.float32)
     weight_map = np.zeros((padded_h, padded_w, 1), dtype=np.float32)
-
 
     y_window = np.hanning(patch_size)
     x_window = np.hanning(patch_size)
@@ -102,12 +99,9 @@ def predict_full_image(
             while next_report_pct <= progress:
                 next_report_pct += 0.1
 
-
     prediction_map /= weight_map
 
-
     prediction_map = prediction_map[:h, :w, :]
-
 
     pred_classes = np.argmax(prediction_map, axis=-1)
 

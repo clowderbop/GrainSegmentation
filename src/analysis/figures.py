@@ -36,7 +36,6 @@ from analysis.reporting_labels import (
     MODEL_AXIS_LABEL,
     MODEL_DISPLAY_NAMES,
     MODEL_LEGEND_ORDER,
-    model_display_name,
 )
 from analysis.variant_order import thesis_ordered_display_names
 
@@ -99,8 +98,7 @@ def _require_plotting() -> None:
         import seaborn  # noqa: F401
     except ImportError as exc:
         raise ImportError(
-            "Plotting requires the analysis optional extra: "
-            "uv sync --group analysis"
+            "Plotting requires the analysis optional extra: uv sync --group analysis"
         ) from exc
 
 

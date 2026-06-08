@@ -133,29 +133,35 @@ def raster_to_gdf(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        )
-    parser.add_argument("-i", "--input", required=True, )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-o", "--output", required=True, )
+        "-i",
+        "--input",
+        required=True,
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+    )
     parser.add_argument(
         "--output-layer",
         default=None,
-        )
+    )
     parser.add_argument(
         "--class-value",
         type=int,
         default=1,
-        )
+    )
     parser.add_argument(
         "--min-area",
         type=int,
         default=0,
-        )
+    )
     parser.add_argument(
         "--no-flip-y",
         action="store_true",
-        )
+    )
     args = parser.parse_args()
 
     raster = _load_raster(args.input)

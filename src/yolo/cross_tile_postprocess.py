@@ -12,7 +12,11 @@ from pathlib import Path
 
 import numpy as np
 
-from yolo.phase_logging import PHASE_RASTERIZE_MERGED_VIEW, log_phase_done, log_phase_start
+from yolo.phase_logging import (
+    PHASE_RASTERIZE_MERGED_VIEW,
+    log_phase_done,
+    log_phase_start,
+)
 
 from common.prediction_set import (
     PredictionSet,

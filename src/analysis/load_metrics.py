@@ -195,7 +195,9 @@ def load_instance_metrics_json(
     return _bundle_metrics_from_mapping(aggregated, context=context)
 
 
-def patch_supporting_metrics(report: dict[str, Any], *, context: str = "") -> dict[str, float]:
+def patch_supporting_metrics(
+    report: dict[str, Any], *, context: str = ""
+) -> dict[str, float]:
     extras = report.get("extras")
     if not isinstance(extras, dict):
         return {}

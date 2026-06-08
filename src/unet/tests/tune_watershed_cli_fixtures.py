@@ -166,4 +166,3 @@ def speckle_prone_tune_collect_args(
         semantic=cached_semantic_pred_speckle_prone(height, width),
         metadata_only_manifest=True,
     )
-

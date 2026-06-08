@@ -10,13 +10,10 @@ import yaml
 
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from common.test_inference import (
-    YoloInferenceProfileCandidate,
-    load_test_inference_recipe,
     profile_tune_candidate_from_conf,
 )
 from yolo.inference_profile_tune import (
     grid_result_row_from_candidate_scoring,
-    grid_results_fieldnames,
     load_grid_results_csv,
     load_grid_winner,
     profile_selection_row_path,
@@ -76,5 +73,3 @@ def test_finalize_merges_rows_into_results_csv_and_winner(tmp_path: Path) -> Non
     ppl = payload["per_variant_pq_results"]["PPL"]
     assert tuple(ppl.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
     assert ppl["pq"] == pytest.approx(0.9)
-
-

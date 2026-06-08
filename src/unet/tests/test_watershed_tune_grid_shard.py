@@ -6,7 +6,10 @@ from pathlib import Path
 
 import yaml
 
-from unet.watershed_tune_grid import load_watershed_tune_grid, iter_watershed_tune_param_sets
+from unet.watershed_tune_grid import (
+    load_watershed_tune_grid,
+    iter_watershed_tune_param_sets,
+)
 from unet.watershed_tune_grid_shard import (
     WatershedTuneShard,
     iter_watershed_tune_param_sets_for_shard,
@@ -20,7 +23,9 @@ def _write_grid_config(path: Path, grid: dict[str, object]) -> None:
     path.write_text(yaml.safe_dump({"grid": grid}), encoding="utf-8")
 
 
-def test_watershed_tune_shard_count_equals_min_distance_times_boundary_dilate_iter() -> None:
+def test_watershed_tune_shard_count_equals_min_distance_times_boundary_dilate_iter() -> (
+    None
+):
     """INTENT: shard count equals the product of min_distance and boundary_dilate_iter axis lengths."""
     grid = load_watershed_tune_grid().grid
     assert watershed_tune_shard_count(grid) == len(grid.min_distance) * len(
@@ -54,9 +59,13 @@ def test_iter_watershed_tune_shards_yields_one_based_axis_aligned_descriptors() 
     shards = list(iter_watershed_tune_shards(grid))
     assert len(shards) == watershed_tune_shard_count(grid)
     assert shards[0] == WatershedTuneShard(
-        index=1, min_distance=grid.min_distance[0], boundary_dilate_iter=grid.boundary_dilate_iter[0]
+        index=1,
+        min_distance=grid.min_distance[0],
+        boundary_dilate_iter=grid.boundary_dilate_iter[0],
     )
-    assert all(shard.index == position for position, shard in enumerate(shards, start=1))
+    assert all(
+        shard.index == position for position, shard in enumerate(shards, start=1)
+    )
 
 
 def _shard_param_sets_union(grid):

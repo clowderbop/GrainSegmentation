@@ -113,7 +113,9 @@ def test_metrics_table_from_runs_accepts_serialized_empty_gt_false_positive(
 ) -> None:
     """INTENT: metrics_table_from_runs preserves infinity pred_gt ratio for empty-GT false positives."""
     metrics_path = tmp_path / "instance_metrics.json"
-    metrics_path.write_text(json.dumps(EMPTY_GT_FALSE_POSITIVE_REPORT), encoding="utf-8")
+    metrics_path.write_text(
+        json.dumps(EMPTY_GT_FALSE_POSITIVE_REPORT), encoding="utf-8"
+    )
     runs = [
         EvalRunRef(
             producer="yolo",
@@ -147,7 +149,9 @@ def test_load_rejects_finite_pred_gt_ratio_for_empty_gt_false_positive() -> None
 def test_load_rejects_pre_policy_aji_only_report() -> None:
     """INTENT: load rejects pre-policy AJI-only instance metric reports."""
     stale = {
-        "samples": [{"sample_id": "test", "aji": 0.2, "f1_iou50": 0.3, "empty_gt": False}],
+        "samples": [
+            {"sample_id": "test", "aji": 0.2, "f1_iou50": 0.3, "empty_gt": False}
+        ],
     }
     with pytest.raises(IncompleteInstanceMetricBundleError, match="pre-policy"):
         load_instance_metrics_json(stale)
@@ -176,7 +180,12 @@ def test_metrics_table_from_runs_rejects_stale_report(tmp_path: Path) -> None:
         json.dumps(
             {
                 "samples": [
-                    {"sample_id": "test", "aji": 0.1, "f1_iou50": 0.2, "empty_gt": False}
+                    {
+                        "sample_id": "test",
+                        "aji": 0.1,
+                        "f1_iou50": 0.2,
+                        "empty_gt": False,
+                    }
                 ]
             }
         ),

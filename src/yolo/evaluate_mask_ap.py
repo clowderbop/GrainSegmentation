@@ -60,7 +60,9 @@ def _resolve_manifest_pairs(
     args: argparse.Namespace,
 ) -> list[tuple[Path, Path, str, Path]]:
     prediction_set_dir = (
-        args.prediction_set_dir.resolve() if args.prediction_set_dir is not None else None
+        args.prediction_set_dir.resolve()
+        if args.prediction_set_dir is not None
+        else None
     )
     if args.manifest is not None:
         doc = load_dataset_manifest(args.manifest)
@@ -106,9 +108,7 @@ def _resolve_manifest_pairs(
 def run_evaluate_mask_ap(args: argparse.Namespace) -> dict[str, Any]:
     pairs = _resolve_manifest_pairs(args)
     n_samples = len(pairs)
-    print(
-        f"COCO mask AP evaluation: {n_samples} sample(s), variant={args.variant}"
-    )
+    print(f"COCO mask AP evaluation: {n_samples} sample(s), variant={args.variant}")
     sample_rows: list[dict[str, Any]] = []
 
     for image_id, (image_path, gpkg_path, sample_id, pred_path) in enumerate(

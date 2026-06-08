@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import numpy as np
 
 from common.instance_overlap import (
     GtOverlapPrep,
@@ -82,7 +81,9 @@ def test_instance_overlap_stats_empty_ground_truth_maps_have_pred_areas_only() -
     assert _pair_triples(stats) == []
 
 
-def test_instance_overlap_stats_duplicate_predictions_report_all_co_occurring_pairs() -> None:
+def test_instance_overlap_stats_duplicate_predictions_report_all_co_occurring_pairs() -> (
+    None
+):
     """INTENT: instance_overlap_stats records separate intersections for each overlapping prediction."""
     gt, pred = bundle_fixture_duplicate_preds()
     stats = instance_overlap_stats(gt, pred)
@@ -186,7 +187,9 @@ def test_instance_overlap_stats_with_gt_prep_matches_full_extraction() -> None:
     assert _pair_triples(cached_gt) == _pair_triples(full)
 
 
-def test_instance_overlap_stats_non_overlapping_instances_omit_zero_intersection_pairs() -> None:
+def test_instance_overlap_stats_non_overlapping_instances_omit_zero_intersection_pairs() -> (
+    None
+):
     """INTENT: instance_overlap_stats excludes zero-intersection gt-pred pairs from the sparse pair list."""
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)

@@ -8,7 +8,11 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-from common.manifest_io import DatasetManifest, ManifestSampleRow, write_dataset_manifest
+from common.manifest_io import (
+    DatasetManifest,
+    ManifestSampleRow,
+    write_dataset_manifest,
+)
 from common.prediction_set import load_prediction_set, prediction_set_path
 from common.run_provenance import RUN_PROVENANCE_FILENAME, load_run_provenance
 from unet.extract_instances import run_extract_instances

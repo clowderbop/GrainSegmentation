@@ -77,6 +77,6 @@ def test_patch_report_includes_full_bundle_aggregates(tmp_path) -> None:
         assert extras[patch_aggregate_weighted_key(key)] == pytest.approx(expected)
     assert extras[patch_aggregate_grainy_key("dq")] == pytest.approx(1.0)
     assert extras[patch_aggregate_grainy_key("mF1_iou50_95")] == pytest.approx(1.0)
-    assert extras[patch_aggregate_weighted_key("pred_gt_instance_ratio")] == pytest.approx(
-        1.0
-    )
+    assert extras[
+        patch_aggregate_weighted_key("pred_gt_instance_ratio")
+    ] == pytest.approx(1.0)

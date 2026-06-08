@@ -57,7 +57,9 @@ def _run_key(run: EvalRunRef) -> tuple[str, str, str]:
     return (run.producer, run.variant, run.unit)
 
 
-def _whole_section_metrics_path(grainseg_root: Path, producer: str, variant: str) -> Path:
+def _whole_section_metrics_path(
+    grainseg_root: Path, producer: str, variant: str
+) -> Path:
     if producer == "yolo":
         return yolo_whole_eval_dir(grainseg_root, variant) / "instance_metrics.json"
     return unet_whole_eval_dir(grainseg_root, variant) / "instance_metrics.json"

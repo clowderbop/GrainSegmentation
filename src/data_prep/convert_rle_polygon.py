@@ -18,10 +18,8 @@ def decode_rle(rle_dict: Dict[str, Any]) -> np.ndarray:
     h, w = rle_dict["size"]
     counts = rle_dict["counts"]
 
-
     if len(counts) >= 2 and counts[0] == 0 and counts[1] == 0:
         counts = counts[1:]
-
 
     mask = np.zeros(h * w, dtype=np.uint8)
     current_idx = 0
@@ -65,13 +63,11 @@ def mask_to_polygons(
 
     polygons = []
     for contour in contours:
-
         epsilon = 0.001 * cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, epsilon, True)
 
         if len(approx) < 3:
             continue
-
 
         points = []
         for point in approx:
@@ -80,7 +76,6 @@ def mask_to_polygons(
             gy = float(y + offset_y)
             gy = float(0 - gy)
             points.append([gx, gy])
-
 
         if points[0] != points[-1]:
             points.append(points[0])
@@ -126,9 +121,7 @@ def rle_to_geojson(
                 "type": "Feature",
                 "geometry": {
                     "type": "Polygon",
-                    "coordinates": [
-                        poly
-                    ],
+                    "coordinates": [poly],
                 },
                 "properties": {
                     "id": i,
@@ -175,9 +168,6 @@ def geojson_to_rle(
 ) -> List[Dict[str, Any]]:
     rle_list = []
 
-
-
-
     features = geojson_data.get("features", [])
     iterator = enumerate(features)
     if tqdm is not None:
@@ -195,10 +185,8 @@ def geojson_to_rle(
         mask = np.zeros((height, width), dtype=np.uint8)
 
         if geom_type == "Polygon":
-
             _draw_polygon(mask, coords, flip_y)
         elif geom_type == "MultiPolygon":
-
             for poly in coords:
                 if not poly:
                     continue
@@ -209,7 +197,6 @@ def geojson_to_rle(
         if not mask.any():
             continue
 
-
         rle = encode_rle(mask)
 
         ann = {"rle": rle, "tile_x": 0, "tile_y": 0, **feature.get("properties", {})}
@@ -219,19 +206,33 @@ def geojson_to_rle(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
-        "mode", choices=["rle2json", "json2rle"], )
-    parser.add_argument("-i", "--input", required=True, )
-    parser.add_argument("-o", "--output", required=True, )
+        "mode",
+        choices=["rle2json", "json2rle"],
+    )
     parser.add_argument(
-        "--height", type=int, )
-    parser.add_argument("--width", type=int, )
+        "-i",
+        "--input",
+        required=True,
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+    )
+    parser.add_argument(
+        "--width",
+        type=int,
+    )
     parser.add_argument(
         "--no-flip-y",
         action="store_true",
-        )
+    )
 
     args = parser.parse_args()
 

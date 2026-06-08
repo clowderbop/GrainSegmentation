@@ -60,9 +60,7 @@ def tiny_train_gt_map(height: int = 16, width: int = 16) -> np.ndarray:
     return gt
 
 
-def overlapping_sahi_proposals(
-    height: int, width: int
-) -> list[FakeSahiPrediction]:
+def overlapping_sahi_proposals(height: int, width: int) -> list[FakeSahiPrediction]:
     """Two overlapping proposals (score-merge path)."""
     masks = np.zeros((2, height, width), dtype=bool)
     masks[0, 4:12, 4:12] = True
@@ -83,7 +81,9 @@ def overlapping_sahi_proposals(
     ]
 
 
-def disjoint_tile_local_proposals(slice_h: int, slice_w: int) -> list[FakeSahiPrediction]:
+def disjoint_tile_local_proposals(
+    slice_h: int, slice_w: int
+) -> list[FakeSahiPrediction]:
     """Two non-overlapping tile-local masks (slice_h × slice_w, not whole-mosaic planes)."""
     masks = np.zeros((2, slice_h, slice_w), dtype=bool)
     masks[0, 2:8, 2:8] = True

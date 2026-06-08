@@ -30,7 +30,9 @@ from unet.watershed_tune_extraction_cache import (
 )
 
 
-def _multi_grain_semantic_with_boundaries(height: int = 64, width: int = 64) -> np.ndarray:
+def _multi_grain_semantic_with_boundaries(
+    height: int = 64, width: int = 64
+) -> np.ndarray:
     semantic = np.zeros((height, width), dtype=np.uint8)
     boxes = ((8, 8, 28, 28), (36, 36, 56, 56), (8, 36, 20, 56))
     for r0, c0, r1, c1 in boxes:
@@ -65,7 +67,6 @@ def test_cached_instance_map_matches_brute_force_for_single_param() -> None:
     """INTENT: tune-cache instance maps match brute-force extraction for one param set."""
     semantic = _multi_grain_semantic_with_boundaries()
     params = WatershedParamSet(5, 0, 1, 0, False, None)
-    grid = load_watershed_tune_grid().grid
     cache = build_watershed_tune_sample_caches([semantic])[0]
 
     expected = instance_map_for_watershed_params(semantic, params)
@@ -142,9 +143,9 @@ def test_cached_scoring_matches_brute_force_for_default_grid() -> None:
             )
         )
 
-    assert select_best_watershed_tune_row(reference_rows) == select_best_watershed_tune_row(
-        cached_rows
-    )
+    assert select_best_watershed_tune_row(
+        reference_rows
+    ) == select_best_watershed_tune_row(cached_rows)
 
 
 def test_tune_cache_runs_one_base_extraction_per_unique_key(
@@ -300,11 +301,12 @@ def test_default_grid_extraction_cache_log_miss_and_hit_counts(
     assert combo_count == 72
 
 
-def test_mean_train_pq_cached_logs_phase_timings(capsys: pytest.CaptureFixture[str]) -> None:
+def test_mean_train_pq_cached_logs_phase_timings(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """INTENT: cached mean PQ scoring logs watershed and metrics phase timings when enabled."""
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
-    grid = load_watershed_tune_grid().grid
     caches = build_watershed_tune_sample_caches([semantic])
     gt_preps = build_gt_overlap_preps([gt])
     params = WatershedParamSet(5, 0, 1, 0, False, None)

@@ -135,7 +135,6 @@ def decode_rle(rle_dict: Dict[str, Any]) -> np.ndarray:
     h, w = rle_dict["size"]
     counts = rle_dict["counts"]
 
-
     if len(counts) >= 2 and counts[0] == 0 and counts[1] == 0:
         counts = counts[1:]
 
@@ -556,7 +555,6 @@ def segment_image(
         except Exception as e:
             print(f"Warning: Could not determine image size for default tile_size: {e}")
 
-
     file_name = os.path.basename(image_path)
     file_name = os.path.splitext(file_name)[0]
     os.makedirs(output_dir, exist_ok=True)
@@ -583,7 +581,6 @@ def segment_image(
             raise ValueError("mask_generator is required when not loading cache.")
         masks = []
 
-
         current_overlap = tile_overlap
         if tile_overlap is None and tile_size is not None:
             current_overlap = int(tile_size * 0.25)
@@ -606,7 +603,6 @@ def segment_image(
                 miniters=1,
             )
         ):
-
             with torch.inference_mode():
                 masks = mask_generator.generate(tile["tile"])
 
@@ -626,13 +622,10 @@ def segment_image(
                         f"Filtered {before - len(masks)} masks by area", refresh=False
                     )
 
-
-
             pbar.set_description(f"Found {len(masks)} grains", refresh=False)
 
             if np.random.random() < visualize_probability:
                 visualize_masks(masks, tile, output_dir, file_name)
-
 
             masks = [mask_local_to_global(mask, tile) for mask in masks]
 
@@ -656,12 +649,8 @@ def segment_image(
         all_masks = merge_overlapping_masks(all_masks, merge_iom_thresh, verbose=True)
         print(f"Output {len(all_masks)} masks after overlap merge.")
 
-
     with open(os.path.join(output_dir, f"{file_name}.json"), "w") as f:
         json.dump(all_masks, f)
-
-
-
 
 
 def visualize_masks(
@@ -686,11 +675,9 @@ def mask_local_to_global(mask: dict, tile: dict) -> dict:
     mask["tile_x"] = tile["x"]
     mask["tile_y"] = tile["y"]
 
-
     if "bbox" in mask:
         mask["bbox"][0] += tile["x"]
         mask["bbox"][1] += tile["y"]
-
 
     if "point_coords" in mask:
         if isinstance(mask["point_coords"], (list, np.ndarray)):
@@ -698,7 +685,6 @@ def mask_local_to_global(mask: dict, tile: dict) -> dict:
             pcs[:, 0] += tile["x"]
             pcs[:, 1] += tile["y"]
             mask["point_coords"] = pcs.tolist()
-
 
     if "crop_box" in mask:
         mask["crop_box"][0] += tile["x"]
@@ -741,89 +727,88 @@ def download_checkpoint(url: str, output_path: str) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "-i",
         "--input",
         required=True,
-        )
+    )
     parser.add_argument(
         "-o",
         "--output",
         default="results",
-        )
+    )
     parser.add_argument(
         "--checkpoint",
         default=DEFAULT_SAM2_CHECKPOINT,
-        )
+    )
     parser.add_argument(
         "--device",
         choices=["auto", "cpu", "cuda", "gpu", "mps"],
         default="auto",
-        )
+    )
     parser.add_argument(
         "--overlay-max-side",
         type=int,
         default=1200,
-        )
+    )
     parser.add_argument(
         "--tile-size",
         type=int,
         default=None,
-        )
+    )
     parser.add_argument(
         "--tile-overlap",
         type=int,
         default=None,
-        )
+    )
     parser.add_argument(
         "--visualize-probability",
         type=float,
         default=0.1,
-        )
+    )
     parser.add_argument(
         "--nms-thresh",
         type=float,
         default=0.5,
-        )
+    )
     parser.add_argument(
         "--no-nms",
         action="store_true",
-        )
+    )
     parser.add_argument(
         "--merge-overlap",
         action="store_true",
-        )
+    )
     parser.add_argument(
         "--merge-iom-thresh",
         "--merge-iou-thresh",
         dest="merge_iom_thresh",
         type=float,
         default=0.0,
-        )
+    )
     parser.add_argument(
         "--max-mask-coverage",
         type=float,
         default=None,
-        )
+    )
     parser.add_argument(
         "--max-mask-area",
         type=int,
         default=None,
-        )
+    )
     parser.add_argument(
         "--save-mask-cache",
         action="store_true",
-        )
+    )
     parser.add_argument(
         "--load-mask-cache",
         action="store_true",
-        )
+    )
     parser.add_argument(
         "--mask-cache-dir",
         default=None,
-        )
+    )
     args = parser.parse_args()
 
     if args.checkpoint == DEFAULT_SAM2_CHECKPOINT and not os.path.exists(

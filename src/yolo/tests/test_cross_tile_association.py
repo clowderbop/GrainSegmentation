@@ -75,4 +75,3 @@ def test_over_merge_guard_keeps_near_boundary_distinct_grains() -> None:
     result = associate_tiled_proposals(proposals, height=height, width=width)
     assert_yolo_grains_non_overlapping(result)
     assert _foreground_mask_count(result) == 2
-

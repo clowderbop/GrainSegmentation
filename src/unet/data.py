@@ -32,10 +32,8 @@ def _tf_augment(
         seed_ud < 0.5, lambda: tf.image.flip_up_down(concat), lambda: concat
     )
 
-
     k = tf.random.uniform(shape=[], minval=0, maxval=4, dtype=tf.int32)
     concat = tf.image.rot90(concat, k=k)
-
 
     split_sizes = [3] * num_inputs + [3]
     splits = tf.split(concat, split_sizes, axis=-1)
@@ -43,12 +41,10 @@ def _tf_augment(
     aug_inputs = list(splits[:-1])
     aug_label = splits[-1]
 
-
     final_inputs = []
     for img in aug_inputs:
         img = tf.image.random_brightness(img, max_delta=0.2)
         img = tf.image.random_contrast(img, lower=0.8, upper=1.2)
-
 
         img = tf.where(img < 0.0, tf.zeros_like(img), img)
         img = tf.where(img > 1.0, tf.ones_like(img), img)

@@ -213,7 +213,9 @@ def ppl_baseline_gain_table(df: pd.DataFrame) -> pd.DataFrame:
             continue
         baseline_pq = float(baseline_rows.iloc[0]["pq"])
         model = model_display_name(producer)
-        for _, row in producer_rows.sort_values("display_name", kind="mergesort").iterrows():
+        for _, row in producer_rows.sort_values(
+            "display_name", kind="mergesort"
+        ).iterrows():
             pq = float(row["pq"])
             rows.append(
                 {

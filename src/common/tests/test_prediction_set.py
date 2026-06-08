@@ -11,7 +11,6 @@ import torch
 
 from common.instance_maps import yolo_detections_to_instance_map_by_score
 from common.prediction_set import (
-    PredictionSet,
     assert_yolo_grains_non_overlapping,
     binary_mask_to_segmentation,
     build_yolo_prediction_set_from_ultralytics,
@@ -107,7 +106,9 @@ def test_yolo_detection_mask_in_section_fast_path_skips_section_plane() -> None:
         "score": 0.5,
         "category_id": 0,
     }
-    with patch("numpy.zeros", side_effect=AssertionError("must not allocate section plane")):
+    with patch(
+        "numpy.zeros", side_effect=AssertionError("must not allocate section plane")
+    ):
         placed = yolo_detection_mask_in_section(det, height=height, width=width)
 
     np.testing.assert_array_equal(placed, mask)
@@ -239,7 +240,9 @@ def test_yolo_merged_instance_view_decodes_one_mask_at_a_time() -> None:
             live_decodes -= 1
 
     with patch("common.prediction_set.segmentation_to_binary_mask", counting_decode):
-        with patch("numpy.stack", side_effect=AssertionError("must not stack all masks")):
+        with patch(
+            "numpy.stack", side_effect=AssertionError("must not stack all masks")
+        ):
             canonical = merge_yolo_proposals_by_score(prediction_set)
             merged = prediction_set_to_merged_instance_view(canonical)
 
@@ -303,10 +306,14 @@ def test_merge_yolo_proposals_collapses_overlapping_proposals_to_one_grain() -> 
     assert len(canonical.detections) == 1
     assert canonical.detections[0]["score"] == pytest.approx(0.9)
     assert_yolo_grains_non_overlapping(canonical)
-    assert_yolo_canonical_sets_equal(canonical, merge_yolo_proposals_by_score(proposals))
+    assert_yolo_canonical_sets_equal(
+        canonical, merge_yolo_proposals_by_score(proposals)
+    )
 
 
-def test_merge_yolo_proposals_save_load_preserves_canonical_rles(tmp_path: Path) -> None:
+def test_merge_yolo_proposals_save_load_preserves_canonical_rles(
+    tmp_path: Path,
+) -> None:
     """INTENT: save_prediction_set and load_prediction_set preserve score-merged canonical YOLO RLEs."""
     masks = np.zeros((2, 8, 8), dtype=np.float32)
     masks[0, 2:6, 2:6] = 1.0

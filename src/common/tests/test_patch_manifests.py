@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
 from common.manifest_io import load_dataset_manifest
 from common.patch_manifests import (
@@ -48,8 +47,14 @@ def test_build_yolo_patch_manifest_train(tmp_path: Path) -> None:
     assert manifest.path_base == "grainseg_root"
     assert len(manifest.samples) == 2
     row = manifest.samples[0]
-    assert row.image == "dataset/train/patches/PPL/images/train/region_0001_y00000_x00000.tif"
-    assert row.gt_txt == "dataset/train/patches/PPL/labels/train/region_0001_y00000_x00000.txt"
+    assert (
+        row.image
+        == "dataset/train/patches/PPL/images/train/region_0001_y00000_x00000.tif"
+    )
+    assert (
+        row.gt_txt
+        == "dataset/train/patches/PPL/labels/train/region_0001_y00000_x00000.txt"
+    )
     assert row.gt_gpkg == "dataset/train/train_labels.gpkg"
     assert row.gt_origin == "patch_stem"
 
@@ -86,8 +91,14 @@ def test_build_unet_patch_manifest_single_input(tmp_path: Path) -> None:
         unet_root_rel="dataset/test/unet_from_yolo/PPL",
     )
     row = unet.samples[0]
-    assert row.image == "dataset/test/unet_from_yolo/PPL/images/region_0001_y00000_x00000_PPL.tif"
-    assert row.mask == "dataset/test/unet_from_yolo/PPL/masks/region_0001_y00000_x00000_labels.tif"
+    assert (
+        row.image
+        == "dataset/test/unet_from_yolo/PPL/images/region_0001_y00000_x00000_PPL.tif"
+    )
+    assert (
+        row.mask
+        == "dataset/test/unet_from_yolo/PPL/masks/region_0001_y00000_x00000_labels.tif"
+    )
     assert row.gt_origin == "patch_stem"
 
 

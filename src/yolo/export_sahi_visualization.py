@@ -7,7 +7,11 @@ from pathlib import Path
 
 import numpy as np
 
-from common.manifest_io import collect_manifest_image_paths, load_dataset_manifest, resolve_row_path
+from common.manifest_io import (
+    collect_manifest_image_paths,
+    load_dataset_manifest,
+    resolve_row_path,
+)
 from common.prediction_set import (
     PredictionSet,
     load_prediction_set,

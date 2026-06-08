@@ -11,7 +11,6 @@ import pytest
 
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS, merged_view_pq_column_name
 from common.test_inference import (
-    YoloInferenceProfileCandidate,
     profile_tune_candidate_from_conf,
 )
 from yolo.inference_profile_tune import (
@@ -83,7 +82,9 @@ def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> No
             resume=False,
         )
 
-    assert row_path == profile_selection_row_path(output_dir / "grid", candidate.candidate_id())
+    assert row_path == profile_selection_row_path(
+        output_dir / "grid", candidate.candidate_id()
+    )
     row = load_profile_selection_row(row_path)
     assert row["mean_pq"] == pytest.approx(0.7)
     assert row[merged_view_pq_column_name("pq", "PPL")] == pytest.approx(0.9)
@@ -97,7 +98,10 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
     output_dir = tmp_path / "run"
     grid_dir = output_dir / "grid"
     row_path = profile_selection_row_path(grid_dir, candidate.candidate_id())
-    fingerprint = {"candidate_id": candidate.candidate_id(), "tune_grid_fingerprint": "abc"}
+    fingerprint = {
+        "candidate_id": candidate.candidate_id(),
+        "tune_grid_fingerprint": "abc",
+    }
     row_path.parent.mkdir(parents=True)
     row_path.write_text(
         json.dumps(

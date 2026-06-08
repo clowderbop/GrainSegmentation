@@ -116,10 +116,7 @@ def test_stage_candidate_work_copies_only_candidate_proposal_subtrees(
 
     wanted = proposal_cache_dir(Path("PPL"), conf=candidate.conf)
     assert (work_root / wanted / "proposals.pkl").is_file()
-    assert not (
-        work_root
-        / proposal_cache_dir(Path("PPL"), conf=other.conf)
-    ).exists()
+    assert not (work_root / proposal_cache_dir(Path("PPL"), conf=other.conf)).exists()
     blend_wanted = proposal_cache_dir(Path("PPLPPXblend"), conf=candidate.conf)
     assert (work_root / blend_wanted / "proposals.pkl").is_file()
 
@@ -218,4 +215,3 @@ def test_stage_detector_train_image_copies_only_train_mosaic(tmp_path: Path) -> 
     assert staged.image_path.read_bytes() == b"stacked-tiff-bytes"
     assert staged.copy_s >= 0.0
     assert not (tmp_path / "staged").exists()
-

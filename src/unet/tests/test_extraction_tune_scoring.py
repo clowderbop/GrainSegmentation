@@ -10,7 +10,10 @@ import pytest
 
 from common.evaluate_instances import evaluate_instance_samples
 from common.instance_eval_report import instance_metrics_report_path_for_variant
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS, compute_instance_metric_bundle
+from common.instance_metric_bundle import (
+    INSTANCE_METRIC_BUNDLE_KEYS,
+    compute_instance_metric_bundle,
+)
 from common.tests.dense_iou_reference import dense_compute_aji
 from common.tests.evaluate_instances_fixtures import perfect_match_eval_sample
 from unet.extraction_method_selection import (
@@ -113,7 +116,9 @@ def test_mean_train_pq_for_watershed_params_calls_watershed_once_per_sample(
     watershed_calls = 0
     real_map = scoring.instance_map_for_watershed_params
 
-    def counting_map(pred_semantic: np.ndarray, params: WatershedParamSet) -> np.ndarray:
+    def counting_map(
+        pred_semantic: np.ndarray, params: WatershedParamSet
+    ) -> np.ndarray:
         nonlocal watershed_calls
         watershed_calls += 1
         return real_map(pred_semantic, params)
@@ -190,7 +195,9 @@ def test_synthetic_extraction_maps_pq_and_aji_winners_differ() -> None:
     aji_winner_bundle = compute_instance_metric_bundle(gt, pred_aji_winner)
 
     assert pq_winner_bundle["pq"] > aji_winner_bundle["pq"]
-    assert dense_compute_aji(gt, pred_aji_winner) > dense_compute_aji(gt, pred_pq_winner)
+    assert dense_compute_aji(gt, pred_aji_winner) > dense_compute_aji(
+        gt, pred_pq_winner
+    )
 
 
 def test_select_train_extraction_method_uses_pq_not_aji() -> None:
@@ -214,7 +221,9 @@ def test_select_train_extraction_method_uses_pq_not_aji() -> None:
     assert selection.watershed.bundle["aji_plus"] > selection.cc.bundle["aji_plus"]
 
 
-def _notched_two_grain_semantic(height: int = 64, width: int = 64) -> tuple[np.ndarray, np.ndarray]:
+def _notched_two_grain_semantic(
+    height: int = 64, width: int = 64
+) -> tuple[np.ndarray, np.ndarray]:
     gt = _two_grain_gt(height, width)
     semantic = np.zeros((height, width), dtype=np.uint8)
     semantic[8:28, 8:28] = 1
@@ -345,9 +354,9 @@ def test_select_train_extraction_method_from_eval_dirs(tmp_path: Path) -> None:
         variant_names=("PPL", "PPLPPXblend"),
     )
     assert selection.cc.per_variant_bundles["PPL"]["pq"] == pytest.approx(1.0)
-    assert selection.watershed.per_variant_bundles["PPLPPXblend"]["pq"] == pytest.approx(
-        1.0
-    )
+    assert selection.watershed.per_variant_bundles["PPLPPXblend"][
+        "pq"
+    ] == pytest.approx(1.0)
     assert selection.selected_method in {"cc", "watershed"}
 
 
@@ -408,4 +417,3 @@ def test_watershed_tune_row_includes_merged_view_pq_fields_only() -> None:
     assert "aji__train" not in row
     for bundle_key in ("iou75_precision", "aji_plus", "mean_precision"):
         assert f"mean_{bundle_key}" not in row
-

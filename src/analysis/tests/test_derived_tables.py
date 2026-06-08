@@ -25,7 +25,6 @@ from analysis.derived_tables import (
 )
 from analysis.tests.test_load_metrics import PQ_SAMPLE_ROW
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
-from common.variants import variant_display_names_in_thesis_order
 
 
 def _metric_bundle(**overrides: float) -> dict[str, float]:
@@ -94,7 +93,9 @@ def test_headline_ranking_table_ranks_by_whole_section_pq_descending() -> None:
         WHOLE_SECTION_PQ_COL,
     ]
     assert table["Rank"].tolist() == [1, 2, 3, 4]
-    assert table[WHOLE_SECTION_PQ_COL].tolist() == pytest.approx([0.50, 0.45, 0.40, 0.30])
+    assert table[WHOLE_SECTION_PQ_COL].tolist() == pytest.approx(
+        [0.50, 0.45, 0.40, 0.30]
+    )
     assert table.iloc[0][MODEL_COL] == "YOLO"
     assert table.iloc[0][INPUT_CONFIGURATION_COL] == "FullStack"
 
@@ -122,7 +123,9 @@ def test_thesis_ready_results_table_has_thesis_columns_and_order() -> None:
     assert "Mean recall @ IoU 0.50:0.95" in table.columns
     assert "Mean F1 @ IoU 0.50:0.95" in table.columns
     assert "AJI+" in table.columns
-    assert not any("map" in col.lower() or col.lower().startswith("ap") for col in table.columns)
+    assert not any(
+        "map" in col.lower() or col.lower().startswith("ap") for col in table.columns
+    )
 
     yolo_rows = table[table[MODEL_COL] == "YOLO"]
     assert yolo_rows[INPUT_CONFIGURATION_COL].tolist() == ["PPL", "FullStack"]
@@ -258,7 +261,9 @@ def test_yolo_unet_paired_input_configurations_requires_shared_finite_pq() -> No
         "FullStack",
     ]
     assert yolo_unet_paired_input_configurations(_mosaic_producer_instance_df()) == []
-    assert not can_compare_yolo_and_unet_on_shared_inputs(_mosaic_producer_instance_df())
+    assert not can_compare_yolo_and_unet_on_shared_inputs(
+        _mosaic_producer_instance_df()
+    )
 
 
 def test_per_variant_winner_omits_unpaired_input_configurations() -> None:

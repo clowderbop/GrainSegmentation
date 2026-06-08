@@ -7,7 +7,10 @@ from unittest.mock import patch
 import numpy as np
 
 import yolo.cross_tile_association as cta
-from common.prediction_set import assert_yolo_grains_non_overlapping, segmentation_to_binary_mask
+from common.prediction_set import (
+    assert_yolo_grains_non_overlapping,
+    segmentation_to_binary_mask,
+)
 from yolo.cross_tile_association import associate_tiled_proposals, mask_ios_crop_local
 from yolo.tests.cross_tile_association_fixtures import slice_boundary_duplicate_pair
 from yolo.tests.test_cross_tile_association import _foreground_mask_count

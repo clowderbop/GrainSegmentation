@@ -67,7 +67,9 @@ def test_profile_tune_candidate_from_conf_uses_recipe_mask_threshold() -> None:
     }
 
 
-def test_emit_shell_exports_yolo_inference_profile(capsys: pytest.CaptureFixture[str]) -> None:
+def test_emit_shell_exports_yolo_inference_profile(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """INTENT: emit_shell_exports prints export statements for YOLO inference profile environment variables."""
     from common.test_inference import (
         TestInferenceRecipe,

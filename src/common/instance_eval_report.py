@@ -45,7 +45,8 @@ def extract_instance_metric_bundle_from_report(
     report: dict[str, Any],
 ) -> dict[str, float]:
     return {
-        key: extract_metric_from_report(report, key) for key in INSTANCE_METRIC_BUNDLE_KEYS
+        key: extract_metric_from_report(report, key)
+        for key in INSTANCE_METRIC_BUNDLE_KEYS
     }
 
 
@@ -89,7 +90,9 @@ def load_instance_eval_report(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def load_train_whole_section_bundle(path: Path, *, model_type: str = "unet") -> dict[str, float]:
+def load_train_whole_section_bundle(
+    path: Path, *, model_type: str = "unet"
+) -> dict[str, float]:
     report = load_instance_eval_report(path)
     validate_train_whole_section_report(report, model_type=model_type)
     return extract_instance_metric_bundle_from_report(report)
@@ -130,5 +133,7 @@ def load_train_whole_section_bundles_from_eval_dir(
             raise FileNotFoundError(
                 f"missing train whole-section instance metrics for {variant}: {path}"
             )
-        per_variant[variant] = load_train_whole_section_bundle(path, model_type=model_type)
+        per_variant[variant] = load_train_whole_section_bundle(
+            path, model_type=model_type
+        )
     return per_variant

@@ -165,9 +165,7 @@ def merged_view_pq_for_sample(
     if timings is not None:
         log_scoring_phase_start("metrics", prefix=log_prefix)
     t0 = time.perf_counter()
-    result = compute_merged_view_pq(
-        true_instances, pred_instances, gt_prep=gt_prep
-    )
+    result = compute_merged_view_pq(true_instances, pred_instances, gt_prep=gt_prep)
     if timings is not None:
         timings.metrics_s = time.perf_counter() - t0
         log_scoring_phase_timing("metrics", timings.metrics_s)
@@ -184,11 +182,7 @@ def watershed_tune_sample_prefix(
     if not log or sample_ids is None:
         return ""
     sid = sample_ids[idx]
-    return (
-        f"[{idx + 1}/{n_samples}] {sid}: "
-        if n_samples > 1
-        else f"{sid}: "
-    )
+    return f"[{idx + 1}/{n_samples}] {sid}: " if n_samples > 1 else f"{sid}: "
 
 
 def mean_train_pq_for_watershed_params(
@@ -205,9 +199,8 @@ def mean_train_pq_for_watershed_params(
         raise ValueError(
             "pred_semantic_per_sample is required when get_pred_instances is not set"
         )
-    if (
-        pred_semantic_per_sample is not None
-        and len(true_instances_per_sample) != len(pred_semantic_per_sample)
+    if pred_semantic_per_sample is not None and len(true_instances_per_sample) != len(
+        pred_semantic_per_sample
     ):
         raise ValueError("true and pred lists must have the same length")
     if sample_ids is not None and len(sample_ids) != len(true_instances_per_sample):
@@ -238,9 +231,7 @@ def mean_train_pq_for_watershed_params(
             if timings is not None:
                 timings.watershed_s = time.perf_counter() - t0
                 log_scoring_phase_timing("watershed", timings.watershed_s)
-        sample_gt_prep = (
-            gt_overlap_preps[idx] if gt_overlap_preps is not None else None
-        )
+        sample_gt_prep = gt_overlap_preps[idx] if gt_overlap_preps is not None else None
         result = dict(
             merged_view_pq_for_sample(
                 true_instances,
@@ -274,7 +265,9 @@ def watershed_per_sample_columns(
     for sid, sample_result in zip(sample_ids, per_sample, strict=True):
         safe_sid = sanitize_sample_id(sid)
         for key in MERGED_VIEW_PQ_RESULT_KEYS:
-            out[f"{key}__{safe_sid}"] = format_merged_view_pq_value(key, sample_result[key])
+            out[f"{key}__{safe_sid}"] = format_merged_view_pq_value(
+                key, sample_result[key]
+            )
     return out
 
 

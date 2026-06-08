@@ -33,13 +33,19 @@ def prediction_set_filename(sample_id: str) -> str:
 
 
 def prediction_set_path(output_root: Path | str, sample_id: str) -> Path:
-    return Path(output_root) / PREDICTION_SETS_SUBDIR / prediction_set_filename(sample_id)
+    return (
+        Path(output_root) / PREDICTION_SETS_SUBDIR / prediction_set_filename(sample_id)
+    )
 
 
-def binary_mask_to_segmentation(mask: np.ndarray, *, height: int, width: int) -> dict[str, Any]:
+def binary_mask_to_segmentation(
+    mask: np.ndarray, *, height: int, width: int
+) -> dict[str, Any]:
     binary = np.asarray(mask, dtype=bool)
     if binary.shape != (height, width):
-        binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(bool)
+        binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(
+            bool
+        )
     if not binary.any():
         return {"size": [int(height), int(width)], "counts": "0"}
     rle = mask_utils.encode(np.asfortranarray(binary.astype(np.uint8)))
@@ -91,12 +97,16 @@ def _append_yolo_detection(
     width: int,
 ) -> None:
     if binary.shape != (height, width):
-        binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(bool)
+        binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(
+            bool
+        )
     if not binary.any():
         return
     detections.append(
         {
-            "segmentation": binary_mask_to_segmentation(binary, height=height, width=width),
+            "segmentation": binary_mask_to_segmentation(
+                binary, height=height, width=width
+            ),
             "score": float(score),
             "category_id": GRAIN_CLASS_ID,
         }
@@ -180,7 +190,9 @@ def prediction_set_to_dict(prediction_set: PredictionSet) -> dict[str, Any]:
     }
 
 
-def save_prediction_set(path: Path | str, payload: dict[str, Any] | PredictionSet) -> None:
+def save_prediction_set(
+    path: Path | str, payload: dict[str, Any] | PredictionSet
+) -> None:
     if isinstance(payload, PredictionSet):
         data = prediction_set_to_dict(payload)
     else:
@@ -368,9 +380,7 @@ def yolo_prediction_set_to_coco_dt(
         )
     detections: list[dict[str, object]] = []
     for det in prediction_set.detections:
-        binary = yolo_detection_mask_in_section(
-            det, height=height, width=width
-        )
+        binary = yolo_detection_mask_in_section(det, height=height, width=width)
         if not binary.any():
             continue
         ys, xs = np.where(binary)

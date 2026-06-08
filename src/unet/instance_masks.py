@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
-from scipy.ndimage import binary_dilation, distance_transform_edt, generate_binary_structure
+from scipy.ndimage import (
+    binary_dilation,
+    distance_transform_edt,
+    generate_binary_structure,
+)
 
 from common.labeled_components import drop_small_components
 from common.semantic_instance import (
@@ -42,7 +46,9 @@ def _binary_structure(ndim: int, connectivity: WatershedConnectivity) -> np.ndar
     return generate_binary_structure(ndim, connectivity)
 
 
-def _compute_auto_ridge_level(distance_transform: np.ndarray, interior: np.ndarray) -> float:
+def _compute_auto_ridge_level(
+    distance_transform: np.ndarray, interior: np.ndarray
+) -> float:
     if not np.any(interior):
         return 0.0
     dt = distance_transform

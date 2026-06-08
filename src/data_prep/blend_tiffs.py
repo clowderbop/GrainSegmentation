@@ -19,9 +19,7 @@ def get_max_value(dtype):
 def process_chunk(base_chunk, other_chunks, dtype):
     max_val = get_max_value(dtype)
 
-
     blended = 1.0 - (base_chunk.astype(np.float32) / max_val)
-
 
     for chunk in other_chunks:
         normalized_chunk = chunk.astype(np.float32) / max_val
@@ -29,9 +27,7 @@ def process_chunk(base_chunk, other_chunks, dtype):
 
     blended = 1.0 - blended
 
-
     if np.issubdtype(dtype, np.integer):
-
         blended = np.clip(blended * max_val, 0, max_val).astype(dtype)
     else:
         blended = np.clip(blended, 0.0, 1.0).astype(dtype)
@@ -49,7 +45,6 @@ def blend_tiffs(
         print(f"Error: Input directory '{input_dir}' does not exist.")
         sys.exit(1)
 
-
     search_patterns = [
         os.path.join(input_dir, "*.tif"),
         os.path.join(input_dir, "*.tiff"),
@@ -58,10 +53,8 @@ def blend_tiffs(
     for pattern in search_patterns:
         tiff_files.extend(glob.glob(pattern))
 
-
     output_abs = os.path.abspath(output_file)
     tiff_files = [f for f in tiff_files if os.path.abspath(f) != output_abs]
-
 
     exclude_abs = [os.path.abspath(f) for f in exclude_files]
     tiff_files = [f for f in tiff_files if os.path.abspath(f) not in exclude_abs]
@@ -72,11 +65,9 @@ def blend_tiffs(
 
     tiff_files.sort()
 
-
     if base_file:
         if base_file not in tiff_files:
             if os.path.abspath(base_file) in [os.path.abspath(f) for f in tiff_files]:
-
                 base_idx = [os.path.abspath(f) for f in tiff_files].index(
                     os.path.abspath(base_file)
                 )
@@ -99,7 +90,6 @@ def blend_tiffs(
 
         sys.exit(0)
 
-
     try:
         with tifffile.TiffFile(base_file) as tif:
             base_page = tif.pages[0]
@@ -110,7 +100,6 @@ def blend_tiffs(
     except Exception as e:
         print(f"Error reading base file metadata: {e}")
         sys.exit(1)
-
 
     print("Validating input images...")
     for f in other_files:
@@ -133,13 +122,10 @@ def blend_tiffs(
 
     print("Validation successful.")
 
-
     base_mmap = tifffile.memmap(base_file, mode="r")
     other_mmaps = [tifffile.memmap(f, mode="r") for f in other_files]
 
-
     print(f"Creating output file: {output_file}")
-
 
     out_mmap = tifffile.memmap(
         output_file,
@@ -148,12 +134,10 @@ def blend_tiffs(
         photometric="rgb" if len(shape) == 3 and shape[-1] in (3, 4) else "minisblack",
     )
 
-
     if len(shape) == 2:
         height, width = shape
         channels = 1
     elif len(shape) == 3:
-
         height, width, channels = shape
     else:
         print(f"Error: Unsupported image shape {shape}. Expected 2D or 3D (HWC).")
@@ -171,14 +155,12 @@ def blend_tiffs(
             for x in x_steps:
                 x_end = min(x + chunk_size, width)
 
-
                 if len(shape) == 2:
                     b_chunk = base_mmap[y:y_end, x:x_end]
                     o_chunks = [m[y:y_end, x:x_end] for m in other_mmaps]
                 else:
                     b_chunk = base_mmap[y:y_end, x:x_end, :]
                     o_chunks = [m[y:y_end, x:x_end, :] for m in other_mmaps]
-
 
                 blended_chunk = process_chunk(b_chunk, o_chunks, dtype)
 
@@ -189,16 +171,18 @@ def blend_tiffs(
 
                 pbar.update(1)
 
-
     out_mmap.flush()
     print("Blending complete!")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        )
-    parser.add_argument("input_dir", )
-    parser.add_argument("output_file", )
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "input_dir",
+    )
+    parser.add_argument(
+        "output_file",
+    )
     parser.add_argument(
         "--base",
         default=None,
@@ -207,12 +191,12 @@ def main():
         "--chunk-size",
         type=int,
         default=2048,
-        )
+    )
     parser.add_argument(
         "--exclude",
         nargs="+",
         default=[],
-        )
+    )
 
     args = parser.parse_args()
 

@@ -108,7 +108,9 @@ def _export_min_area_px(args: argparse.Namespace) -> int:
     return args.min_area_px
 
 
-def _instances_from_semantic(semantic: np.ndarray, args: argparse.Namespace) -> np.ndarray:
+def _instances_from_semantic(
+    semantic: np.ndarray, args: argparse.Namespace
+) -> np.ndarray:
     if args.instance_method == "cc":
         return semantic_to_instance_label_map(semantic, min_area_px=args.min_area_px)
     prep = build_watershed_semantic_prep(semantic)

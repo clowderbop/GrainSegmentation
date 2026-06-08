@@ -89,7 +89,11 @@ def test_compute_merged_view_pq_matches_bundle(fixture_name: str) -> None:
     elif fixture_name == "split_merge":
         assert result["num_cooccurring_pairs"] == 2
         assert result["tp"] == 1
-        assert result["min_matched_iou"] == result["max_matched_iou"] == result["median_matched_iou"]
+        assert (
+            result["min_matched_iou"]
+            == result["max_matched_iou"]
+            == result["median_matched_iou"]
+        )
         assert result["min_matched_iou"] == pytest.approx(5 / 9)
         assert result["sq"] == pytest.approx(5 / 9)
 
@@ -150,13 +154,17 @@ def test_compute_merged_view_pq_avoids_dense_gt_by_pred_matrix_on_scale_fixture(
             "tune-path PQ must not build a dense GT-by-prediction IoU matrix"
         )
 
-    def forbid_dense_greedy_scan(*_args: object, **_kwargs: object) -> list[tuple[int, int]]:
+    def forbid_dense_greedy_scan(
+        *_args: object, **_kwargs: object
+    ) -> list[tuple[int, int]]:
         raise AssertionError(
             "tune-path PQ must not scan a dense GT-by-prediction IoU matrix"
         )
 
     monkeypatch.setattr(overlap_mod, "iou_matrix_from_overlap", forbid_dense_iou_matrix)
-    monkeypatch.setattr(metrics_mod, "greedy_one_to_one_matches", forbid_dense_greedy_scan)
+    monkeypatch.setattr(
+        metrics_mod, "greedy_one_to_one_matches", forbid_dense_greedy_scan
+    )
 
     result = compute_merged_view_pq(gt, pred)
 
@@ -265,10 +273,12 @@ def test_coerce_and_format_forensics_fields() -> None:
         assert coerce_merged_view_pq_value(key, 3.4) == 3
         assert format_merged_view_pq_value(key, 3) == "3"
 
-    assert coerce_merged_view_pq_value("avg_best_iou_unmatched_pred", "0.41") == pytest.approx(
-        0.41
+    assert coerce_merged_view_pq_value(
+        "avg_best_iou_unmatched_pred", "0.41"
+    ) == pytest.approx(0.41)
+    assert (
+        format_merged_view_pq_value("avg_best_iou_unmatched_pred", 0.41) == "0.41000000"
     )
-    assert format_merged_view_pq_value("avg_best_iou_unmatched_pred", 0.41) == "0.41000000"
 
 
 def test_flatten_and_parse_forensics_fields_roundtrip() -> None:

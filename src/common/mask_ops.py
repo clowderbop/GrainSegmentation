@@ -29,7 +29,10 @@ def resize_masks_hw(masks_hw: np.ndarray, height: int, width: int) -> np.ndarray
     if masks_hw.shape[0] == 0:
         return masks_hw.reshape(0, height, width)
     return np.stack(
-        [resize_mask_nearest(masks_hw[i], height, width) for i in range(masks_hw.shape[0])],
+        [
+            resize_mask_nearest(masks_hw[i], height, width)
+            for i in range(masks_hw.shape[0])
+        ],
         axis=0,
     )
 
@@ -63,7 +66,9 @@ def rasterize_coco_polygons_in_box(
         return np.zeros((0, 0), dtype=bool)
     if not segmentation:
         return np.zeros((box_h, box_w), dtype=bool)
-    polys = [segmentation] if isinstance(segmentation[0], (int, float)) else segmentation
+    polys = (
+        [segmentation] if isinstance(segmentation[0], (int, float)) else segmentation
+    )
     rings: list[np.ndarray] = []
     for poly in polys:
         if not poly:

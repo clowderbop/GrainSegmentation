@@ -79,8 +79,7 @@ MISSING_F1_STRICTNESS_SKIP_REASON = (
     "required whole-section F1@IoU0.50 and F1@IoU0.75 missing or non-finite"
 )
 PRECISION_RECALL_NOT_INFORMATIVE_SKIP_REASON = (
-    "precision and recall at IoU 0.75 are not sufficiently varied for a "
-    "diagnostic map"
+    "precision and recall at IoU 0.75 are not sufficiently varied for a diagnostic map"
 )
 MISSING_COUNT_RATIO_SKIP_REASON = (
     "no whole-section rows with a finite predicted/GT instance ratio"
@@ -92,6 +91,7 @@ PARETO_PLOT_NOT_INFORMATIVE_SKIP_REASON = (
     "whole-section PQ versus input image count is not sufficiently varied "
     "for a Pareto plot"
 )
+
 
 def _written_output_ids(
     derived_tables: list[str],
@@ -362,9 +362,7 @@ def build_reporting_bundle(
     audits.append("outlier_anomaly_report.csv")
 
     narrative_path = narratives_dir / "narrative_summary.md"
-    narrative_path.write_text(
-        narrative_summary_markdown(instance_df), encoding="utf-8"
-    )
+    narrative_path.write_text(narrative_summary_markdown(instance_df), encoding="utf-8")
     narratives = ["narrative_summary.md"]
 
     figure_names: list[str] = []

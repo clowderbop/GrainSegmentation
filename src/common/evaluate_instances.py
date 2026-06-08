@@ -132,7 +132,9 @@ def collect_manifest_samples(
 
         gt_origin_raw = row.gt_origin or "whole_image"
         if gt_origin_raw not in ("patch_stem", "whole_image"):
-            raise ValueError(f"Invalid gt_origin {gt_origin_raw!r} in manifest row {idx}")
+            raise ValueError(
+                f"Invalid gt_origin {gt_origin_raw!r} in manifest row {idx}"
+            )
         gt_origin = cast(GtOriginMode, gt_origin_raw)
 
         samples.append(
@@ -281,9 +283,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--instance-prediction-set", type=Path)
     parser.add_argument("--sample-id")
     parser.add_argument("--output-json", type=Path, required=True)
-    parser.add_argument(
-        "--unit", choices=("patch", "whole"), default="patch"
-    )
+    parser.add_argument("--unit", choices=("patch", "whole"), default="patch")
     parser.add_argument("--variant")
     parser.add_argument("--model-type", choices=("unet", "yolo"), required=True)
     return parser.parse_args()
@@ -309,9 +309,7 @@ def _resolve_eval_samples(args: argparse.Namespace) -> list[InstanceEvalSample]:
             gt_origin=default_gt_origin,
             sample_id=args.sample_id,
         )
-    raise ValueError(
-        "Provide --manifest or --image with --instance-prediction-set"
-    )
+    raise ValueError("Provide --manifest or --image with --instance-prediction-set")
 
 
 def main() -> None:
@@ -331,9 +329,7 @@ def main() -> None:
     )
     mean = report.get("mean")
     if mean is not None:
-        print(
-            f"mean: pq={mean['pq']:.4f} aji_plus={mean['aji_plus']:.4f}"
-        )
+        print(f"mean: pq={mean['pq']:.4f} aji_plus={mean['aji_plus']:.4f}")
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(
         json.dumps(json_safe_for_dump(report), indent=2, allow_nan=False),

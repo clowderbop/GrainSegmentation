@@ -35,9 +35,7 @@ def watershed_tune_grid_path(path: Path | None = None) -> Path:
     return path or (repo_root() / WATERSHED_TUNE_GRID_CONFIG_REL)
 
 
-def _require_ridge_level_list(
-    raw: object, *, context: str
-) -> tuple[float | None, ...]:
+def _require_ridge_level_list(raw: object, *, context: str) -> tuple[float | None, ...]:
     if not isinstance(raw, list) or not raw:
         raise ValueError(f"{context} must be a non-empty list")
     out: list[float | None] = []

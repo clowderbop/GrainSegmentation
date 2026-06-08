@@ -61,9 +61,7 @@ def _split_monolithic_rows_into_shard_csvs(
     for shard in iter_watershed_tune_shards(grid):
         shard_params = set(iter_watershed_tune_param_sets_for_shard(grid, shard))
         shard_rows = [
-            row
-            for row in rows
-            if watershed_param_set_from_csv_row(row) in shard_params
+            row for row in rows if watershed_param_set_from_csv_row(row) in shard_params
         ]
         shard_path = output_dir / f"watershed_grid_shard_{shard.index}.csv"
         _write_watershed_tune_csv(shard_path, shard_rows, sample_ids=sample_ids)
@@ -109,9 +107,9 @@ def test_merge_shard_csvs_matches_monolithic_best_selection(
         sanitize_sample_id=lambda sample_id: sample_id,
     )
 
-    assert watershed_param_set_from_csv_row(result.best_row) == watershed_param_set_from_csv_row(
-        monolithic_best
-    )
+    assert watershed_param_set_from_csv_row(
+        result.best_row
+    ) == watershed_param_set_from_csv_row(monolithic_best)
     assert float(result.best_row["mean_pq"]) == pytest.approx(
         float(monolithic_best["mean_pq"])
     )

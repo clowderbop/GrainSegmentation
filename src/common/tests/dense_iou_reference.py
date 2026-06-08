@@ -5,7 +5,10 @@ from __future__ import annotations
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS, InstanceMetricBundle
+from common.instance_metric_bundle import (
+    INSTANCE_METRIC_BUNDLE_KEYS,
+    InstanceMetricBundle,
+)
 from common.instance_overlap import instance_ids
 from common.instance_pq_core import (
     pq_from_match_counts,
@@ -50,9 +53,7 @@ def dense_build_instance_iou_matrix(
     return mat, true_ids, pred_ids
 
 
-def dense_compute_aji(
-    true_instances: np.ndarray, pred_instances: np.ndarray
-) -> float:
+def dense_compute_aji(true_instances: np.ndarray, pred_instances: np.ndarray) -> float:
     """Legacy AJI reference for PQ-vs-AJI selection regression tests."""
     true_id_list = instance_ids(true_instances)
     pred_id_list = instance_ids(pred_instances)

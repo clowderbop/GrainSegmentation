@@ -216,7 +216,10 @@ def write_detector_key_proposals(
         prepared, variant=variant, conf=conf, mask_threshold=mask_threshold
     )
     model = _ensure_detection_model(
-        prepared, conf=conf, mask_threshold=mask_threshold, detection_model=detection_model
+        prepared,
+        conf=conf,
+        mask_threshold=mask_threshold,
+        detection_model=detection_model,
     )
     window = prepared.window_kwargs
 

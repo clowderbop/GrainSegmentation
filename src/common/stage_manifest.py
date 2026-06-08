@@ -131,11 +131,7 @@ def _staged_image_paths(
     new_image: str | None = None
     new_images: tuple[str, ...] | None = None
     if row.image is not None:
-        new_image = (
-            Path(row.image).name
-            if flatten_images
-            else str(Path(row.image))
-        )
+        new_image = Path(row.image).name if flatten_images else str(Path(row.image))
     if row.images is not None:
         new_images = tuple(
             Path(rel).name if flatten_images else rel for rel in row.images
@@ -151,14 +147,16 @@ def stage_manifest_metadata(
     flatten_images: bool = True,
 ) -> DatasetManifest:
     """Rewrite manifest paths for ``work_root`` without copying raster assets."""
-    doc = manifest if isinstance(manifest, DatasetManifest) else load_dataset_manifest(manifest)
+    doc = (
+        manifest
+        if isinstance(manifest, DatasetManifest)
+        else load_dataset_manifest(manifest)
+    )
     work_root = Path(work_root).resolve()
     work_root.mkdir(parents=True, exist_ok=True)
 
     rows_to_stage = [
-        row
-        for row in doc.samples
-        if sample_ids is None or row.sample_id in sample_ids
+        row for row in doc.samples if sample_ids is None or row.sample_id in sample_ids
     ]
     n_rows = len(rows_to_stage)
     print(
@@ -220,7 +218,11 @@ def stage_manifest(
     flatten_images: bool = True,
 ) -> DatasetManifest:
     """Copy referenced files into ``work_root`` and return an updated manifest."""
-    doc = manifest if isinstance(manifest, DatasetManifest) else load_dataset_manifest(manifest)
+    doc = (
+        manifest
+        if isinstance(manifest, DatasetManifest)
+        else load_dataset_manifest(manifest)
+    )
     work_root = Path(work_root).resolve()
     work_root.mkdir(parents=True, exist_ok=True)
 
@@ -233,9 +235,7 @@ def stage_manifest(
     staged_rows: list[ManifestSampleRow] = []
     copied_relative: set[str] = set()
     rows_to_stage = [
-        row
-        for row in doc.samples
-        if sample_ids is None or row.sample_id in sample_ids
+        row for row in doc.samples if sample_ids is None or row.sample_id in sample_ids
     ]
 
     def _copy_relative_asset(rel: str, *, label: str) -> None:

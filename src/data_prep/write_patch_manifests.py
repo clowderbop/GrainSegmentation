@@ -13,6 +13,7 @@ patches and write ``dataset/test/unet_from_yolo/{variant}/manifest.json``.
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from common.patch_manifests import (
@@ -71,7 +72,9 @@ def _crop_unet_test_patches(
 
     spec = get_variant(variant)
     split = "test"
-    yolo_manifest = grainseg_root / "dataset" / split / "patches" / variant / "manifest.json"
+    yolo_manifest = (
+        grainseg_root / "dataset" / split / "patches" / variant / "manifest.json"
+    )
     if not yolo_manifest.is_file():
         raise FileNotFoundError(f"YOLO patch manifest not found: {yolo_manifest}")
 

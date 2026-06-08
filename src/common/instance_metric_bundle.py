@@ -159,9 +159,7 @@ def compute_instance_metric_bundle(
         matched_ious = [float(iou_matrix[i, j]) for i, j in matched]
         pq, dq, sq = pq_from_match_counts(tp, fp, fn, matched_ious)
         aji_plus = float(
-            compute_aji_plus(
-                true_instances, pred_instances, overlap_stats=overlap
-            )
+            compute_aji_plus(true_instances, pred_instances, overlap_stats=overlap)
         )
 
     bundle: InstanceMetricBundle = {

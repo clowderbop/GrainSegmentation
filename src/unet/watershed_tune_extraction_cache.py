@@ -59,7 +59,9 @@ def watershed_base_extraction_key_count(grid: WatershedTuneGrid) -> int:
     return len(iter_unique_watershed_base_extraction_keys(grid))
 
 
-def base_extraction_key_from_params(params: WatershedParamSet) -> WatershedBaseExtractionKey:
+def base_extraction_key_from_params(
+    params: WatershedParamSet,
+) -> WatershedBaseExtractionKey:
     return WatershedBaseExtractionKey(
         min_distance=params.min_distance,
         exclude_border=params.exclude_border,
@@ -140,7 +142,9 @@ def build_gt_overlap_preps(
     trivial, parity-tested, and avoids 71 redundant GT ``bincount`` passes per
     sample on a 72-combo grid with no semantic risk.
     """
-    return [gt_overlap_prep(true_instances) for true_instances in true_instances_per_sample]
+    return [
+        gt_overlap_prep(true_instances) for true_instances in true_instances_per_sample
+    ]
 
 
 def instance_map_from_tune_cache(
@@ -154,9 +158,7 @@ def instance_map_from_tune_cache(
     key = base_extraction_key_from_params(params)
     base, hit = cache.lookup_base_label_map(key)
     if log_extraction_cache:
-        log_extraction_cache_lookup(
-            hit=hit, sample_id=sample_id, prefix=log_prefix
-        )
+        log_extraction_cache_lookup(hit=hit, sample_id=sample_id, prefix=log_prefix)
     return watershed_area_filter(base, params.min_area_px)
 
 

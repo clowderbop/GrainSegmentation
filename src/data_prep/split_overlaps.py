@@ -45,7 +45,6 @@ def _centerline(poly: Polygon) -> Optional[LineString]:
     ):
         poly_simp = poly
 
-
     line = pygeoops.centerline(poly_simp, extend=True)
     if line is None or line.is_empty:
         return None
@@ -59,7 +58,6 @@ def _centerline(poly: Polygon) -> Optional[LineString]:
 def _smooth_centerline(line: LineString) -> LineString:
     if line.is_empty:
         return line
-
 
     smoothed = taubin_smooth(line, steps=int(CENTERLINE_SMOOTH_ITERS / 2))
     smoothed = chaikin_smooth(smoothed, CENTERLINE_SMOOTH_ITERS, keep_ends=True)
@@ -89,8 +87,6 @@ def _force_endpoints_to_geom(
     snapped_start = nearest_points(start, geom)[1]
     snapped_end = nearest_points(end, geom)[1]
 
-
-
     if (
         snapped_start.distance(snapped_end) <= HARD_SNAP_TOL
         and geom.geom_type == "MultiPoint"
@@ -108,7 +104,6 @@ def _force_endpoints_to_geom(
             target = start
             is_start = True
 
-
         vk_x = kept.x - target.x
         vk_y = kept.y - target.y
 
@@ -116,10 +111,8 @@ def _force_endpoints_to_geom(
         while True:
             candidate = nearest_points(target, remaining)[1]
 
-
             vc_x = candidate.x - target.x
             vc_y = candidate.y - target.y
-
 
             if (vk_x * vc_x + vk_y * vc_y) < 0:
                 snapped_point = candidate
@@ -189,13 +182,10 @@ def _split_by_centerline(
     if line is None:
         return [poly], None, None
 
-
-
     line = _force_endpoints_to_geom(line, boundary_intersection)
     line = _force_endpoints_to_geom(line, poly.boundary)
 
     line = line.segmentize(line.length / 16.0)
-
 
     line = _smooth_centerline(line)
     line = _force_endpoints_to_geom(line, poly.boundary)
@@ -212,7 +202,6 @@ def _split_by_centerline(
 def _assign_piece(pieces_list: List[Polygon], transect: LineString):
     intercepted_pieces = []
     for piece in pieces_list:
-
         boundary_intersection = piece.boundary.intersection(
             transect, grid_size=HARD_SNAP_TOL
         )
@@ -255,8 +244,6 @@ def _assign_halves(
     transect_a = []
     transect_b = []
 
-
-
     pieces_list_union = unary_union(pieces_list)
     clipped_centerline = centerline.intersection(pieces_list_union)
 
@@ -276,7 +263,6 @@ def _assign_halves(
             if geom is not None and not geom.is_empty and geom.geom_type == "LineString"
         )
 
-
     midpoints = [
         midpoint
         for midpoint in midpoints
@@ -285,9 +271,6 @@ def _assign_halves(
 
     if len(midpoints) == 0:
         return None
-
-
-
 
     for midpoint in midpoints:
         a = shortest_line(midpoint, exclusive_a.boundary)
@@ -304,7 +287,6 @@ def _assign_halves(
             )
             transect_b.append(b)
 
-
     pieces_a = []
     pieces_b = []
     for transect in transect_a:
@@ -316,8 +298,6 @@ def _assign_halves(
         if hit_pieces is not None:
             pieces_b.extend(hit_pieces)
 
-
-
     for piece in pieces_list:
         in_a = any(piece is p for p in pieces_a)
         in_b = any(piece is p for p in pieces_b)
@@ -327,8 +307,6 @@ def _assign_halves(
                 pieces_b.remove(piece)
             else:
                 pieces_a.remove(piece)
-
-
 
     a_union = unary_union(pieces_a)
     b_union = unary_union(pieces_b)
@@ -345,7 +323,6 @@ def _assign_halves(
                     pieces_b.append(piece)
                 else:
                     pieces_a.append(piece)
-
 
     if len(pieces_a) == 0 or len(pieces_b) == 0:
         print("All pieces are assigned to only one side!!")
@@ -387,7 +364,6 @@ def _split_overlap(
         print(f"Polygons {pair_i} and {pair_j} are invalid or empty, skipping")
         return poly_a, poly_b, False, [], [], [], [], []
 
-
     overlap = poly_a.intersection(poly_b)
     if overlap.is_empty:
         return poly_a, poly_b, False, [], [], [], [], []
@@ -401,7 +377,6 @@ def _split_overlap(
     small_overlap_only = min_area > 0.0 and all(
         part.area < min_area for part in overlap_parts
     )
-
 
     exclusive_a = pygeoops.make_valid(
         poly_a.difference(overlap), only_if_invalid=True, keep_collapsed=False
@@ -556,10 +531,8 @@ def _split_overlap(
 
     poly_a, poly_b = _apply_assignment(base_a, base_b, overlap_a, overlap_b)
 
-
     if poly_a.geom_type == "MultiPolygon" or poly_b.geom_type == "MultiPolygon":
         print(f"New polygons are multipolygons! pair_i: {pair_i}, pair_j: {pair_j}")
-
 
     if poly_a.overlaps(poly_b):
         intersection = poly_a.intersection(poly_b)
@@ -633,7 +606,6 @@ def _build_overlap_components(
     G = nx.Graph()
     G.add_nodes_from(range(len(geoms)))
 
-
     for i, geom in enumerate(geoms):
         if geom is None or geom.is_empty:
             continue
@@ -647,12 +619,10 @@ def _build_overlap_components(
             if prepared.intersects(other):
                 G.add_edge(i, j)
 
-
     components = []
     for comp in nx.connected_components(G):
         sorted_comp = sorted(list(comp))
         components.append(sorted_comp)
-
 
     components.sort(key=lambda c: c[0])
     return components
@@ -672,7 +642,6 @@ def _process_component(
     split_records: List[dict] = []
     midpoint_records: List[dict] = []
     transect_records: List[dict] = []
-
 
     for i_idx in range(len(component_indices)):
         i = component_indices[i_idx]
@@ -743,7 +712,6 @@ def _process_component(
             for tr in transects:
                 transect_records.append({"pair_i": i, "pair_j": j, "geometry": tr})
 
-
     updated_geoms = [local_geoms[idx] for idx in component_indices]
     return (
         updated_geoms,
@@ -804,7 +772,6 @@ def resolve_overlaps(
 
     geoms = set_precision(geoms, grid_size=HARD_SNAP_TOL, mode="valid_output").tolist()
 
-
     changed = 0
     centerline_records: List[dict] = []
     overlap_records: List[dict] = []
@@ -815,7 +782,6 @@ def resolve_overlaps(
     candidates = _build_candidates(geoms, sindex)
 
     components = _build_overlap_components(geoms, candidates)
-
 
     components = [comp for comp in components if len(comp) >= 2]
 
@@ -831,7 +797,6 @@ def resolve_overlaps(
         )
 
     if workers <= 1:
-
         components_iter = tqdm(components, desc="Resolving overlaps sequentially")
         for comp_indices in components_iter:
             local_geoms = {idx: geoms[idx] for idx in comp_indices}
@@ -860,11 +825,9 @@ def resolve_overlaps(
                     midpoint_records.extend(comp_midpoints)
                     transect_records.extend(comp_transects)
 
-
                 for idx, new_geom in zip(comp_indices, updated_geoms):
                     geoms[idx] = new_geom
     else:
-
         large_components = []
         small_components = []
 
@@ -873,7 +836,6 @@ def resolve_overlaps(
                 large_components.append(comp)
             else:
                 small_components.append(comp)
-
 
         if small_components:
             small_iter = tqdm(small_components, desc="Resolving small components")
@@ -907,7 +869,6 @@ def resolve_overlaps(
                     for idx, new_geom in zip(comp_indices, updated_geoms):
                         geoms[idx] = new_geom
 
-
         if large_components:
             print(
                 f"Processing {len(large_components)} large components with {workers} workers..."
@@ -915,7 +876,6 @@ def resolve_overlaps(
 
             worker_args = []
             for comp_indices in large_components:
-
                 local_geoms = {idx: geoms[idx] for idx in comp_indices}
                 comp_candidates = {
                     idx: [j for j in candidates[idx] if j in local_geoms]
@@ -938,7 +898,6 @@ def resolve_overlaps(
                     desc="Resolving large components",
                 ):
                     results.append((futures[future], future.result()))
-
 
             results.sort(key=lambda x: x[0])
 
@@ -977,37 +936,42 @@ def resolve_overlaps(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        )
-    parser.add_argument("--input", required=True, )
-    parser.add_argument("--output", required=True, )
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--input",
+        required=True,
+    )
+    parser.add_argument(
+        "--output",
+        required=True,
+    )
     parser.add_argument(
         "--layer",
         default=None,
-        )
+    )
     parser.add_argument(
         "--output-layer",
         default=None,
-        )
+    )
     parser.add_argument(
         "--debug-layers",
         action="store_true",
-        )
+    )
     parser.add_argument(
         "--min-area",
         type=float,
         default=0.0,
-        )
+    )
     parser.add_argument(
         "--workers",
         type=int,
         default=1,
-        )
+    )
     parser.add_argument(
         "--min-component-size",
         type=int,
         default=10,
-        )
+    )
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -1040,12 +1004,9 @@ def main() -> None:
     out_gdf = gdf.copy()
     out_gdf.geometry = geoms
 
-
     out_gdf = out_gdf[out_gdf.geometry.notnull() & ~out_gdf.geometry.is_empty]
 
-
     out_gdf = out_gdf.explode(index_parts=False, ignore_index=True)
-
 
     out_gdf = out_gdf[out_gdf.geometry.type == "Polygon"]
 

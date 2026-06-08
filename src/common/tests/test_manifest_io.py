@@ -222,7 +222,9 @@ def test_stage_manifest_metadata_preserves_gt_paths_without_copying(
     assert not (work / canonical_gt).is_file()
 
 
-def test_stage_manifest_metadata_matches_full_staging_path_metadata(tmp_path: Path) -> None:
+def test_stage_manifest_metadata_matches_full_staging_path_metadata(
+    tmp_path: Path,
+) -> None:
     """INTENT: stage_manifest_metadata and stage_manifest produce identical sample path metadata."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
@@ -273,7 +275,9 @@ def test_stage_manifest_integration_file_count(tmp_path: Path) -> None:
     assert all(path.is_file() for path in channel_files)
 
 
-def test_build_eval_manifest_materializes_staged_assets_for_eval(tmp_path: Path) -> None:
+def test_build_eval_manifest_materializes_staged_assets_for_eval(
+    tmp_path: Path,
+) -> None:
     """INTENT: build_eval_manifest resolves image and gt_gpkg paths under the run output directory."""
     grainseg = _synthetic_grainseg(tmp_path)
     spec = get_variant("PPL+PPXblend")
@@ -472,7 +476,10 @@ def test_build_eval_manifest_preserves_gt_txt(tmp_path: Path) -> None:
     row = eval_doc.samples[0]
     assert row.gt_txt is not None
     assert row.gt_origin == "patch_stem"
-    assert resolve_row_path(eval_doc, row.gt_txt) == (pred_root / "labels/patch001.txt").resolve()
+    assert (
+        resolve_row_path(eval_doc, row.gt_txt)
+        == (pred_root / "labels/patch001.txt").resolve()
+    )
 
 
 def test_collect_manifest_samples_multi_input_anchor(tmp_path: Path) -> None:

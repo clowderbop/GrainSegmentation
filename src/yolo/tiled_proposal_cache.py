@@ -16,7 +16,6 @@ import numpy as np
 from common.file_hash import file_sha256
 from common.prediction_set import (
     binary_mask_to_segmentation,
-    segmentation_to_binary_mask as crop_segmentation_to_binary_mask,
 )
 from common.test_inference import TestInferenceRecipe, sahi_overlap_ratio
 
@@ -340,8 +339,7 @@ def validate_tiled_proposal_records(
             raise ValueError(f"Proposal record {index} has negative offset")
         if offset_y + int(crop_h) > height or offset_x + int(crop_w) > width:
             raise ValueError(
-                f"Proposal record {index} crop exceeds cache extent "
-                f"{height}x{width}"
+                f"Proposal record {index} crop exceeds cache extent {height}x{width}"
             )
         validated.append(
             TiledProposalRecord(

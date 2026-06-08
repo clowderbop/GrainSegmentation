@@ -3,7 +3,6 @@ from scipy.optimize import linear_sum_assignment
 
 from common.instance_overlap import (
     OverlapStats,
-    instance_ids as _instance_ids,
     instance_overlap_stats,
     iou_from_intersection,
     iou_matrix_from_overlap,

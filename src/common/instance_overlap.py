@@ -113,9 +113,7 @@ def instance_overlap_stats(
     )
 
 
-def iou_from_intersection(
-    intersection: float, gt_area: int, pred_area: int
-) -> float:
+def iou_from_intersection(intersection: float, gt_area: int, pred_area: int) -> float:
     union = float(gt_area + pred_area - intersection)
     return intersection / union if union > 0 else 0.0
 

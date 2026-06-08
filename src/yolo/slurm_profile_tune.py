@@ -28,6 +28,7 @@ def profile_tune_detector_walltime(spec: TuneGridSpec) -> str:
         return PROFILE_TUNE_DETECTOR_WALLTIME_SHORT
     return PROFILE_TUNE_DETECTOR_WALLTIME_LONG
 
+
 # ADR 0005: candidate scoring is single-threaded; 50G interim after crop-local adapter fix.
 PROFILE_TUNE_CANDIDATE_RESOURCES: dict[str, str] = {
     "job-name": "yolo_prof_cand",

@@ -6,9 +6,7 @@ import sys
 
 import gdown
 
-DEFAULT_URL = (
-    "https://drive.google.com/uc?id=1Q3VLp5j2N34RYv2Dcbbb1B8QZluZetef"
-)
+DEFAULT_URL = "https://drive.google.com/uc?id=1Q3VLp5j2N34RYv2Dcbbb1B8QZluZetef"
 DEFAULT_ARCHIVE_NAME = "uncropped.tar.lz4"
 
 

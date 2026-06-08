@@ -106,7 +106,9 @@ def load_gt_instance_map_cache(
     return instance_map, meta
 
 
-def copy_gpkg_to_tmpdir(gpkg_path: Path, *, tmp_dir: Path | None = None) -> tuple[Path, float]:
+def copy_gpkg_to_tmpdir(
+    gpkg_path: Path, *, tmp_dir: Path | None = None
+) -> tuple[Path, float]:
     """Copy GPKG to a local temp directory; return (local path, seconds)."""
     tmp_root = tmp_dir or Path(os.environ.get("TMPDIR", "/tmp"))
     tmp_root.mkdir(parents=True, exist_ok=True)
@@ -149,10 +151,7 @@ def write_train_gt_cache(
     height, width = image_dimensions(anchor_image)
     _log(f"  train anchor: {anchor_image} (sample_id={sample_id})")
     _log(f"  image size: {width}×{height} px")
-    _log(
-        f"  labels gpkg: {labels_gpkg} "
-        f"(sha256={file_sha256(labels_gpkg)[:12]}…)"
-    )
+    _log(f"  labels gpkg: {labels_gpkg} (sha256={file_sha256(labels_gpkg)[:12]}…)")
     fingerprint = build_gt_fingerprint(
         sample_id=sample_id,
         labels_gpkg=labels_gpkg,

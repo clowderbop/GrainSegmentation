@@ -25,7 +25,6 @@ from common.test_inference import (
     YoloInferenceProfileCandidate,
     profile_tune_fixed_mask_threshold,
 )
-from common.variants import repo_root
 from common.merged_view_pq import (
     MergedViewPqResult,
     flatten_merged_view_pq_results_by_suffix,
@@ -135,9 +134,7 @@ def candidate_row_fingerprint(
     }
 
 
-def row_fingerprint_matches(
-    stored: dict[str, Any], expected: dict[str, Any]
-) -> bool:
+def row_fingerprint_matches(stored: dict[str, Any], expected: dict[str, Any]) -> bool:
     return stored == expected
 
 
@@ -279,9 +276,7 @@ def score_profile_selection_candidate(
                 f"({', '.join(f'{v}={float(stored[merged_view_pq_column_name(PROFILE_SELECTION_OBJECTIVE, v)]):.4f}' for v in variants)})"
             )
             return row_path
-        _log(
-            f"Resume: fingerprint changed — re-scoring (row at {row_path} ignored)"
-        )
+        _log(f"Resume: fingerprint changed — re-scoring (row at {row_path} ignored)")
 
     _log(
         f"Scoring {len(variants)} variants: conf={candidate.conf:g} "

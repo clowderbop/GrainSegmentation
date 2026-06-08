@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 import torch
 
 from common.prediction_set import load_prediction_set, merge_yolo_proposals_by_score

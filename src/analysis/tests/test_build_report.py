@@ -145,7 +145,9 @@ def _producer_comparison_eval_tree(root: Path) -> None:
             )
 
 
-def test_build_reporting_bundle_writes_producer_comparison_tables(tmp_path: Path) -> None:
+def test_build_reporting_bundle_writes_producer_comparison_tables(
+    tmp_path: Path,
+) -> None:
     """INTENT: build_reporting_bundle writes producer comparison derived tables when both exist."""
     root = tmp_path / "GrainSeg"
     _producer_comparison_eval_tree(root)
@@ -159,7 +161,10 @@ def test_build_reporting_bundle_writes_producer_comparison_tables(tmp_path: Path
 
     winner = pd.read_csv(out / "derived" / "per_variant_winner.csv")
     assert "Winner" in winner.columns
-    assert winner.loc[winner["Input configuration"] == "FullStack", "Winner"].iloc[0] == "YOLO"
+    assert (
+        winner.loc[winner["Input configuration"] == "FullStack", "Winner"].iloc[0]
+        == "YOLO"
+    )
 
     comparison = pd.read_csv(
         out / "derived" / "model_family_comparison_matrix.csv", index_col=0
@@ -191,8 +196,12 @@ def test_build_reporting_bundle_skips_family_comparison_without_both_producers(
 
     skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
     assert skipped_by_id["per_variant_winner_table"] == MODEL_COMPARISON_SKIP_REASON
-    assert skipped_by_id["model_family_comparison_matrix"] == MODEL_COMPARISON_SKIP_REASON
-    assert skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+    assert (
+        skipped_by_id["model_family_comparison_matrix"] == MODEL_COMPARISON_SKIP_REASON
+    )
+    assert (
+        skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+    )
 
 
 def test_build_reporting_bundle_skips_model_comparison_for_mosaic_producers(
@@ -211,8 +220,7 @@ def test_build_reporting_bundle_skips_model_comparison_for_mosaic_producers(
         },
     )
     _write_json(
-        root
-        / "eval/unet_test/run_unet_finetuned_PPL+AllPPX/instance_metrics.json",
+        root / "eval/unet_test/run_unet_finetuned_PPL+AllPPX/instance_metrics.json",
         {
             **MINIMAL_INSTANCE_METRICS,
             "schema_version": 2,
@@ -229,8 +237,12 @@ def test_build_reporting_bundle_skips_model_comparison_for_mosaic_producers(
     assert "model_family_comparison_matrix.csv" not in derived
     skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
     assert skipped_by_id["per_variant_winner_table"] == MODEL_COMPARISON_SKIP_REASON
-    assert skipped_by_id["model_family_comparison_matrix"] == MODEL_COMPARISON_SKIP_REASON
-    assert skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+    assert (
+        skipped_by_id["model_family_comparison_matrix"] == MODEL_COMPARISON_SKIP_REASON
+    )
+    assert (
+        skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+    )
 
 
 def test_build_reporting_bundle_skips_ppl_heatmap_when_renderer_writes_no_file(
@@ -272,8 +284,12 @@ def test_build_reporting_bundle_registers_figure_outputs_when_rendering_disabled
     summary = build_reporting_bundle(root, out, render_figures=False)
 
     skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
-    assert skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
-    assert skipped_by_id["pq_decomposition_grouped_bars"] == FIGURES_DISABLED_SKIP_REASON
+    assert (
+        skipped_by_id["ppl_relative_diagnostic_heatmap"] == FIGURES_DISABLED_SKIP_REASON
+    )
+    assert (
+        skipped_by_id["pq_decomposition_grouped_bars"] == FIGURES_DISABLED_SKIP_REASON
+    )
     assert "whole_section_pq_matrix_heatmap" not in skipped_by_id
     assert summary["written"]["figures"] == []
 
@@ -330,7 +346,9 @@ def test_build_reporting_bundle_writes_failure_mode_outputs(tmp_path: Path) -> N
     skipped_ids = {item["id"] for item in summary["skipped"]}
     assert "failure_mode_classification" not in skipped_ids
     skipped_by_id = {item["id"]: item["reason"] for item in summary["skipped"]}
-    assert skipped_by_id["pq_decomposition_grouped_bars"] == FIGURES_DISABLED_SKIP_REASON
+    assert (
+        skipped_by_id["pq_decomposition_grouped_bars"] == FIGURES_DISABLED_SKIP_REASON
+    )
 
 
 def _patch_and_whole_eval_tree(root: Path) -> None:

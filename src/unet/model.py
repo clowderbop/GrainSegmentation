@@ -113,7 +113,6 @@ def initialize_from_checkpoint(checkpoint_path, patch_size, num_inputs=7, hp=Non
         checkpoint_path, custom_objects={"weighted_crossentropy": weighted_crossentropy}
     )
 
-
     first_conv = next(
         layer for layer in source_model.layers if isinstance(layer, Conv2D)
     )
@@ -144,7 +143,6 @@ def _transfer_weights(source_model, target_model, num_inputs):
         if layer_idx == 0 and isinstance(tgt, Conv2D):
             kernel, bias = src_weights
             tgt_channels = tgt.get_weights()[0].shape[2]
-
 
             if kernel.shape[2] == tgt_channels:
                 tgt.set_weights(src_weights)

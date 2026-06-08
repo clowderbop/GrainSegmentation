@@ -8,7 +8,10 @@ from pathlib import Path
 import numpy as np
 import tifffile
 
-from common.evaluate_instances import collect_manifest_samples, evaluate_instance_samples
+from common.evaluate_instances import (
+    collect_manifest_samples,
+    evaluate_instance_samples,
+)
 from common.prediction_set import (
     build_unet_prediction_set_from_instance_map,
     merge_yolo_proposals_by_score,

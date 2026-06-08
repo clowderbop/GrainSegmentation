@@ -24,6 +24,7 @@ _EXPECTED_DISPLAY_NAMES = {
     "PPLPPXblend": "FullComp",
 }
 
+
 @dataclass(frozen=True)
 class UnetSpec:
     num_inputs: int
@@ -231,8 +232,7 @@ def validate(registry: VariantRegistry | None = None) -> None:
             raise ValueError(f"Unexpected variant {name!r}")
         if spec.display_name != expected_display:
             raise ValueError(
-                f"{name}: display_name {spec.display_name!r} != "
-                f"{expected_display!r}"
+                f"{name}: display_name {spec.display_name!r} != {expected_display!r}"
             )
         if spec.display_name in seen_display:
             raise ValueError(f"Duplicate display_name: {spec.display_name!r}")
@@ -320,9 +320,7 @@ def _shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
-def _format_env_exports(
-    spec: VariantSpec, *, grainseg_root: Path | None = None
-) -> str:
+def _format_env_exports(spec: VariantSpec, *, grainseg_root: Path | None = None) -> str:
     resolved = spec.resolve_paths(grainseg_root) if grainseg_root else None
     suffixes_bash = " ".join(_shell_quote(s) for s in spec.unet.input_suffixes)
     lines = [
@@ -351,7 +349,9 @@ def _format_env_exports(
     return "\n".join(lines)
 
 
-def _variant_to_json(spec: VariantSpec, *, grainseg_root: Path | None = None) -> dict[str, Any]:
+def _variant_to_json(
+    spec: VariantSpec, *, grainseg_root: Path | None = None
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "name": spec.name,
         "display_name": spec.display_name,
@@ -432,7 +432,9 @@ def main(argv: list[str] | None = None) -> int:
             print(" ".join(all_variant_names()))
             return 0
         if args.command == "env":
-            print(_format_env_exports(get_variant(args.variant), grainseg_root=grainseg))
+            print(
+                _format_env_exports(get_variant(args.variant), grainseg_root=grainseg)
+            )
             return 0
         if args.command == "print-json":
             print(

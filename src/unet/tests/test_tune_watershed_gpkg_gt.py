@@ -91,7 +91,9 @@ def test_collect_samples_uses_pred_geometry_without_loading_rgb(
     )
 
     with patch("common.samples.load_rgb_image") as load_rgb:
-        load_rgb.side_effect = AssertionError("must not load microscopy RGB for geometry")
+        load_rgb.side_effect = AssertionError(
+            "must not load microscopy RGB for geometry"
+        )
         sample_ids, true_instances, pred_semantic = _collect_samples(args)
 
     load_rgb.assert_not_called()
@@ -146,14 +148,14 @@ def test_tune_watershed_main_uses_extraction_cache_for_cached_preds_workflow(
     cached_scoring_calls = 0
     real_cached = mean_train_pq_for_watershed_params_cached
 
-    def spy_cached(*a: object, **kw: object) -> tuple[dict[str, float | int], list[dict]]:
+    def spy_cached(
+        *a: object, **kw: object
+    ) -> tuple[dict[str, float | int], list[dict]]:
         nonlocal cached_scoring_calls
         cached_scoring_calls += 1
         return real_cached(*a, **kw)
 
-    monkeypatch.setattr(
-        tune_watershed, "build_watershed_tune_sample_caches", spy_build
-    )
+    monkeypatch.setattr(tune_watershed, "build_watershed_tune_sample_caches", spy_build)
     monkeypatch.setattr(
         tune_watershed,
         "mean_train_pq_for_watershed_params_cached",

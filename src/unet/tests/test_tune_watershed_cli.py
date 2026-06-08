@@ -70,5 +70,3 @@ def test_tune_watershed_invalid_preds_dir_exits_with_clear_error(
             ]
         )
     assert "preds-dir is not a directory" in capsys.readouterr().err
-
-

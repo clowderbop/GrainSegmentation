@@ -20,6 +20,7 @@ def _write_blank(path: Path, w: int = 16, h: int = 16) -> None:
 
 def test_whole_requires_manifest(tmp_path: Path) -> None:
     """INTENT: _resolve_eval_samples requires --manifest when unit is whole."""
+
     class Args:
         unit = "whole"
         manifest = None
@@ -90,7 +91,9 @@ def test_whole_accepts_manifest(tmp_path: Path) -> None:
     assert samples[0].sample_id == "train"
 
 
-def test_collect_manifest_samples_rejects_image_outside_work_root(tmp_path: Path) -> None:
+def test_collect_manifest_samples_rejects_image_outside_work_root(
+    tmp_path: Path,
+) -> None:
     """INTENT: collect_manifest_samples rejects manifest image paths outside the staged work root."""
     work_root = tmp_path / "run"
     work_root.mkdir()

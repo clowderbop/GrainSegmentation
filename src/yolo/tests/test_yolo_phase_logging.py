@@ -37,13 +37,17 @@ def test_merged_instance_view_logs_rasterize_phase(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """INTENT: merged instance view construction logs association and rasterize phases."""
-    from yolo.cross_tile_postprocess import merged_instance_view_from_tiled_proposal_records
+    from yolo.cross_tile_postprocess import (
+        merged_instance_view_from_tiled_proposal_records,
+    )
     from yolo.tests.profile_tune_fixtures import (
         tiled_proposal_records_disjoint_via_collector,
     )
 
     height, width = 16, 16
-    records = tiled_proposal_records_disjoint_via_collector(height, width, mask_threshold=0.5)
+    records = tiled_proposal_records_disjoint_via_collector(
+        height, width, mask_threshold=0.5
+    )
     merged_instance_view_from_tiled_proposal_records(
         records, height=height, width=width, log_timings=True
     )

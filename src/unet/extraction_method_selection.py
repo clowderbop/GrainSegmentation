@@ -77,7 +77,9 @@ def extraction_method_selection_to_json(
             payload[key] = float(audit.bundle[key])
         if audit.per_variant_bundles:
             payload["per_variant"] = {
-                variant: {key: float(bundle[key]) for key in INSTANCE_METRIC_BUNDLE_KEYS}
+                variant: {
+                    key: float(bundle[key]) for key in INSTANCE_METRIC_BUNDLE_KEYS
+                }
                 for variant, bundle in audit.per_variant_bundles.items()
             }
         return payload

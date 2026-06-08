@@ -77,7 +77,10 @@ def test_resolve_paths_under_grainseg_root(tmp_path: Path) -> None:
     spec = get_variant("PPL+AllPPX")
     resolved = spec.resolve_paths(grainseg)
     assert resolved.test_mosaic_stacked == grainseg / "dataset/test/test_PPL+AllPPX.tif"
-    assert resolved.train_channel_path("_PPX3") == grainseg / "dataset/train/train_PPX3.tif"
+    assert (
+        resolved.train_channel_path("_PPX3")
+        == grainseg / "dataset/train/train_PPX3.tif"
+    )
 
 
 def test_get_variant_unknown_raises() -> None:

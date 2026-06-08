@@ -31,7 +31,9 @@ def test_figure_headline_heatmap_pq_panel_uses_derived_matrix(
         return result
 
     monkeypatch.setattr("analysis.figures.whole_section_pq_matrix_table", tracking)
-    figure_headline_heatmap(_four_combo_instance_df(), tmp_path / "headline_heatmap.png")
+    figure_headline_heatmap(
+        _four_combo_instance_df(), tmp_path / "headline_heatmap.png"
+    )
 
     assert len(calls) == 1
     assert calls[0].loc["YOLO", "PPL"] == pytest.approx(0.30)

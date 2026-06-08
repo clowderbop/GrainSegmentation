@@ -190,7 +190,12 @@ def test_pq_decomposition_long_table_orders_model_input_and_metric() -> None:
     """INTENT: PQ decomposition long table orders rows by model, input, and PQ/DQ/SQ metric."""
     table = pq_decomposition_long_table(_four_combo_instance_df())
 
-    assert list(table.columns) == [MODEL_COL, INPUT_CONFIGURATION_COL, "Metric", "Value"]
+    assert list(table.columns) == [
+        MODEL_COL,
+        INPUT_CONFIGURATION_COL,
+        "Metric",
+        "Value",
+    ]
     assert table[MODEL_COL].tolist() == ["YOLO"] * 6 + ["U-Net"] * 6
     assert table[INPUT_CONFIGURATION_COL].tolist() == (
         ["PPL", "PPL", "PPL", "FullStack", "FullStack", "FullStack"] * 2

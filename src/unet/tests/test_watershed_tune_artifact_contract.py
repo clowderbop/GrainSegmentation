@@ -142,7 +142,9 @@ def test_watershed_tune_best_json_includes_merged_view_pq_mean_and_per_sample_fi
         assert f"best_mean_{key}" in summary
         assert f"best_per_sample_{key}" in summary
         assert _SAMPLE_ID in summary[f"best_per_sample_{key}"]
-        assert summary[f"best_per_sample_{key}"][_SAMPLE_ID] == summary[f"best_mean_{key}"]
+        assert (
+            summary[f"best_per_sample_{key}"][_SAMPLE_ID] == summary[f"best_mean_{key}"]
+        )
 
     assert isinstance(summary["best_mean_pred_instance_count"], int)
     assert isinstance(summary["best_mean_gt_instance_count"], int)
@@ -168,4 +170,7 @@ def test_watershed_tune_diagnostics_surface_catastrophic_over_segmentation() -> 
     assert row["mean_pq"] == "0.00000000"
     assert int(per_sample[0]["pred_instance_count"]) > 2
     assert summary["best_mean_pq"] == pytest.approx(0.0)
-    assert summary["best_mean_pred_instance_count"] > summary["best_mean_gt_instance_count"]
+    assert (
+        summary["best_mean_pred_instance_count"]
+        > summary["best_mean_gt_instance_count"]
+    )

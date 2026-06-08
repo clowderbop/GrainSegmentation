@@ -27,7 +27,9 @@ class StagedDetectorTrainImage:
     copy_s: float
 
 
-def resolve_train_whole_image_path(*, grainseg_root: Path, variant: str) -> tuple[Path, str]:
+def resolve_train_whole_image_path(
+    *, grainseg_root: Path, variant: str
+) -> tuple[Path, str]:
     """Scratch path and sample id for the variant train whole stacked TIFF."""
     from common.manifest_io import build_yolo_whole_manifest, resolve_row_path
 
@@ -130,7 +132,9 @@ def stage_candidate_work(
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    cand = sub.add_parser("candidate", help="Stage GT + proposal caches for one grid candidate")
+    cand = sub.add_parser(
+        "candidate", help="Stage GT + proposal caches for one grid candidate"
+    )
     cand.add_argument("--output-dir", type=Path, required=True)
     cand.add_argument("--tmp-work-root", type=Path, required=True)
     cand.add_argument("--grid-config", type=Path, default=None)

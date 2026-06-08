@@ -280,7 +280,7 @@ def test_main_patch_resolves_conf_and_mask_from_recipe_when_cli_omits_them(
     """INTENT: predict CLI patch unit resolves conf and mask_threshold from recipe when CLI omits them."""
     import json
 
-    from common.test_inference import inference_recipe_path, load_test_inference_recipe
+    from common.test_inference import load_test_inference_recipe
 
     recipe_path = tmp_path / "test_inference.yaml"
     recipe_path.write_text(

@@ -107,4 +107,3 @@ def test_tune_watershed_cli_accepts_grid_config(tmp_path: Path) -> None:
         ]
     )
     assert args.grid_config == grid_path
-

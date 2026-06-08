@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import math
@@ -52,7 +51,9 @@ def build_sample_row(
     }
     for key in INSTANCE_METRIC_KEYS:
         value = metrics[key]
-        row[key] = int(value) if key in INSTANCE_METRIC_BUNDLE_INT_KEYS else float(value)
+        row[key] = (
+            int(value) if key in INSTANCE_METRIC_BUNDLE_INT_KEYS else float(value)
+        )
     if extra:
         for k, v in extra.items():
             if k in row:
@@ -109,11 +110,16 @@ def compute_patch_metric_aggregates(
         if not pairs:
             return float("nan")
         if weight_by_gt:
-            total_weight = sum(float(row.get("gt_instance_count", 0)) for row, _ in pairs)
+            total_weight = sum(
+                float(row.get("gt_instance_count", 0)) for row, _ in pairs
+            )
             if total_weight <= 0:
                 return float("nan")
             return float(
-                sum(value * float(row.get("gt_instance_count", 0)) for row, value in pairs)
+                sum(
+                    value * float(row.get("gt_instance_count", 0))
+                    for row, value in pairs
+                )
                 / total_weight
             )
         return float(np.mean([value for _, value in pairs]))

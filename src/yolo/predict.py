@@ -243,7 +243,9 @@ def _run_patch_predict_from_manifest(
         )
 
 
-def _write_patch_run_provenance(args: argparse.Namespace, *, manifest: Path | None) -> None:
+def _write_patch_run_provenance(
+    args: argparse.Namespace, *, manifest: Path | None
+) -> None:
     payload: dict[str, Any] = {
         "producer": "yolo",
         "unit": "patch",

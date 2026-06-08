@@ -5,7 +5,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from yolo.inference_profile_tune import iter_grid_candidates, load_tune_grid, tune_grid_path
+from yolo.inference_profile_tune import (
+    iter_grid_candidates,
+    load_tune_grid,
+    tune_grid_path,
+)
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

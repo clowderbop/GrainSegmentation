@@ -67,30 +67,29 @@ def _argv_contains(argv: list[str], *options: str) -> bool:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "--variant",
         choices=variant_choices(),
-        )
+    )
     parser.add_argument(
         "--data",
         default=None,
-        )
+    )
     parser.add_argument(
         "--name",
         "--run-name",
         dest="name",
         default=None,
-        )
+    )
     parser.add_argument(
         "--project",
         default=None,
-        )
+    )
     parser.add_argument(
         "--weights",
         default="yolo26l-seg.pt",
-        )
+    )
     parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--imgsz", type=int, default=1024)
     parser.add_argument("--batch", type=float, default=32)
@@ -98,43 +97,43 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--lr",
         type=float,
         default=0.001,
-        )
+    )
     parser.add_argument(
         "--dropout",
         type=float,
         default=0.05,
-        )
+    )
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument(
         "--device",
         default="0,1",
-        )
+    )
     parser.add_argument("--cache", default="disk")
     parser.add_argument("--exist-ok", action="store_true")
     parser.add_argument(
         "--tune",
         action="store_true",
-        )
+    )
     parser.add_argument(
         "--resume",
         action="store_true",
-        )
+    )
     parser.add_argument(
         "--resume-checkpoint",
         default=None,
-        )
+    )
     parser.add_argument("--amp", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--plots", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--tune-epochs",
         type=int,
         default=20,
-        )
+    )
     parser.add_argument(
         "--tune-iterations",
         type=int,
         default=100,
-        )
+    )
 
     args = parser.parse_args(argv)
     if not args.variant and not args.data:

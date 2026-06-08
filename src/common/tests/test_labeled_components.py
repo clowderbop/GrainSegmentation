@@ -78,7 +78,9 @@ def test_drop_small_components_scales_with_pixels_not_max_label_id() -> None:
     elapsed = time.perf_counter() - t0
 
     assert int(out.max()) == 0
-    assert elapsed < 5.0, f"drop_small_components took {elapsed:.2f}s; expected O(pixels)"
+    assert elapsed < 5.0, (
+        f"drop_small_components took {elapsed:.2f}s; expected O(pixels)"
+    )
 
 
 def test_relabel_sequential_scales_with_pixels_not_max_label_id() -> None:

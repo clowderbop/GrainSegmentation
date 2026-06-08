@@ -22,9 +22,7 @@ from common.tests.merged_view_fixtures import (
 )
 
 
-def _assert_matrix_matches_dense_reference(
-    gt: np.ndarray, pred: np.ndarray
-) -> None:
+def _assert_matrix_matches_dense_reference(gt: np.ndarray, pred: np.ndarray) -> None:
     sparse_mat, sparse_gt_ids, sparse_pred_ids = build_instance_iou_matrix(gt, pred)
     ref_mat, ref_gt_ids, ref_pred_ids = dense_build_instance_iou_matrix(gt, pred)
     assert sparse_gt_ids == ref_gt_ids

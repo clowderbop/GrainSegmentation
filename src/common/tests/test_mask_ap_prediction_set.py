@@ -110,4 +110,3 @@ def test_yolo_mask_ap_uses_score_merged_canonical_detection() -> None:
     assert len(from_proposals) == 2
     assert len(from_canonical) == 1
     assert float(from_canonical[0]["score"]) == pytest.approx(0.9)
-

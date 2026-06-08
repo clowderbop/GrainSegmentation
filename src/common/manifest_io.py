@@ -74,7 +74,9 @@ def whole_manifest_relpath(split: ManifestSplit, variant: str) -> Path:
     return Path("dataset") / split / "manifests" / f"{variant}.whole.json"
 
 
-def default_whole_manifest_path(grainseg_root: str | Path, split: ManifestSplit, variant: str) -> Path:
+def default_whole_manifest_path(
+    grainseg_root: str | Path, split: ManifestSplit, variant: str
+) -> Path:
     return Path(grainseg_root).resolve() / whole_manifest_relpath(split, variant)
 
 
@@ -132,7 +134,7 @@ def load_dataset_manifest(path: Path) -> DatasetManifest:
     path = path.resolve()
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise ValueError(f'Manifest {path} must be a JSON object')
+        raise ValueError(f"Manifest {path} must be a JSON object")
     manifest = _parse_dataset_manifest(payload, source_path=path)
     validate_dataset_manifest(manifest)
     return manifest
@@ -192,7 +194,9 @@ def _validate_sample_row(
         raise ValueError(f'manifest samples[{idx}] requires "image" or "images"')
 
     if row.gt_origin is not None and row.gt_origin not in ("patch_stem", "whole_image"):
-        raise ValueError(f"manifest samples[{idx}] invalid gt_origin: {row.gt_origin!r}")
+        raise ValueError(
+            f"manifest samples[{idx}] invalid gt_origin: {row.gt_origin!r}"
+        )
 
 
 def collect_manifest_image_paths(
@@ -237,7 +241,11 @@ def collect_manifest_unet_samples(
     mask_stem_suffix: str = "_labels",
 ) -> list[dict[str, Any]]:
     """Sample dicts for ``unet.predict`` / training (``images``, ``id``, optional ``mask``)."""
-    doc = manifest if isinstance(manifest, DatasetManifest) else load_dataset_manifest(manifest)
+    doc = (
+        manifest
+        if isinstance(manifest, DatasetManifest)
+        else load_dataset_manifest(manifest)
+    )
     base = manifest_path_base_dir(doc)
     mask_root = Path(mask_dir).resolve() if mask_dir is not None else None
     mask_exts = [mask_ext] if mask_ext else [".tif", ".tiff"]
@@ -283,14 +291,16 @@ def collect_manifest_tune_samples(
     manifest: Path | DatasetManifest,
 ) -> list[dict[str, Any]]:
     """Sample dicts for preds-only watershed tuning (``id`` only; geometry from preds)."""
-    doc = manifest if isinstance(manifest, DatasetManifest) else load_dataset_manifest(manifest)
+    doc = (
+        manifest
+        if isinstance(manifest, DatasetManifest)
+        else load_dataset_manifest(manifest)
+    )
     spec = get_variant(doc.variant)
     samples: list[dict[str, Any]] = []
     for row in doc.samples:
         rel_paths = _manifest_row_image_paths(row, spec)
-        samples.append(
-            {"id": row.sample_id, "num_channels": len(rel_paths)}
-        )
+        samples.append({"id": row.sample_id, "num_channels": len(rel_paths)})
     if not samples:
         raise ValueError("Manifest contains no samples")
     return samples
@@ -410,7 +420,7 @@ def _parse_dataset_manifest(
         grainseg_root = str(payload["grainseg_root"])
         path_base = str(payload["path_base"])
     except KeyError as exc:
-        raise ValueError(f'Manifest missing required key: {exc}') from exc
+        raise ValueError(f"Manifest missing required key: {exc}") from exc
 
     if path_base not in ("grainseg_root", "work_root"):
         raise ValueError(f"Invalid path_base: {path_base!r}")
@@ -419,7 +429,9 @@ def _parse_dataset_manifest(
     if not isinstance(raw_samples, list):
         raise ValueError('Manifest "samples" must be a list')
 
-    samples = tuple(_parse_sample_row(raw, index) for index, raw in enumerate(raw_samples))
+    samples = tuple(
+        _parse_sample_row(raw, index) for index, raw in enumerate(raw_samples)
+    )
     return DatasetManifest(
         schema_version=schema_version,
         variant=variant,
@@ -449,7 +461,9 @@ def _parse_sample_row(raw: Any, index: int) -> ManifestSampleRow:
     images: tuple[str, ...] | None = None
     if images_raw is not None:
         if not isinstance(images_raw, list) or not images_raw:
-            raise ValueError(f"manifest samples[{index}].images must be a non-empty list")
+            raise ValueError(
+                f"manifest samples[{index}].images must be a non-empty list"
+            )
         images = tuple(str(p) for p in images_raw)
     return ManifestSampleRow(
         sample_id=sample_id,
@@ -486,7 +500,9 @@ def build_yolo_whole_manifest(
 
     mosaic_path = root / image
     if not mosaic_path.is_file():
-        raise FileNotFoundError(f"Missing stacked mosaic for {variant} ({split}): {mosaic_path}")
+        raise FileNotFoundError(
+            f"Missing stacked mosaic for {variant} ({split}): {mosaic_path}"
+        )
 
     return DatasetManifest(
         schema_version=1,

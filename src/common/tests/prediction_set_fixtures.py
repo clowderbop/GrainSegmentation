@@ -65,7 +65,9 @@ def yolo_prediction_set_from_masks(
     for index in range(masks_hw.shape[0]):
         binary = masks_hw_to_binary(masks_hw[index : index + 1])[0]
         if binary.shape != (height, width):
-            binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(bool)
+            binary = resize_mask_nearest(binary.astype(np.uint8), height, width).astype(
+                bool
+            )
         if not binary.any():
             continue
         detections.append(

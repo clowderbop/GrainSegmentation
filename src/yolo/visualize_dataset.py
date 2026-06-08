@@ -24,29 +24,28 @@ IMAGE_SUFFIXES = {".tif", ".tiff"}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
         "dataset_dir",
         type=Path,
-        )
+    )
     parser.add_argument(
         "-o",
         "--output-dir",
         type=Path,
         default=None,
-        )
+    )
     parser.add_argument(
         "-n",
         "--num",
         type=int,
         default=4,
-        )
+    )
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
-        )
+    )
     args = parser.parse_args(argv)
     if args.num < 1:
         parser.error("--num must be at least 1")

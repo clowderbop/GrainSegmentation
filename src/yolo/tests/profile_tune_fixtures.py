@@ -73,7 +73,11 @@ def collect_tiled_records_with_mocked_slices(
     image = np.zeros((section_height, section_width, 3), dtype=np.uint8)
 
     def fake_iter(
-        _image: np.ndarray, _model: object, *, full_shape: list[int] | None, **_kwargs: object
+        _image: np.ndarray,
+        _model: object,
+        *,
+        full_shape: list[int] | None,
+        **_kwargs: object,
     ) -> Iterator[tuple[int, int, int, int, list[Any]]]:
         assert full_shape is None
         yield from slice_yields
@@ -146,7 +150,11 @@ def write_on_disk_v1_proposal_cache(
     v1_meta = dict(meta)
     v1_meta["schema_version"] = 1
     with (cache_dir / "proposals.pkl").open("wb") as handle:
-        pickle.dump([V1SahiPickleStub(bool_mask=dense)], handle, protocol=pickle.HIGHEST_PROTOCOL)
+        pickle.dump(
+            [V1SahiPickleStub(bool_mask=dense)],
+            handle,
+            protocol=pickle.HIGHEST_PROTOCOL,
+        )
     (cache_dir / "proposals.meta.json").write_text(
         json.dumps(v1_meta, indent=2), encoding="utf-8"
     )

@@ -69,4 +69,3 @@ def test_scene_polygons_patch_origin_matches_golden_subregion() -> None:
     golden_crop = golden[y0 : y0 + patch_h, x0 : x0 + patch_w]
     assert patch_map.shape == golden_crop.shape
     assert np.array_equal(patch_map > 0, golden_crop > 0)
-

@@ -23,7 +23,9 @@ def paint_polygons_merged_instance_view(
     paint_order: list[tuple[int, np.ndarray]] = []
     instance_id = 1
     for geom in polygons:
-        for part in iter_polygon_parts(geom, context="paint_polygons_merged_instance_view"):
+        for part in iter_polygon_parts(
+            geom, context="paint_polygons_merged_instance_view"
+        ):
             for clipped in clip_polygon_to_hw(part, height, width):
                 coords = list(orient(clipped, sign=1.0).exterior.coords[:-1])
                 if len(coords) < 3:
@@ -45,6 +47,4 @@ def gpkg_to_merged_instance_map(
     width: int,
 ) -> np.ndarray:
     polygons = load_image_space_polygons(Path(gpkg_path))
-    return paint_polygons_merged_instance_view(
-        polygons, height=height, width=width
-    )
+    return paint_polygons_merged_instance_view(polygons, height=height, width=width)

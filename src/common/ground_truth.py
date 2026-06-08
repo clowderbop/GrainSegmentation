@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+import numpy as np
 from shapely.affinity import translate
 
 from common.gpkg_instance_map import paint_polygons_merged_instance_view
@@ -16,9 +17,7 @@ def polygons_to_instance_map(
     height: int,
     width: int,
 ) -> np.ndarray:
-    return paint_polygons_merged_instance_view(
-        polygons, height=height, width=width
-    )
+    return paint_polygons_merged_instance_view(polygons, height=height, width=width)
 
 
 def scene_polygons_to_patch_instance_map(
@@ -38,6 +37,4 @@ def scene_polygons_to_patch_instance_map(
         polygons = [
             translate(p, xoff=-float(origin_x), yoff=-float(origin_y)) for p in polygons
         ]
-    return paint_polygons_merged_instance_view(
-        polygons, height=height, width=width
-    )
+    return paint_polygons_merged_instance_view(polygons, height=height, width=width)

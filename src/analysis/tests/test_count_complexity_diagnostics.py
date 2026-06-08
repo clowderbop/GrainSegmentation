@@ -93,12 +93,16 @@ def test_pareto_frontier_table_labels_diagnostic_only() -> None:
     table = pareto_frontier_table(df)
 
     assert (table["Scope"] == DIAGNOSTIC_ONLY_LABEL).all()
-    assert table.loc[table["Input configuration"] == "PPL", "Input image count"].iloc[
-        0
-    ] == 1
-    assert table.loc[table["Input configuration"] == "FullStack", "Input image count"].iloc[
-        0
-    ] == 7
+    assert (
+        table.loc[table["Input configuration"] == "PPL", "Input image count"].iloc[0]
+        == 1
+    )
+    assert (
+        table.loc[
+            table["Input configuration"] == "FullStack", "Input image count"
+        ].iloc[0]
+        == 7
+    )
     frontier = table[table["On Pareto frontier"]]
     assert frontier["Input configuration"].tolist() == ["PPL", "FullStack"]
 
@@ -124,7 +128,9 @@ def test_build_reporting_bundle_writes_count_and_pareto_outputs(
                 **MINIMAL_INSTANCE_METRICS,
                 "schema_version": 2,
                 "variant": variant,
-                "samples": [{**PQ_SAMPLE_ROW, "pq": pq, "pred_gt_instance_ratio": ratio}],
+                "samples": [
+                    {**PQ_SAMPLE_ROW, "pq": pq, "pred_gt_instance_ratio": ratio}
+                ],
             },
         )
 

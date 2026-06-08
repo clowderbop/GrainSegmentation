@@ -59,15 +59,19 @@ def test_write_detector_proposal_cache_does_not_create_staged_manifest_tree(
     staging_dir = layout["output_dir"] / "tmpdir"
     staged_root = layout["work_root"] / layout["variant"] / "staged"
 
-    with patch(
-        "yolo.profile_tune_detector_cache.collect_tiled_detector_proposals",
-        return_value=[],
-    ), patch(
-        "yolo.profile_tune_detector_cache.load_image_for_yolo",
-        return_value=np.zeros((8, 8, 3), dtype=np.uint8),
-    ), patch(
-        "yolo.profile_tune_detector_cache.AutoDetectionModel.from_pretrained",
-        return_value=MagicMock(),
+    with (
+        patch(
+            "yolo.profile_tune_detector_cache.collect_tiled_detector_proposals",
+            return_value=[],
+        ),
+        patch(
+            "yolo.profile_tune_detector_cache.load_image_for_yolo",
+            return_value=np.zeros((8, 8, 3), dtype=np.uint8),
+        ),
+        patch(
+            "yolo.profile_tune_detector_cache.AutoDetectionModel.from_pretrained",
+            return_value=MagicMock(),
+        ),
     ):
         write_detector_proposal_cache(
             variant=layout["variant"],

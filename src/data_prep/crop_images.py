@@ -347,24 +347,28 @@ def main() -> None:
         "--geojson",
         "--vector",
         dest="geojson",
-        )
+    )
     parser.add_argument(
         "--out-geojson",
         "--out-vector",
         dest="out_geojson",
-        )
+    )
     parser.add_argument(
         "--bbox",
         type=_parse_bbox,
         default="0,-5000,35000,0",
-        )
-    parser.add_argument("--image-dir", )
+    )
+    parser.add_argument(
+        "--image-dir",
+    )
     parser.add_argument(
         "--out-image-dir",
         default=None,
-        )
+    )
     parser.add_argument(
-        "--suffix", default="_crop", )
+        "--suffix",
+        default="_crop",
+    )
     args = parser.parse_args()
 
     if not (args.geojson and args.out_geojson) and not args.image_dir:

@@ -38,7 +38,14 @@ def test_resolve_predict_samples_from_manifest(tmp_path: Path) -> None:
 
     parser = _build_arg_parser()
     args = parser.parse_args(
-        ["--model-path", "m.keras", "--output-dir", str(tmp_path / "out"), "--manifest", str(manifest_path)]
+        [
+            "--model-path",
+            "m.keras",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--manifest",
+            str(manifest_path),
+        ]
     )
     samples = _resolve_predict_samples(args)
     assert len(samples) == 1

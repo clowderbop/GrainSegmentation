@@ -13,7 +13,6 @@ Image.MAX_IMAGE_PIXELS = None
 def process_polygons(gdf, height, width, boundary_width, flip_y):
     mask = np.zeros((height, width), dtype=np.uint8)
 
-
     def _get_rings(polygon):
         rings = [list(polygon.exterior.coords)]
         for interior in polygon.interiors:
@@ -34,12 +33,10 @@ def process_polygons(gdf, height, width, boundary_width, flip_y):
             for p in poly.geoms:
                 _draw_poly(m, p, val)
 
-
     for geom in gdf.geometry:
         if geom is None or geom.is_empty:
             continue
         _draw_poly(mask, geom, 2)
-
 
     for geom in gdf.geometry:
         if geom is None or geom.is_empty:
@@ -53,25 +50,33 @@ def process_polygons(gdf, height, width, boundary_width, flip_y):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        )
-    parser.add_argument("-i", "--input", required=True, )
+    parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-r", "--reference", required=True, )
+        "-i",
+        "--input",
+        required=True,
+    )
     parser.add_argument(
-        "-o", "--output", required=True, )
+        "-r",
+        "--reference",
+        required=True,
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        required=True,
+    )
     parser.add_argument(
         "--boundary-width",
         type=float,
         default=3.0,
-        )
+    )
     parser.add_argument(
         "--no-flip-y",
         action="store_true",
-        )
+    )
 
     args = parser.parse_args()
-
 
     try:
         with Image.open(args.reference) as img:
@@ -80,16 +85,13 @@ def main():
         print(f"Error reading reference image: {e}")
         sys.exit(1)
 
-
     try:
         gdf = gpd.read_file(args.input)
     except Exception as e:
         print(f"Error reading GPKG file: {e}")
         sys.exit(1)
 
-
     mask = process_polygons(gdf, height, width, args.boundary_width, not args.no_flip_y)
-
 
     output_path = args.output
     if not (

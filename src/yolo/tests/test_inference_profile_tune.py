@@ -9,7 +9,6 @@ import pytest
 import yaml
 
 from common.test_inference import (
-    YoloInferenceProfileCandidate,
     load_test_inference_recipe,
     profile_tune_candidate_from_conf,
     profile_tune_fixed_mask_threshold,
@@ -153,9 +152,9 @@ def test_grid_results_fieldnames_use_merged_view_pq_only() -> None:
 )
 def test_extract_mean_pq_from_report(report: dict, expected_pq: float) -> None:
     """INTENT: extract_metric_from_report returns PQ from report mean or averaged per-sample values."""
-    assert extract_metric_from_report(report, PROFILE_SELECTION_OBJECTIVE) == pytest.approx(
-        expected_pq
-    )
+    assert extract_metric_from_report(
+        report, PROFILE_SELECTION_OBJECTIVE
+    ) == pytest.approx(expected_pq)
 
 
 def test_select_best_candidate_maximizes_mean_train_pq() -> None:
@@ -169,7 +168,9 @@ def test_select_best_candidate_maximizes_mean_train_pq() -> None:
     assert best["candidate_id"] == "b"
 
 
-def test_promote_profile_preserves_recipe_comments_and_structure(tmp_path: Path) -> None:
+def test_promote_profile_preserves_recipe_comments_and_structure(
+    tmp_path: Path,
+) -> None:
     """INTENT: promote_profile_to_recipe updates conf while preserving YAML comments and structure."""
     recipe_path = tmp_path / "test_inference.yaml"
     recipe_path.write_text(
@@ -252,7 +253,9 @@ unet:
     assert updated["unet"]["patch"]["batch_size"] == 1
 
 
-def test_promote_profile_to_recipe_round_trips_through_recipe_loader(tmp_path: Path) -> None:
+def test_promote_profile_to_recipe_round_trips_through_recipe_loader(
+    tmp_path: Path,
+) -> None:
     """INTENT: promote_profile_to_recipe writes values loadable by load_test_inference_recipe."""
     recipe_path = tmp_path / "test_inference.yaml"
     recipe_path.write_text(
@@ -290,7 +293,9 @@ unet:
     assert loaded.yolo.profile.mask_threshold == profile_tune_fixed_mask_threshold()
 
 
-def test_promote_profile_rejects_missing_conf_key_and_preserves_recipe(tmp_path: Path) -> None:
+def test_promote_profile_rejects_missing_conf_key_and_preserves_recipe(
+    tmp_path: Path,
+) -> None:
     """INTENT: promote_profile_to_recipe rejects missing conf without mutating the recipe file."""
     recipe_path = tmp_path / "test_inference.yaml"
     original = """whole:
@@ -427,7 +432,9 @@ def test_append_grid_result_row_writes_incrementally(tmp_path: Path) -> None:
     assert len(load_grid_results_csv(csv_path)) == 2
 
 
-def test_finalize_grid_winner_writes_per_variant_pq_results_from_csv(tmp_path: Path) -> None:
+def test_finalize_grid_winner_writes_per_variant_pq_results_from_csv(
+    tmp_path: Path,
+) -> None:
     """INTENT: finalize_grid_winner writes winner.json with per-variant PQ results from grid rows."""
     from yolo.inference_profile_tune import finalize_grid_winner, load_grid_winner
 
@@ -443,7 +450,9 @@ def test_finalize_grid_winner_writes_per_variant_pq_results_from_csv(tmp_path: P
     winner = finalize_grid_winner(grid_dir, [row], variant_names=("PPL", "PPL+AllPPX"))
     assert winner.conf == pytest.approx(0.25)
     payload = json.loads((grid_dir / "winner.json").read_text(encoding="utf-8"))
-    assert payload["mean_pq"] == pytest.approx(mean_pq_across_variants({"PPL": 0.82, "PPL+AllPPX": 0.58}))
+    assert payload["mean_pq"] == pytest.approx(
+        mean_pq_across_variants({"PPL": 0.82, "PPL+AllPPX": 0.58})
+    )
     assert payload["per_variant_pq_results"]["PPL"]["pq"] == pytest.approx(0.82)
     assert load_grid_winner(grid_dir / "winner.json") == winner
 
@@ -493,7 +502,6 @@ def test_candidate_scoring_cache_fingerprint_mismatch(tmp_path: Path) -> None:
     """INTENT: score_variant_train_metrics_from_cache raises when proposal cache conf mismatches candidate."""
     from common.test_inference import load_test_inference_recipe
     from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
-    import numpy as np
 
     from yolo.tiled_proposal_cache import (
         proposal_cache_dir,

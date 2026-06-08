@@ -69,10 +69,13 @@ def stack_tiff_channels(input_dir: str | Path, output_file: str | Path) -> Path:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        )
-    parser.add_argument("input_dir", )
-    parser.add_argument("output_file", )
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "input_dir",
+    )
+    parser.add_argument(
+        "output_file",
+    )
     args = parser.parse_args()
 
     try:

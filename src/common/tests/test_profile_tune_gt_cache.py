@@ -96,9 +96,7 @@ def test_write_train_gt_cache_from_micro_gpkg_matches_golden(tmp_path: Path) -> 
     labels_gpkg.parent.mkdir(parents=True)
     shutil.copy2(_MICRO_GPKG, labels_gpkg)
     anchor = grainseg_root / "dataset" / "train" / "train_PPL.tif"
-    _write_anchor_tiff(
-        anchor, height=_FIXTURE_HEIGHT, width=_FIXTURE_WIDTH
-    )
+    _write_anchor_tiff(anchor, height=_FIXTURE_HEIGHT, width=_FIXTURE_WIDTH)
     work_root = tmp_path / ".cache"
 
     cache_dir = write_train_gt_cache(
@@ -129,9 +127,7 @@ def test_gt_cache_cli_module_writes_micro_fixture(tmp_path: Path) -> None:
     labels_gpkg.parent.mkdir(parents=True)
     shutil.copy2(_MICRO_GPKG, labels_gpkg)
     anchor = grainseg_root / "dataset" / "train" / "train_PPL.tif"
-    _write_anchor_tiff(
-        anchor, height=_FIXTURE_HEIGHT, width=_FIXTURE_WIDTH
-    )
+    _write_anchor_tiff(anchor, height=_FIXTURE_HEIGHT, width=_FIXTURE_WIDTH)
     output_dir = tmp_path / "run"
     common_src = Path(__file__).resolve().parents[1]
     tmpdir = tmp_path / "tmpdir"

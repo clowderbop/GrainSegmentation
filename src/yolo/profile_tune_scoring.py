@@ -68,7 +68,9 @@ def compute_train_pq(
     log_timings: bool = False,
 ) -> MergedViewPqResult:
     """Train whole-section PQ for one variant/grid point (profile selection hot path)."""
-    del candidate  # cross-tile thresholds are fixed; conf/mask_threshold affect detector cache only
+    del (
+        candidate
+    )  # cross-tile thresholds are fixed; conf/mask_threshold affect detector cache only
     timings = ProfileSelectionScoringTimings() if log_timings else None
     if log_timings:
         log_phase_start(PHASE_EVALUATING_TRAIN_PQ)
@@ -81,7 +83,9 @@ def compute_train_pq(
         log_timings=log_timings,
     )
     if log_timings and timings is not None:
-        log_nested_phase_done(NESTED_CROSS_TILE_ASSOCIATION, timings.cross_tile_association_s)
+        log_nested_phase_done(
+            NESTED_CROSS_TILE_ASSOCIATION, timings.cross_tile_association_s
+        )
         log_nested_phase_start(NESTED_METRICS)
     t0 = time.perf_counter()
     gt = np.asarray(gt_instance_map)

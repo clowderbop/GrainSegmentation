@@ -235,8 +235,12 @@ def _parse_recipe(raw: dict[str, Any]) -> TestInferenceRecipe:
                 ),
             ),
             val=YoloValSpec(
-                imgsz=yv.require_int(yolo_val_raw.get("imgsz"), context="yolo.val.imgsz"),
-                batch=yv.require_int(yolo_val_raw.get("batch"), context="yolo.val.batch"),
+                imgsz=yv.require_int(
+                    yolo_val_raw.get("imgsz"), context="yolo.val.imgsz"
+                ),
+                batch=yv.require_int(
+                    yolo_val_raw.get("batch"), context="yolo.val.batch"
+                ),
             ),
         ),
         unet=UnetInferenceSpec(

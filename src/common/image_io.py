@@ -23,7 +23,9 @@ def to_channel_first_uint8(
     prefer_channel_last: bool = False,
 ) -> np.ndarray:
     if image.ndim != 3:
-        raise ValueError(f"Expected {description} with 3 dimensions, got shape {image.shape}.")
+        raise ValueError(
+            f"Expected {description} with 3 dimensions, got shape {image.shape}."
+        )
 
     image_uint8 = as_uint8_image(image)
 
@@ -145,7 +147,9 @@ def validate_semantic_labels(
                 f"Mask values must be integers in [{min_label}, {max_label}] for {mask_path}"
             )
     if np.any((mask_int < min_label) | (mask_int > max_label)):
-        raise ValueError(f"Mask values must be in [{min_label}, {max_label}] for {mask_path}")
+        raise ValueError(
+            f"Mask values must be in [{min_label}, {max_label}] for {mask_path}"
+        )
     return mask_int
 
 

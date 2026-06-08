@@ -170,7 +170,9 @@ def _centrality(
     tile_w = max(proposal.tile_x1 - proposal.tile_x0, 1)
     tile_cy = proposal.tile_y0 + tile_h / 2.0
     tile_cx = proposal.tile_x0 + tile_w / 2.0
-    cy, cx = _mask_centroid_whole_image(local_mask, offset_y=offset_y, offset_x=offset_x)
+    cy, cx = _mask_centroid_whole_image(
+        local_mask, offset_y=offset_y, offset_x=offset_x
+    )
     dy = abs(cy - tile_cy) / (tile_h / 2.0)
     dx = abs(cx - tile_cx) / (tile_w / 2.0)
     distance = min(1.0, (dy * dy + dx * dx) ** 0.5)
@@ -214,9 +216,7 @@ def _tile_bounds_yxyx(proposal: TiledAssociationProposal) -> tuple[int, int, int
     return proposal.tile_y0, proposal.tile_x0, proposal.tile_y1, proposal.tile_x1
 
 
-def _rects_intersect(
-    left: tuple[float, ...], right: tuple[float, ...]
-) -> bool:
+def _rects_intersect(left: tuple[float, ...], right: tuple[float, ...]) -> bool:
     ly0, lx0, ly1, lx1 = left
     ry0, rx0, ry1, rx1 = right
     return ly0 < ry1 and ry0 < ly1 and lx0 < rx1 and rx0 < lx1
@@ -346,7 +346,9 @@ def _fuse_cluster(members: Sequence[_EnrichedProposal]) -> _FusedCluster:
         local_y = prop.offset_y - y0
         local_x = prop.offset_x - x0
         mask_h, mask_w = member.local_mask.shape
-        fused[local_y : local_y + mask_h, local_x : local_x + mask_w] |= member.local_mask
+        fused[local_y : local_y + mask_h, local_x : local_x + mask_w] |= (
+            member.local_mask
+        )
     score = max(member.proposal.score for member in members)
     return _FusedCluster(local_mask=fused, offset_y=y0, offset_x=x0, score=score)
 

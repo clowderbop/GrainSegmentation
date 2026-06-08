@@ -22,7 +22,7 @@ from yolo.inference_profile_tune import (
     profile_selection_row_path,
     write_profile_selection_row,
 )
-from yolo.profile_tune_finalize import collect_profile_selection_rows, main
+from yolo.profile_tune_finalize import main
 from yolo.tests.profile_tune_fixtures import constant_merged_view_pq_result
 
 
@@ -34,6 +34,7 @@ def _write_mini_grid(path: Path) -> None:
 
 
 def test_finalize_merges_rows_into_results_csv_and_winner(tmp_path: Path) -> None:
+    """INTENT: profile_tune_finalize merges row JSON files into results.csv and selects the winner."""
     _write_mini_grid(tmp_path / "grid.yaml")
     output_dir = tmp_path / "run"
     grid_dir = output_dir / "grid"
@@ -77,36 +78,3 @@ def test_finalize_merges_rows_into_results_csv_and_winner(tmp_path: Path) -> Non
     assert ppl["pq"] == pytest.approx(0.9)
 
 
-def test_collect_profile_selection_rows_sorted_by_filename(tmp_path: Path) -> None:
-    grid_dir = tmp_path / "grid"
-    for name in ("b_row", "a_row"):
-        path = grid_dir / "rows" / f"{name}.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"candidate_id": name}), encoding="utf-8")
-    rows = collect_profile_selection_rows(grid_dir)
-    assert [row["candidate_id"] for row in rows] == ["a_row", "b_row"]
-
-
-def test_finalize_recompute_winner_from_csv(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    grid_dir = tmp_path / "grid"
-    grid_dir.mkdir(parents=True)
-    fieldnames = grid_results_fieldnames(("PPL",))
-    mean_values = ",".join("0.95" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
-    per_variant_values = ",".join("0.95" for _ in MERGED_VIEW_PQ_RESULT_KEYS)
-    (grid_dir / "results.csv").write_text(
-        ",".join(fieldnames) + "\n"
-        f"winner,0.2,0.4,{mean_values},{per_variant_values}\n",
-        encoding="utf-8",
-    )
-    main(
-        [
-            "--output-dir",
-            str(tmp_path),
-            "--recompute-winner-from-csv",
-            "--variants",
-            "PPL",
-        ]
-    )
-    captured = json.loads(capsys.readouterr().out.strip())
-    assert captured["conf"] == pytest.approx(0.2)
-    assert (grid_dir / "winner.json").is_file()

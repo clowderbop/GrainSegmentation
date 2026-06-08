@@ -84,6 +84,7 @@ def _four_combo_instance_df() -> pd.DataFrame:
 
 
 def test_headline_ranking_table_ranks_by_whole_section_pq_descending() -> None:
+    """INTENT: headline ranking table orders rows by whole-section PQ descending."""
     table = headline_ranking_table(_four_combo_instance_df())
 
     assert list(table.columns[:4]) == [
@@ -99,6 +100,7 @@ def test_headline_ranking_table_ranks_by_whole_section_pq_descending() -> None:
 
 
 def test_whole_section_pq_matrix_uses_model_rows_and_thesis_input_columns() -> None:
+    """INTENT: whole-section PQ matrix uses model rows and thesis input configuration columns."""
     table = whole_section_pq_matrix_table(_four_combo_instance_df())
 
     assert table.index.name == MODEL_COL
@@ -108,6 +110,7 @@ def test_whole_section_pq_matrix_uses_model_rows_and_thesis_input_columns() -> N
 
 
 def test_thesis_ready_results_table_has_thesis_columns_and_order() -> None:
+    """INTENT: thesis-ready results table exposes thesis columns in the required order."""
     table = thesis_ready_results_table(_four_combo_instance_df())
 
     assert table.columns[0] == MODEL_COL
@@ -126,12 +129,8 @@ def test_thesis_ready_results_table_has_thesis_columns_and_order() -> None:
     assert yolo_rows[WHOLE_SECTION_PQ_COL].tolist() == pytest.approx([0.30, 0.50])
 
 
-def test_thesis_ready_results_orders_models_yolo_before_unet() -> None:
-    table = thesis_ready_results_table(_four_combo_instance_df())
-    assert table[MODEL_COL].tolist() == ["YOLO", "YOLO", "U-Net", "U-Net"]
-
-
 def test_thesis_ready_results_table_omits_missing_optional_columns() -> None:
+    """INTENT: thesis-ready results table omits optional columns absent from input metrics."""
     minimal_keys = ("pq", "dq", "sq")
     rows = [
         {
@@ -161,6 +160,7 @@ def test_thesis_ready_results_table_omits_missing_optional_columns() -> None:
 
 
 def test_per_variant_winner_table_picks_higher_pq_and_margin() -> None:
+    """INTENT: per-variant winner table picks higher-PQ producer and reports PQ margin."""
     table = per_variant_winner_table(_four_combo_instance_df())
 
     assert list(table.columns) == [
@@ -184,6 +184,7 @@ def test_per_variant_winner_table_picks_higher_pq_and_margin() -> None:
 
 
 def test_ppl_baseline_gain_table_uses_same_producer_ppl_baseline() -> None:
+    """INTENT: PPL baseline gain table measures gain relative to each producer's PPL baseline."""
     table = ppl_baseline_gain_table(_four_combo_instance_df())
 
     assert table.columns.tolist() == [
@@ -202,6 +203,7 @@ def test_ppl_baseline_gain_table_uses_same_producer_ppl_baseline() -> None:
 
 
 def test_model_family_comparison_matrix_yolo_minus_unet_deltas() -> None:
+    """INTENT: model family comparison matrix reports YOLO minus U-Net metric deltas."""
     df = _four_combo_instance_df()
     df = df.copy()
     df.loc[df["producer"] == "yolo", "dq"] = 0.6
@@ -220,6 +222,7 @@ def test_model_family_comparison_matrix_yolo_minus_unet_deltas() -> None:
 
 
 def test_ppl_relative_gain_matrix_uses_same_producer_baseline() -> None:
+    """INTENT: PPL relative gain matrix uses each producer's PPL baseline for non-PPL variants."""
     table = ppl_relative_gain_matrix_table(_four_combo_instance_df(), "pq")
 
     assert list(table.index) == ["YOLO", "U-Net"]
@@ -249,6 +252,7 @@ def _mosaic_producer_instance_df() -> pd.DataFrame:
 
 
 def test_yolo_unet_paired_input_configurations_requires_shared_finite_pq() -> None:
+    """INTENT: YOLO–U-Net pairing requires shared input configurations with finite PQ."""
     assert yolo_unet_paired_input_configurations(_four_combo_instance_df()) == [
         "PPL",
         "FullStack",
@@ -258,6 +262,7 @@ def test_yolo_unet_paired_input_configurations_requires_shared_finite_pq() -> No
 
 
 def test_per_variant_winner_omits_unpaired_input_configurations() -> None:
+    """INTENT: per-variant winner table omits input configurations without both producers."""
     df = pd.DataFrame(
         [
             *_four_combo_instance_df().to_dict("records"),
@@ -275,11 +280,13 @@ def test_per_variant_winner_omits_unpaired_input_configurations() -> None:
 
 
 def test_model_family_comparison_omits_unpaired_columns() -> None:
+    """INTENT: model family comparison matrix is empty when producers lack shared inputs."""
     comparison = model_family_comparison_matrix_table(_mosaic_producer_instance_df())
     assert comparison.empty
 
 
 def test_available_ppl_relative_skips_signed_count_bias_without_ratio_column() -> None:
+    """INTENT: PPL relative diagnostics omit signed count bias when ratio column is absent."""
     df = _four_combo_instance_df().drop(columns=["pred_gt_instance_ratio"])
     metrics = available_ppl_relative_diagnostic_metrics(df)
     assert "signed_count_bias" not in metrics

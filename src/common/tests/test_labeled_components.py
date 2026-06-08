@@ -19,12 +19,14 @@ def _sequential_single_pixel_labels(n: int, height: int, width: int) -> np.ndarr
 
 
 def test_relabel_sequential_renumbers_nonzero_labels_contiguously() -> None:
+    """INTENT: relabel_sequential renumbers nonzero labels to contiguous ids starting at one."""
     labeled = np.array([[0, 3, 0], [7, 0, 3]], dtype=np.int32)
     out = relabel_sequential(labeled)
     assert out.tolist() == [[0, 1, 0], [2, 0, 1]]
 
 
 def test_relabel_sequential_compacts_sparse_high_label_ids() -> None:
+    """INTENT: relabel_sequential compacts widely spaced label ids without changing instance membership."""
     labeled = np.zeros((4, 4), dtype=np.int32)
     labeled[0, 0] = 1
     labeled[1, 1] = 1_000_000
@@ -33,6 +35,7 @@ def test_relabel_sequential_compacts_sparse_high_label_ids() -> None:
 
 
 def test_drop_small_components_removes_labels_below_area_threshold() -> None:
+    """INTENT: drop_small_components zeroes labels whose pixel area is below min_area_px."""
     labeled = np.zeros((4, 4), dtype=np.int32)
     labeled[0, 0] = 1
     labeled[0, 1] = 1
@@ -52,6 +55,7 @@ def test_drop_small_components_removes_labels_below_area_threshold() -> None:
 
 
 def test_drop_small_components_compacts_when_nothing_dropped() -> None:
+    """INTENT: drop_small_components relabels surviving instances contiguously even when none are removed."""
     labeled = np.zeros((4, 4), dtype=np.int32)
     labeled[0, 0] = 1
     labeled[1, 1] = 5
@@ -63,14 +67,8 @@ def test_drop_small_components_compacts_when_nothing_dropped() -> None:
     assert sorted(int(v) for v in np.unique(out) if v) == [1, 2, 3, 4]
 
 
-def test_drop_small_components_noop_when_min_area_zero() -> None:
-    labeled = np.array([[1, 2], [3, 4]], dtype=np.int32)
-    out = drop_small_components(labeled, min_area_px=0)
-    assert np.array_equal(out, labeled)
-
-
 def test_drop_small_components_scales_with_pixels_not_max_label_id() -> None:
-    """Regression: watershed combos with min_area_px>0 must not scan per label id."""
+    """INTENT: drop_small_components completes in pixel-linear time despite sparse high label ids."""
     n_labels = 5_000
     labeled = _sequential_single_pixel_labels(n_labels, height=1_000, width=1_000)
     assert len(np.unique(labeled[labeled != 0])) == n_labels
@@ -84,6 +82,7 @@ def test_drop_small_components_scales_with_pixels_not_max_label_id() -> None:
 
 
 def test_relabel_sequential_scales_with_pixels_not_max_label_id() -> None:
+    """INTENT: relabel_sequential completes in pixel-linear time despite a sparse high label id."""
     labeled = np.zeros((64, 64), dtype=np.int32)
     labeled[0, 0] = 1
     labeled[1, 1] = 50_000

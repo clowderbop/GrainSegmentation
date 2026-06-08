@@ -95,7 +95,7 @@ def _make_tune_collect_args(
 def test_collect_samples_works_with_metadata_only_manifest_without_rgb_files(
     tmp_path: Path,
 ) -> None:
-    """Metadata-only staged manifests supply ids; geometry comes from cached preds."""
+    """INTENT: _collect_samples works from metadata-only manifests when cached preds supply geometry."""
     sample_id = "train"
     pred_path = tmp_path / "preds" / f"{sample_id}_pred.tif"
     pred_path.parent.mkdir(parents=True)
@@ -139,7 +139,7 @@ def test_collect_samples_works_with_metadata_only_manifest_without_rgb_files(
 def test_collect_samples_uses_pred_geometry_without_loading_rgb(
     tmp_path: Path,
 ) -> None:
-    """When manifest RGB and cached pred disagree in size, pred shape drives GT painting."""
+    """INTENT: _collect_samples uses cached pred shape for GT painting without loading RGB."""
     args = _make_tune_collect_args(
         tmp_path,
         pred_shape=(_HEIGHT, _WIDTH),
@@ -160,7 +160,7 @@ def test_collect_samples_uses_pred_geometry_without_loading_rgb(
 def test_collect_samples_raises_on_gt_pred_shape_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Shape mismatch between painted GT and cached pred names the affected sample id."""
+    """INTENT: _collect_samples raises a sample-named error when painted GT and pred shapes differ."""
     args = _make_tune_collect_args(tmp_path)
 
     def _wrong_shape_gt(*_args: object, **_kwargs: object) -> np.ndarray:
@@ -173,7 +173,7 @@ def test_collect_samples_raises_on_gt_pred_shape_mismatch(
 
 
 def test_collect_samples_gpkg_gt_matches_golden(tmp_path: Path) -> None:
-    """``tune_watershed._collect_samples`` paints GPKG scene polygons at pred resolution."""
+    """INTENT: _collect_samples paints GPKG scene polygons to match the golden instance map."""
     args = _make_tune_collect_args(tmp_path, paint_semantic_region=True)
     sample_ids, true_instances, _pred_semantic = _collect_samples(args)
 
@@ -185,7 +185,7 @@ def test_collect_samples_gpkg_gt_matches_golden(tmp_path: Path) -> None:
 def test_tune_watershed_main_uses_extraction_cache_for_cached_preds_workflow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Preds loaded from scratch preds_dir (--use-cached-preds path) still use tune cache."""
+    """INTENT: tune_watershed main builds tune caches once and scores every grid combo via cached path."""
     grid_path = tmp_path / "mini_grid.yaml"
     grid_path.write_text(
         yaml.safe_dump(

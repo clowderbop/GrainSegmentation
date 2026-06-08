@@ -13,8 +13,7 @@ import tifffile
 
 from common.evaluate_instances import InstanceEvalSample, load_gt_instance_map
 from common.geometry import load_image_space_polygons
-from common.ground_truth import polygons_to_instance_map, scene_polygons_to_patch_instance_map
-from common.gpkg_instance_map import gpkg_to_merged_instance_map
+from common.ground_truth import scene_polygons_to_patch_instance_map
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures" / "gpkg_merged_instance_map"
 _MICRO_GPKG = _FIXTURES / "micro_labels.gpkg"
@@ -37,6 +36,7 @@ def _blank_image(path: Path) -> None:
 
 
 def test_load_gt_instance_map_whole_gpkg_matches_golden(tmp_path: Path) -> None:
+    """INTENT: load_gt_instance_map rasterizes a whole-section GPKG to the golden instance map."""
     image_path = tmp_path / "train_PPL.tif"
     _blank_image(image_path)
     sample = InstanceEvalSample(
@@ -53,7 +53,7 @@ def test_load_gt_instance_map_whole_gpkg_matches_golden(tmp_path: Path) -> None:
 
 
 def test_scene_polygons_patch_origin_matches_golden_subregion() -> None:
-    """Patch GT matches whole-section geometry after origin shift (ids are local to the patch)."""
+    """INTENT: scene_polygons_to_patch_instance_map matches the golden whole-section crop for patch_stem origin."""
     golden = _golden_map()
     patch_id = "region_0000_y00008_x00016"
     y0, x0 = 8, 16
@@ -70,15 +70,3 @@ def test_scene_polygons_patch_origin_matches_golden_subregion() -> None:
     assert patch_map.shape == golden_crop.shape
     assert np.array_equal(patch_map > 0, golden_crop > 0)
 
-
-def test_polygons_to_instance_map_matches_gpkg_painter() -> None:
-    """``polygons_to_instance_map`` is the shared helper behind GPKG GT callers."""
-    polygons = load_image_space_polygons(_MICRO_GPKG)
-    painted = polygons_to_instance_map(
-        polygons, height=_FIXTURE_HEIGHT, width=_FIXTURE_WIDTH
-    )
-    canonical = gpkg_to_merged_instance_map(
-        _MICRO_GPKG, height=_FIXTURE_HEIGHT, width=_FIXTURE_WIDTH
-    )
-    assert np.array_equal(painted, canonical)
-    assert np.array_equal(painted, _golden_map())

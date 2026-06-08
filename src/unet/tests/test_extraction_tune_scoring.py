@@ -64,6 +64,7 @@ def _split_first_grain_pred(height: int = 64, width: int = 64) -> np.ndarray:
 
 
 def test_format_watershed_param_set_matches_tune_job_log_style() -> None:
+    """INTENT: watershed param formatting matches the tune job log string convention."""
     params = WatershedParamSet(5, 1, 2, 64, True, None)
     assert format_watershed_ridge_level(None) == "auto"
     assert format_watershed_param_set(params) == (
@@ -72,6 +73,7 @@ def test_format_watershed_param_set_matches_tune_job_log_style() -> None:
 
 
 def test_mean_train_pq_for_watershed_params_returns_merged_view_pq_fields() -> None:
+    """INTENT: mean train PQ scoring returns merged-view PQ fields and excludes legacy bundle keys."""
     gt = _two_grain_gt()
     semantic = np.zeros(gt.shape, dtype=np.uint8)
     semantic[8:28, 8:28] = 1
@@ -99,6 +101,7 @@ def test_mean_train_pq_for_watershed_params_returns_merged_view_pq_fields() -> N
 def test_mean_train_pq_for_watershed_params_calls_watershed_once_per_sample(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """INTENT: mean train PQ scoring runs watershed extraction once per training sample."""
     import unet.extraction_tune_scoring as scoring
 
     gt = _two_grain_gt()
@@ -129,6 +132,7 @@ def test_mean_train_pq_for_watershed_params_calls_watershed_once_per_sample(
 def test_mean_train_pq_for_watershed_params_logs_phase_timings(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """INTENT: mean train PQ scoring logs watershed and metrics phase timings when logging is enabled."""
     gt = _two_grain_gt()
     semantic = np.zeros(gt.shape, dtype=np.uint8)
     semantic[8:28, 8:28] = 1
@@ -154,6 +158,7 @@ def test_mean_train_pq_for_watershed_params_logs_phase_timings(
 
 
 def test_select_best_watershed_tune_row_uses_mean_pq_not_mean_aji() -> None:
+    """INTENT: best watershed tune row selection uses mean PQ, not mean AJI."""
     rows = [
         {
             "candidate_id": "high_aji",
@@ -176,7 +181,7 @@ def test_select_best_watershed_tune_row_uses_mean_pq_not_mean_aji() -> None:
 
 
 def test_synthetic_extraction_maps_pq_and_aji_winners_differ() -> None:
-    """Fixture maps invert PQ vs legacy AJI ranking (acceptance criterion)."""
+    """INTENT: synthetic extraction fixtures invert PQ versus legacy AJI ranking."""
     gt = _two_grain_gt()
     pred_pq_winner = _merged_plus_perfect_grain_pred()
     pred_aji_winner = _split_first_grain_pred()
@@ -189,6 +194,7 @@ def test_synthetic_extraction_maps_pq_and_aji_winners_differ() -> None:
 
 
 def test_select_train_extraction_method_uses_pq_not_aji() -> None:
+    """INTENT: train extraction method selection picks the method with higher PQ, not higher AJI."""
     gt = _two_grain_gt()
     cc_bundle = compute_instance_metric_bundle(gt, _merged_plus_perfect_grain_pred())
     watershed_bundle = compute_instance_metric_bundle(gt, _split_first_grain_pred())
@@ -218,7 +224,7 @@ def _notched_two_grain_semantic(height: int = 64, width: int = 64) -> tuple[np.n
 
 
 def test_watershed_param_candidates_pq_winner_differs_from_aji_winner() -> None:
-    """Synthetic watershed grid: mean PQ and legacy AJI pick different param sets."""
+    """INTENT: synthetic watershed params yield different winners for mean PQ versus legacy AJI."""
     from unet.extraction_tune_scoring import instance_map_for_watershed_params
 
     gt, semantic = _notched_two_grain_semantic()
@@ -255,6 +261,7 @@ def test_watershed_param_candidates_pq_winner_differs_from_aji_winner() -> None:
 def test_select_train_extraction_method_from_eval_reports_rejects_patch_unit(
     tmp_path: Path,
 ) -> None:
+    """INTENT: extraction method selection from eval reports rejects patch-unit reports."""
     patch_report = evaluate_instance_samples(
         [perfect_match_eval_sample(tmp_path, sample_id="train")],
         model_type="unet",
@@ -280,6 +287,7 @@ def test_select_train_extraction_method_from_eval_reports_rejects_patch_unit(
 
 
 def test_select_train_extraction_method_from_eval_reports(tmp_path: Path) -> None:
+    """INTENT: extraction method selection from whole-unit eval reports writes PQ-centered JSON."""
     gt_sample = perfect_match_eval_sample(tmp_path, sample_id="train")
     cc_report = evaluate_instance_samples(
         [gt_sample],
@@ -318,6 +326,7 @@ def test_select_train_extraction_method_from_eval_reports(tmp_path: Path) -> Non
 
 
 def test_select_train_extraction_method_from_eval_dirs(tmp_path: Path) -> None:
+    """INTENT: extraction method selection from eval dirs aggregates per-variant PQ bundles."""
     sample = perfect_match_eval_sample(tmp_path, sample_id="train")
     report = evaluate_instance_samples(
         [sample], model_type="unet", variant="PPL", unit="whole"
@@ -343,6 +352,7 @@ def test_select_train_extraction_method_from_eval_dirs(tmp_path: Path) -> None:
 
 
 def test_watershed_best_json_summary_uses_merged_view_pq_not_bundle() -> None:
+    """INTENT: watershed best JSON summary exposes merged-view PQ fields, not legacy bundle keys."""
     params = WatershedParamSet(3, 0, 1, 0, False, None)
     mean_pq = {key: 0.5 for key in MERGED_VIEW_PQ_RESULT_KEYS}
     mean_pq["pq"] = 0.82
@@ -371,6 +381,7 @@ def test_watershed_best_json_summary_uses_merged_view_pq_not_bundle() -> None:
 
 
 def test_watershed_tune_row_includes_merged_view_pq_fields_only() -> None:
+    """INTENT: watershed tune CSV rows include merged-view PQ fields and exclude legacy bundle columns."""
     params = WatershedParamSet(3, 0, 1, 0, False, None)
     mean_pq = {key: 0.5 for key in MERGED_VIEW_PQ_RESULT_KEYS}
     mean_pq["pq"] = 0.82

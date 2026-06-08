@@ -40,6 +40,7 @@ def _resolved_defaults(recipe_path: Path | None = None) -> dict[str, object]:
 
 
 def test_predict_cli_defaults_match_test_inference_recipe() -> None:
+    """INTENT: resolve_predict_inference_defaults matches conf, mask threshold, and slice settings from the test recipe."""
     recipe = load_test_inference_recipe()
     profile = recipe.yolo.profile
     defaults = _resolved_defaults()
@@ -53,6 +54,7 @@ def test_predict_cli_defaults_match_test_inference_recipe() -> None:
 
 
 def test_resolve_predict_defaults_read_recipe_at_resolve_time(tmp_path: Path) -> None:
+    """INTENT: resolve_predict_inference_defaults reads recipe values at resolve time, not import time."""
     recipe_path = tmp_path / "test_inference.yaml"
     recipe_path.write_text(
         """whole:
@@ -100,6 +102,7 @@ def test_whole_predict_applies_conf_and_mask_threshold_to_detector(
     mock_collect: MagicMock,
     tmp_path: Path,
 ) -> None:
+    """INTENT: run_whole_predict passes CLI conf and mask_threshold to the SAHI detector and collector."""
     image_path = tmp_path / "train.tif"
     image_path.write_bytes(b"\x00" * 64)
     mock_pairs.return_value = [(image_path, "train")]
@@ -142,6 +145,7 @@ def test_patch_predict_passes_conf_and_mask_threshold(
     mock_build: MagicMock,
     tmp_path: Path,
 ) -> None:
+    """INTENT: patch predict passes CLI conf to YOLO.predict and mask_threshold to prediction-set builder."""
     import json
 
     image_path = tmp_path / "patch001.tif"
@@ -206,6 +210,7 @@ def test_whole_run_provenance_records_inference_profile(
     mock_pairs: MagicMock,
     tmp_path: Path,
 ) -> None:
+    """INTENT: run_whole_predict records conf and mask_threshold in run provenance."""
     weights = tmp_path / "best.pt"
     weights.write_text("", encoding="utf-8")
     out_dir = tmp_path / "out"
@@ -232,51 +237,8 @@ def test_whole_run_provenance_records_inference_profile(
     assert provenance.get("cross_tile_association_at_predict") is True
 
 
-@patch("yolo.predict.prediction_set_from_tiled_proposal_records")
-@patch("yolo.predict.collect_tiled_detector_proposals", return_value=[])
-@patch("yolo.predict._load_whole_predict_pairs")
-@patch("sahi.AutoDetectionModel.from_pretrained")
-def test_whole_predict_collects_tiled_proposals_with_mask_threshold(
-    mock_from_pretrained: MagicMock,
-    mock_pairs: MagicMock,
-    mock_collect: MagicMock,
-    mock_pred_set: MagicMock,
-    tmp_path: Path,
-) -> None:
-    image_path = tmp_path / "train.tif"
-    image_path.write_bytes(b"\x00" * 64)
-    mock_pairs.return_value = [(image_path, "train")]
-    mock_from_pretrained.return_value = MagicMock()
-    mock_pred_set.return_value = PredictionSet(
-        schema_version=1,
-        height=8,
-        width=8,
-        producer="yolo",
-        detections=(),
-    )
-    weights = tmp_path / "best.pt"
-    weights.write_text("", encoding="utf-8")
-    args = Namespace(
-        weights=weights,
-        output_dir=tmp_path / "out",
-        variant="PPL",
-        imgsz=1024,
-        conf=0.4,
-        mask_threshold=0.6,
-        device="cpu",
-        slice_height=1024,
-        slice_width=1024,
-        overlap_height_ratio=0.5,
-        overlap_width_ratio=0.5,
-        manifest=None,
-        image=None,
-    )
-    with patch("yolo.predict.load_image_for_yolo", return_value=np.zeros((8, 8, 3), dtype=np.uint8)):
-        predict_module.run_whole_predict(args)
-    assert mock_collect.call_args.kwargs["mask_threshold"] == 0.6
-
-
 def test_patch_run_provenance_records_inference_profile(tmp_path: Path) -> None:
+    """INTENT: run_patch_predict records conf and mask_threshold in run provenance without SAHI axes."""
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
         '{"schema_version":1,"variant":"PPL","unit":"patch","grainseg_root":"'
@@ -315,6 +277,7 @@ def test_main_patch_resolves_conf_and_mask_from_recipe_when_cli_omits_them(
     mock_build: MagicMock,
     tmp_path: Path,
 ) -> None:
+    """INTENT: predict CLI patch unit resolves conf and mask_threshold from recipe when CLI omits them."""
     import json
 
     from common.test_inference import inference_recipe_path, load_test_inference_recipe

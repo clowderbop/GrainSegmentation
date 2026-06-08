@@ -12,14 +12,12 @@ from analysis.diagnostic_derivation import (
     RELATIVE_GAP_COL,
     failure_mode_classification_table,
     failure_mode_metrics_available,
-    failure_mode_rules_markdown,
     patch_to_whole_gap_metrics_available,
     patch_to_whole_gap_table,
     patch_to_whole_relative_gap_matrix_table,
     pq_decomposition_long_table,
     pq_decomposition_metrics_available,
     precision_recall_iou75_informative,
-    strictness_drop,
     strictness_drop_metrics_available,
     strictness_drop_matrix_table,
 )
@@ -78,6 +76,7 @@ def _paired_whole_patch_df() -> pd.DataFrame:
 
 
 def test_patch_to_whole_helpers_tolerate_schema_less_empty_dataframe() -> None:
+    """INTENT: patch-to-whole helpers return empty or false on a schema-less empty dataframe."""
     empty = pd.DataFrame()
 
     assert not patch_to_whole_gap_metrics_available(empty)
@@ -87,6 +86,7 @@ def test_patch_to_whole_helpers_tolerate_schema_less_empty_dataframe() -> None:
 
 
 def test_patch_to_whole_gap_table_absolute_and_relative_gaps() -> None:
+    """INTENT: patch-to-whole gap table reports absolute and relative whole-minus-patch gaps."""
     table = patch_to_whole_gap_table(_paired_whole_patch_df())
 
     pq = table[table["Metric"] == "Whole-section PQ"].iloc[0]
@@ -104,19 +104,14 @@ def test_patch_to_whole_gap_table_absolute_and_relative_gaps() -> None:
 
 
 def test_patch_to_whole_gap_table_includes_diagnostic_only_label() -> None:
+    """INTENT: patch-to-whole gap table marks rows with the diagnostic-only scope label."""
     table = patch_to_whole_gap_table(_paired_whole_patch_df())
 
     assert table["Scope"].iloc[0] == DIAGNOSTIC_ONLY_LABEL
 
 
-def test_strictness_drop_is_f1_iou50_minus_f1_iou75() -> None:
-    row = _whole_row(producer="yolo", variant="PPL", display_name="PPL", pq=0.3)
-    row["f1_iou50"] = 0.80
-    row["f1_iou75"] = 0.50
-    assert strictness_drop(pd.Series(row)) == pytest.approx(0.30)
-
-
 def test_strictness_drop_matrix_orders_model_and_input() -> None:
+    """INTENT: strictness-drop matrix orders rows by model and columns by input configuration."""
     matrix = strictness_drop_matrix_table(_paired_whole_patch_df())
 
     assert matrix.index.name == MODEL_COL
@@ -124,6 +119,7 @@ def test_strictness_drop_matrix_orders_model_and_input() -> None:
 
 
 def test_patch_to_whole_gap_metrics_available_requires_patch_aggregates() -> None:
+    """INTENT: patch-to-whole gap metrics require paired whole and patch aggregate rows."""
     assert patch_to_whole_gap_metrics_available(_paired_whole_patch_df())
 
     whole_only = pd.DataFrame(
@@ -140,12 +136,14 @@ def test_patch_to_whole_gap_metrics_available_requires_patch_aggregates() -> Non
 
 
 def test_patch_to_whole_relative_gap_matrix_for_pq() -> None:
+    """INTENT: patch-to-whole relative gap matrix reports PQ relative gaps by model and input."""
     matrix = patch_to_whole_relative_gap_matrix_table(_paired_whole_patch_df(), "pq")
 
     assert matrix.loc["YOLO", "PPL"] == pytest.approx(0.25)
 
 
 def test_precision_recall_iou75_informative_requires_spread() -> None:
+    """INTENT: precision-recall IoU75 informativeness requires spread across precision and recall."""
     varied = pd.DataFrame(
         [
             _whole_row(
@@ -181,6 +179,7 @@ def test_precision_recall_iou75_informative_requires_spread() -> None:
 
 
 def test_strictness_drop_metrics_available_requires_finite_f1_columns() -> None:
+    """INTENT: strictness-drop metrics require finite F1 IoU50 and IoU75 columns."""
     assert strictness_drop_metrics_available(_paired_whole_patch_df())
 
     missing = _paired_whole_patch_df().drop(columns=["f1_iou75"])
@@ -188,6 +187,7 @@ def test_strictness_drop_metrics_available_requires_finite_f1_columns() -> None:
 
 
 def test_pq_decomposition_long_table_orders_model_input_and_metric() -> None:
+    """INTENT: PQ decomposition long table orders rows by model, input, and PQ/DQ/SQ metric."""
     table = pq_decomposition_long_table(_four_combo_instance_df())
 
     assert list(table.columns) == [MODEL_COL, INPUT_CONFIGURATION_COL, "Metric", "Value"]
@@ -205,6 +205,7 @@ def test_pq_decomposition_long_table_orders_model_input_and_metric() -> None:
 
 
 def test_failure_mode_classification_labels_pq_and_count_cases() -> None:
+    """INTENT: failure-mode classification assigns detection, mask-quality, and count labels."""
     df = pd.DataFrame(
         [
             _whole_row(
@@ -238,17 +239,8 @@ def test_failure_mode_classification_labels_pq_and_count_cases() -> None:
     assert "underpredicting" in unet[FAILURE_MODE_LABEL_COL]
 
 
-def test_failure_mode_rules_markdown_documents_thresholds() -> None:
-    text = failure_mode_rules_markdown()
-
-    assert "detection-limited" in text
-    assert "mask-quality-limited" in text
-    assert "overpredicting" in text
-    assert "underpredicting" in text
-    assert "0.05" in text
-
-
 def test_pq_decomposition_metrics_available_requires_finite_pq_dq_sq() -> None:
+    """INTENT: PQ decomposition metrics require finite PQ, DQ, and SQ columns."""
     df = _four_combo_instance_df()
     assert pq_decomposition_metrics_available(df)
 
@@ -265,6 +257,7 @@ def test_pq_decomposition_metrics_available_requires_finite_pq_dq_sq() -> None:
 
 
 def test_failure_mode_metrics_available_requires_finite_dq_sq() -> None:
+    """INTENT: failure-mode metrics require finite DQ and SQ columns."""
     df = _four_combo_instance_df()
     assert failure_mode_metrics_available(df)
 

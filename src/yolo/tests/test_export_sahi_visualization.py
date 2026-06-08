@@ -17,6 +17,7 @@ from yolo.export_sahi_visualization import (
 
 
 def test_write_mask_overlay_visual(tmp_path: Path) -> None:
+    """INTENT: mask overlay export writes a readable RGB TIFF at the requested path."""
     image = np.zeros((16, 16, 3), dtype=np.uint8)
     pred_map = np.zeros((16, 16), dtype=np.int32)
     pred_map[2:8, 2:8] = 1
@@ -28,6 +29,7 @@ def test_write_mask_overlay_visual(tmp_path: Path) -> None:
 
 
 def test_write_prediction_set_overlay_on_canonical_grain(tmp_path: Path) -> None:
+    """INTENT: prediction-set overlay paints merged canonical grain pixels onto the image."""
     height, width = 16, 16
     masks = np.zeros((2, height, width), dtype=np.float32)
     masks[0, 4:12, 4:12] = 1.0
@@ -47,6 +49,7 @@ def test_write_prediction_set_overlay_on_canonical_grain(tmp_path: Path) -> None
 
 
 def test_export_sample_visualization_from_prediction_set(tmp_path: Path) -> None:
+    """INTENT: sample visualization export writes prediction_visual.tif from a prediction set."""
     height, width = 32, 32
     image_path = tmp_path / "sample.tif"
     tifffile.imwrite(

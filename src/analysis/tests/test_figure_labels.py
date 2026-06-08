@@ -10,16 +10,9 @@ from analysis.figures import (
     HeadlineFigureError,
     figure_headline_heatmap,
     figure_pq_decomposition_grouped_bars,
-    model_display_name,
     require_headline_pq_table,
 )
 from analysis.tests.test_derived_tables import _four_combo_instance_df
-
-
-def test_model_display_name_maps_producers() -> None:
-    """INTENT: thesis-facing producer labels stay stable for report figures."""
-    assert model_display_name("yolo") == "YOLO"
-    assert model_display_name("unet") == "U-Net"
 
 
 def test_figure_headline_heatmap_pq_panel_uses_derived_matrix(

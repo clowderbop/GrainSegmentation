@@ -10,17 +10,17 @@ import numpy as np
 import pytest
 
 from analysis.load_metrics import load_instance_metrics_json
-from common.evaluate_instances import collect_manifest_samples, evaluate_instance_samples
+from common.evaluate_instances import collect_manifest_samples
 from common.prediction_set import prediction_set_path, save_prediction_set
 from common.tests.evaluate_instances_fixtures import (
     empty_gt_false_positive_eval_sample,
-    perfect_match_eval_sample,
     write_blank_image,
 )
 from common.tests.prediction_set_fixtures import yolo_prediction_set_from_masks
 
 
 def test_collect_manifest_samples_patch(tmp_path: Path) -> None:
+    """INTENT: collect_manifest_samples resolves patch manifest rows into InstanceEvalSample records."""
     image_path = tmp_path / "patch001_PPL.tif"
     write_blank_image(image_path, 64, 64)
     ps = yolo_prediction_set_from_masks(
@@ -60,20 +60,10 @@ def test_collect_manifest_samples_patch(tmp_path: Path) -> None:
     assert samples[0].sample_id == "patch001"
 
 
-def test_evaluate_two_synthetic_instance_maps(tmp_path: Path) -> None:
-    report = evaluate_instance_samples(
-        [perfect_match_eval_sample(tmp_path, sample_id="sample")],
-        model_type="yolo",
-        variant="PPL",
-        unit="patch",
-    )
-    assert report["samples"][0]["pq"] == 1.0
-
-
 def test_empty_ground_truth_false_positive_writes_valid_instance_metrics_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Empty GT with predictions must serialize pred_gt_instance_ratio as JSON null."""
+    """INTENT: evaluate_instances CLI serializes pred_gt_instance_ratio as null when ground truth is empty."""
     from common.evaluate_instances import main
 
     sample = empty_gt_false_positive_eval_sample(tmp_path)

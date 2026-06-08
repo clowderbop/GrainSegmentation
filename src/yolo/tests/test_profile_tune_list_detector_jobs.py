@@ -20,6 +20,7 @@ def _write_minimal_grid(path: Path) -> None:
 def test_list_detector_jobs_prints_tsv_rows(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """INTENT: profile_tune_list_detector_jobs CLI prints one variant name per line for the grid."""
     grid_path = tmp_path / "grid.yaml"
     _write_minimal_grid(grid_path)
     main(["--grid-config", str(grid_path), "--variants", "PPL"])

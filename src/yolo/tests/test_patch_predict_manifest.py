@@ -53,6 +53,7 @@ def test_patch_predict_manifest_skips_dataset_yaml(
     mock_load_image: MagicMock,
     tmp_path: Path,
 ) -> None:
+    """INTENT: manifest-driven patch predict runs without resolving a train dataset YAML."""
     manifest_path = _minimal_manifest(tmp_path)
     mock_load_image.return_value = np.zeros((16, 16, 3), dtype=np.uint8)
 
@@ -92,6 +93,7 @@ def test_patch_predict_writes_score_merged_canonical_set(
     mock_load_image: MagicMock,
     tmp_path: Path,
 ) -> None:
+    """INTENT: patch predict writes a score-merged canonical prediction set."""
     manifest_path = _minimal_manifest(tmp_path)
     height, width = 16, 16
     mock_load_image.return_value = np.zeros((height, width, 3), dtype=np.uint8)
@@ -137,6 +139,7 @@ def test_patch_predict_writes_score_merged_canonical_set(
 
 
 def test_patch_run_provenance_records_score_merge_at_predict(tmp_path: Path) -> None:
+    """INTENT: patch predict run provenance records score merge at predict time."""
     manifest_path = _minimal_manifest(tmp_path)
     weights = tmp_path / "best.pt"
     weights.write_text("", encoding="utf-8")
@@ -159,6 +162,7 @@ def test_patch_run_provenance_records_score_merge_at_predict(tmp_path: Path) -> 
 
 
 def test_main_patch_with_manifest_does_not_require_data_yaml(tmp_path: Path) -> None:
+    """INTENT: patch CLI with manifest does not require or resolve a data YAML path."""
     manifest_path = _minimal_manifest(tmp_path)
     weights = tmp_path / "best.pt"
     weights.write_text("", encoding="utf-8")

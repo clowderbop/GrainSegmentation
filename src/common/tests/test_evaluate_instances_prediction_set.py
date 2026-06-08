@@ -25,6 +25,7 @@ def _write_blank_image(path: Path, width: int, height: int) -> None:
 
 
 def test_evaluate_instances_from_prediction_set_manifest(tmp_path: Path) -> None:
+    """INTENT: YOLO prediction-set manifest evaluation yields unit PQ for matching GT and predictions."""
     width, height = 48, 48
     image_path = tmp_path / "sample_PPL.tif"
     _write_blank_image(image_path, width, height)
@@ -98,6 +99,7 @@ def test_evaluate_instances_from_prediction_set_manifest(tmp_path: Path) -> None
 
 
 def test_evaluate_instances_from_unet_prediction_set_manifest(tmp_path: Path) -> None:
+    """INTENT: U-Net prediction-set manifest evaluation yields unit PQ for matching GT and predictions."""
     width, height = 48, 48
     image_path = tmp_path / "sample_PPL.tif"
     _write_blank_image(image_path, width, height)

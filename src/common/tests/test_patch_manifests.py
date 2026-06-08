@@ -33,6 +33,7 @@ def _write_patch(
 
 
 def test_build_yolo_patch_manifest_train(tmp_path: Path) -> None:
+    """INTENT: build_yolo_patch_manifest indexes train and val patch images with gt_txt and whole-section gpkg."""
     grainseg = tmp_path
     patch_root = grainseg / "dataset/train/patches/PPL"
     _write_patch(patch_root, "train", "region_0001_y00000_x00000")
@@ -54,6 +55,7 @@ def test_build_yolo_patch_manifest_train(tmp_path: Path) -> None:
 
 
 def test_build_yolo_patch_manifest_test_split(tmp_path: Path) -> None:
+    """INTENT: build_yolo_patch_manifest for test split points gt_gpkg at the test whole-section labels."""
     grainseg = tmp_path
     patch_root = grainseg / "dataset/test/patches/PPL"
     _write_patch(patch_root, "test", "region_0001_y00000_x00000")
@@ -69,6 +71,7 @@ def test_build_yolo_patch_manifest_test_split(tmp_path: Path) -> None:
 
 
 def test_build_unet_patch_manifest_single_input(tmp_path: Path) -> None:
+    """INTENT: build_unet_patch_manifest maps YOLO patch rows to single-channel U-Net image and mask paths."""
     yolo = build_yolo_patch_manifest(
         variant="PPL",
         split="test",
@@ -89,6 +92,7 @@ def test_build_unet_patch_manifest_single_input(tmp_path: Path) -> None:
 
 
 def test_build_unet_patch_manifest_multi_input() -> None:
+    """INTENT: build_unet_patch_manifest expands multi-input variants to one image path per channel."""
     from common.manifest_io import DatasetManifest, ManifestSampleRow
 
     yolo = DatasetManifest(
@@ -121,6 +125,7 @@ def test_build_unet_patch_manifest_multi_input() -> None:
 
 
 def test_render_yolo_dataset_yaml_channels() -> None:
+    """INTENT: render_yolo_dataset_yaml includes channels only for multi-channel variants when held out."""
     yaml = render_yolo_dataset_yaml("PPL+AllPPX", held_out=True)
     assert "channels: 21" in yaml
     assert "images/test" in yaml
@@ -128,6 +133,7 @@ def test_render_yolo_dataset_yaml_channels() -> None:
 
 
 def test_write_yolo_dataset_yaml_file(tmp_path: Path) -> None:
+    """INTENT: write_yolo_dataset_yaml_file writes a variant-named YAML without channels for single-input PPL."""
     patch_root = tmp_path / "PPL"
     patch_root.mkdir()
     path = write_yolo_dataset_yaml_file("PPL", patch_root, held_out=False)
@@ -142,6 +148,7 @@ def _make_yolo_tree(grainseg: Path, split_name: str) -> Path:
 
 
 def test_collect_manifest_unet_samples_single_image_field(tmp_path: Path) -> None:
+    """INTENT: collect_manifest_unet_samples reads single-image U-Net patch manifests into tune sample dicts."""
     from common.manifest_io import collect_manifest_unet_samples, write_dataset_manifest
 
     unet = build_unet_patch_manifest(

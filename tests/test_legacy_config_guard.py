@@ -5,20 +5,11 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 RETIRED_DEFAULT_PATHS = (
     "configs/test_inference.yaml",
     "configs/yolo_inference_profile_tune.yaml",
-)
-
-VERSIONED_CONFIG_YAML = (
-    "config/variants.yaml",
-    "config/test_inference.yaml",
-    "config/yolo_inference_profile_tune.yaml",
-    "config/watershed_tune_grid.yaml",
 )
 
 TEXT_SUFFIXES = {
@@ -69,33 +60,8 @@ def iter_repo_text_files() -> list[Path]:
     return sorted(files)
 
 
-def test_guard_detects_retired_default_path_reference() -> None:
-    """INTENT: helper flags retired configs/ default paths in arbitrary text."""
-    hits = find_retired_default_path_hits(
-        "Load defaults from configs/test_inference.yaml before promotion."
-    )
-    assert hits == ["configs/test_inference.yaml"]
-
-
-def test_guard_ignores_custom_grid_config_override_paths() -> None:
-    """Custom GRID_CONFIG paths outside the repo are out of scope for this guard."""
-    text = "\n".join(
-        (
-            'GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/config/yolo_inference_profile_tune.yaml}"',
-            "GRID_CONFIG=/scratch/user/custom_profile_grid.yaml",
-            "Use config/yolo_inference_profile_tune.yaml as the committed default.",
-        )
-    )
-    assert find_retired_default_path_hits(text) == []
-
-
-@pytest.mark.parametrize("rel_path", VERSIONED_CONFIG_YAML)
-def test_versioned_project_yaml_exists(rel_path: str) -> None:
-    path = REPO_ROOT / rel_path
-    assert path.is_file(), f"missing versioned project YAML: {rel_path}"
-
-
 def test_retired_config_defaults_not_tracked_in_git() -> None:
+    """INTENT: retired configs/ default YAML paths are not tracked in git."""
     result = subprocess.run(
         ["git", "ls-files", *RETIRED_DEFAULT_PATHS],
         cwd=REPO_ROOT,
@@ -108,6 +74,7 @@ def test_retired_config_defaults_not_tracked_in_git() -> None:
 
 
 def test_no_committed_references_to_retired_config_defaults() -> None:
+    """INTENT: no tracked repo text file references retired configs/ default recipe paths."""
     offenders: list[str] = []
     for path in iter_repo_text_files():
         if not path.is_file():

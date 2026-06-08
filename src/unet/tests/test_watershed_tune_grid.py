@@ -22,6 +22,7 @@ def _write_grid_config(path: Path, grid: dict[str, object]) -> None:
 
 
 def test_load_committed_watershed_tune_grid_excludes_pixel_scale_min_distance() -> None:
+    """INTENT: committed watershed tune grid omits pixel-scale min_distance value 1."""
     grid = load_watershed_tune_grid().grid
     assert 1 not in grid.min_distance
 
@@ -29,6 +30,7 @@ def test_load_committed_watershed_tune_grid_excludes_pixel_scale_min_distance() 
 def test_load_watershed_tune_grid_rejects_pixel_scale_min_distance(
     tmp_path: Path,
 ) -> None:
+    """INTENT: watershed tune grid loader rejects configs that include pixel-scale min_distance 1."""
     grid_path = tmp_path / "grid.yaml"
     _write_grid_config(
         grid_path,
@@ -48,6 +50,7 @@ def test_load_watershed_tune_grid_rejects_pixel_scale_min_distance(
 def test_watershed_tune_candidate_count_matches_product_of_configured_axes(
     tmp_path: Path,
 ) -> None:
+    """INTENT: watershed tune candidate count equals the product of configured grid axis lengths."""
     grid_path = tmp_path / "grid.yaml"
     _write_grid_config(
         grid_path,
@@ -65,6 +68,7 @@ def test_watershed_tune_candidate_count_matches_product_of_configured_axes(
 
 
 def test_default_grid_param_iteration_order_is_stable_for_csv_diffing() -> None:
+    """INTENT: default grid param iteration order is stable and starts at the committed first combo."""
     grid = load_watershed_tune_grid().grid
     assert first_watershed_tune_param_set(grid) == WatershedParamSet(
         5, 0, 1, 0, False, None
@@ -75,6 +79,7 @@ def test_default_grid_param_iteration_order_is_stable_for_csv_diffing() -> None:
 
 
 def test_tune_watershed_cli_accepts_grid_config(tmp_path: Path) -> None:
+    """INTENT: tune_watershed CLI accepts --grid-config to override the default watershed grid."""
     grid_path = tmp_path / "grid.yaml"
     _write_grid_config(
         grid_path,

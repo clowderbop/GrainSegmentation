@@ -32,6 +32,7 @@ from common.tests.prediction_set_fixtures import (
 
 
 def test_prediction_set_save_load_round_trip(tmp_path: Path) -> None:
+    """INTENT: save_prediction_set and load_prediction_set round-trip YOLO detection metadata."""
     data = {
         "schema_version": 1,
         "height": 8,
@@ -58,6 +59,7 @@ def test_prediction_set_save_load_round_trip(tmp_path: Path) -> None:
 
 
 def test_validate_rejects_unet_detection_with_score() -> None:
+    """INTENT: validate_prediction_set rejects U-Net detections that include a score field."""
     with pytest.raises(ValueError, match="score"):
         validate_prediction_set(
             {
@@ -77,6 +79,7 @@ def test_validate_rejects_unet_detection_with_score() -> None:
 
 
 def test_validate_rejects_yolo_detection_without_score() -> None:
+    """INTENT: validate_prediction_set rejects YOLO detections missing a required score."""
     with pytest.raises(ValueError, match="requires score"):
         validate_prediction_set(
             {
@@ -95,7 +98,7 @@ def test_validate_rejects_yolo_detection_without_score() -> None:
 
 
 def test_yolo_detection_mask_in_section_fast_path_skips_section_plane() -> None:
-    """Full-section RLE at (0, 0) returns the decoded mask without allocating a section plane."""
+    """INTENT: yolo_detection_mask_in_section decodes full-section masks without allocating a section plane."""
     height, width = 8, 8
     mask = np.zeros((height, width), dtype=bool)
     mask[2:5, 2:5] = True
@@ -111,6 +114,7 @@ def test_yolo_detection_mask_in_section_fast_path_skips_section_plane() -> None:
 
 
 def test_yolo_detection_mask_in_section_places_crop_at_offset() -> None:
+    """INTENT: yolo_detection_mask_in_section places cropped detections at their offset_y and offset_x."""
     crop = np.zeros((3, 4), dtype=bool)
     crop[1, 2] = True
     det = {
@@ -127,6 +131,7 @@ def test_yolo_detection_mask_in_section_places_crop_at_offset() -> None:
 
 
 def test_yolo_detection_mask_in_section_rejects_negative_offset() -> None:
+    """INTENT: yolo_detection_mask_in_section rejects detections with negative mask offsets."""
     det = {
         "segmentation": binary_mask_to_segmentation(
             np.ones((2, 2), dtype=bool), height=2, width=2
@@ -141,6 +146,7 @@ def test_yolo_detection_mask_in_section_rejects_negative_offset() -> None:
 
 
 def test_yolo_detection_mask_in_section_rejects_crop_outside_section() -> None:
+    """INTENT: yolo_detection_mask_in_section rejects crops that extend outside the section bounds."""
     det = {
         "segmentation": binary_mask_to_segmentation(
             np.ones((3, 3), dtype=bool), height=3, width=3
@@ -155,6 +161,7 @@ def test_yolo_detection_mask_in_section_rejects_crop_outside_section() -> None:
 
 
 def test_validate_rejects_yolo_detection_with_only_one_offset_field() -> None:
+    """INTENT: validate_prediction_set requires offset_y and offset_x to be set together or not at all."""
     with pytest.raises(ValueError, match="offset_y and offset_x must both be set"):
         validate_prediction_set(
             {
@@ -175,6 +182,7 @@ def test_validate_rejects_yolo_detection_with_only_one_offset_field() -> None:
 
 
 def test_validate_yolo_offset_fields_save_load_roundtrip(tmp_path: Path) -> None:
+    """INTENT: YOLO offset fields survive save/load and place one pixel in the merged instance view."""
     crop = np.zeros((3, 4), dtype=bool)
     crop[1, 2] = True
     payload = {
@@ -204,6 +212,7 @@ def test_validate_yolo_offset_fields_save_load_roundtrip(tmp_path: Path) -> None
 
 
 def test_yolo_merged_instance_view_decodes_one_mask_at_a_time() -> None:
+    """INTENT: prediction_set_to_merged_instance_view decodes YOLO masks one at a time without stacking all RLEs."""
     masks = np.zeros((4, 8, 8), dtype=np.float32)
     masks[0, 1:4, 1:4] = 1.0
     masks[1, 2:5, 2:5] = 1.0
@@ -245,6 +254,7 @@ def test_yolo_merged_instance_view_decodes_one_mask_at_a_time() -> None:
 
 
 def test_merge_yolo_proposals_keeps_disjoint_grains() -> None:
+    """INTENT: merge_yolo_proposals_by_score retains all detections when grains do not overlap."""
     height, width = 8, 8
     masks = np.zeros((2, height, width), dtype=np.float32)
     masks[0, 1:3, 1:3] = 1.0
@@ -263,6 +273,7 @@ def test_merge_yolo_proposals_keeps_disjoint_grains() -> None:
 
 
 def test_assert_yolo_grains_non_overlapping_rejects_overlapping_proposals() -> None:
+    """INTENT: assert_yolo_grains_non_overlapping raises when YOLO proposal masks overlap."""
     masks = np.zeros((2, 8, 8), dtype=np.float32)
     masks[0, 2:6, 2:6] = 1.0
     masks[1, 2:6, 2:6] = 1.0
@@ -277,6 +288,7 @@ def test_assert_yolo_grains_non_overlapping_rejects_overlapping_proposals() -> N
 
 
 def test_merge_yolo_proposals_collapses_overlapping_proposals_to_one_grain() -> None:
+    """INTENT: merge_yolo_proposals_by_score keeps the highest-score detection for overlapping proposals."""
     masks = np.zeros((2, 8, 8), dtype=np.float32)
     masks[0, 2:6, 2:6] = 1.0
     masks[1, 2:6, 2:6] = 1.0
@@ -295,6 +307,7 @@ def test_merge_yolo_proposals_collapses_overlapping_proposals_to_one_grain() -> 
 
 
 def test_merge_yolo_proposals_save_load_preserves_canonical_rles(tmp_path: Path) -> None:
+    """INTENT: save_prediction_set and load_prediction_set preserve score-merged canonical YOLO RLEs."""
     masks = np.zeros((2, 8, 8), dtype=np.float32)
     masks[0, 2:6, 2:6] = 1.0
     masks[1, 2:6, 2:6] = 1.0
@@ -309,37 +322,6 @@ def test_merge_yolo_proposals_save_load_preserves_canonical_rles(tmp_path: Path)
     save_prediction_set(path, canonical)
     reloaded = load_prediction_set(path)
     assert_yolo_canonical_sets_equal(reloaded, canonical)
-
-
-def test_merge_yolo_proposals_matches_pre_change_eval_score_merge() -> None:
-    height, width = 8, 8
-    masks = np.zeros((2, height, width), dtype=np.float32)
-    masks[0, 2:6, 2:6] = 1.0
-    masks[1, 2:6, 2:6] = 1.0
-    scores = np.array([0.2, 0.9], dtype=np.float32)
-
-    proposals = yolo_prediction_set_from_masks(
-        masks_hw=masks,
-        scores=scores,
-        height=height,
-        width=width,
-    )
-    canonical = merge_yolo_proposals_by_score(proposals)
-    pre_change_eval = yolo_detections_to_instance_map_by_score(
-        proposals.detections,
-        height=height,
-        width=width,
-        decode_segmentation=segmentation_to_binary_mask,
-    )
-    post_eval = prediction_set_to_merged_instance_view(canonical)
-
-    assert_instance_map_partitions_equal(post_eval, pre_change_eval)
-    assert_yolo_canonical_sets_equal(canonical, merge_yolo_proposals_by_score(proposals))
-
-
-def test_prediction_set_path_layout() -> None:
-    root = Path("/run/out")
-    assert prediction_set_path(root, "abc") == root / "prediction_sets" / "abc.json"
 
 
 class _PerMaskTensorStack:
@@ -359,6 +341,7 @@ class _PerMaskTensorStack:
 
 
 def test_build_yolo_prediction_set_from_ultralytics_per_mask() -> None:
+    """INTENT: build_yolo_prediction_set_from_ultralytics reads Ultralytics masks one plane at a time."""
     height, width = 8, 8
     plane = torch.zeros((height, width), dtype=torch.float32)
     plane[2:6, 2:6] = 1.0

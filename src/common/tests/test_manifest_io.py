@@ -52,6 +52,7 @@ def _synthetic_grainseg(tmp_path: Path) -> Path:
 
 
 def test_build_yolo_whole_manifest(tmp_path: Path) -> None:
+    """INTENT: build_yolo_whole_manifest emits a valid manifest pointing at the stacked mosaic image."""
     grainseg = _synthetic_grainseg(tmp_path)
     spec = get_variant("PPL+PPXblend")
     stacked = grainseg / spec.paths.test_mosaic_stacked
@@ -65,6 +66,7 @@ def test_build_yolo_whole_manifest(tmp_path: Path) -> None:
 
 
 def test_whole_manifest_overlay_anchor(tmp_path: Path) -> None:
+    """INTENT: whole_manifest_overlay_anchor returns the PPL channel and mask paths for overlay."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -76,6 +78,7 @@ def test_whole_manifest_overlay_anchor(tmp_path: Path) -> None:
 
 
 def test_build_and_validate_unet_whole_manifest(tmp_path: Path) -> None:
+    """INTENT: build_unet_whole_manifest produces one sample with all seven channel images."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -87,6 +90,7 @@ def test_build_and_validate_unet_whole_manifest(tmp_path: Path) -> None:
 
 
 def test_load_rejects_obsolete_pred_instances_field(tmp_path: Path) -> None:
+    """INTENT: load_dataset_manifest rejects manifests containing the obsolete pred_instances field."""
     payload = {
         "schema_version": 1,
         "variant": "PPL",
@@ -108,6 +112,7 @@ def test_load_rejects_obsolete_pred_instances_field(tmp_path: Path) -> None:
 
 
 def test_load_rejects_stacked_mosaic_in_images(tmp_path: Path) -> None:
+    """INTENT: load_dataset_manifest rejects U-Net manifests that list the YOLO stacked mosaic in images."""
     grainseg = _synthetic_grainseg(tmp_path)
     spec = get_variant("PPL+PPXblend")
     payload = {
@@ -133,6 +138,7 @@ def test_load_rejects_stacked_mosaic_in_images(tmp_path: Path) -> None:
 
 
 def test_collect_manifest_unet_samples_shape(tmp_path: Path) -> None:
+    """INTENT: collect_manifest_unet_samples exposes all channel image paths for a whole manifest."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -146,6 +152,7 @@ def test_collect_manifest_unet_samples_shape(tmp_path: Path) -> None:
 
 
 def test_stage_manifest_copies_gt_txt_preserving_tree(tmp_path: Path) -> None:
+    """INTENT: stage_manifest copies YOLO label txt files while preserving their relative directory tree."""
     grainseg = tmp_path / "grainseg"
     rel_txt = "dataset/test/patches/PPL/labels/test/region_0001_y00000_x00000.txt"
     rel_image = "dataset/test/patches/PPL/images/test/region_0001_y00000_x00000.tif"
@@ -180,6 +187,7 @@ def test_stage_manifest_copies_gt_txt_preserving_tree(tmp_path: Path) -> None:
 def test_stage_manifest_metadata_writes_manifest_without_copying_rasters(
     tmp_path: Path,
 ) -> None:
+    """INTENT: stage_manifest_metadata_to_file rewrites path_base without copying channel TIFFs."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -201,7 +209,7 @@ def test_stage_manifest_metadata_writes_manifest_without_copying_rasters(
 def test_stage_manifest_metadata_preserves_gt_paths_without_copying(
     tmp_path: Path,
 ) -> None:
-    """Metadata-only staging is not GT-self-contained; GT is supplied via --gt-gpkg (ADR 0002)."""
+    """INTENT: stage_manifest_metadata keeps canonical gt_gpkg paths and does not copy GPKG files."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -215,6 +223,7 @@ def test_stage_manifest_metadata_preserves_gt_paths_without_copying(
 
 
 def test_stage_manifest_metadata_matches_full_staging_path_metadata(tmp_path: Path) -> None:
+    """INTENT: stage_manifest_metadata and stage_manifest produce identical sample path metadata."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -228,6 +237,7 @@ def test_stage_manifest_metadata_matches_full_staging_path_metadata(tmp_path: Pa
 
 
 def test_stage_manifest_copies_channel_files(tmp_path: Path) -> None:
+    """INTENT: stage_manifest copies all channel TIFFs and the labels mask into the work directory."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -245,7 +255,7 @@ def test_stage_manifest_copies_channel_files(tmp_path: Path) -> None:
 
 @pytest.mark.integration
 def test_stage_manifest_integration_file_count(tmp_path: Path) -> None:
-    """Plan acceptance: PPL+AllPPX train whole manifest stages exactly 7 channel TIFFs."""
+    """INTENT: stage_manifest_to_file stages exactly seven channel TIFFs for PPL+AllPPX train."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest_path = grainseg / "dataset/train/manifests/PPL+AllPPX.whole.json"
     write_dataset_manifest(
@@ -264,7 +274,7 @@ def test_stage_manifest_integration_file_count(tmp_path: Path) -> None:
 
 
 def test_build_eval_manifest_materializes_staged_assets_for_eval(tmp_path: Path) -> None:
-    """Cluster layout: inference staging and run output are sibling directories."""
+    """INTENT: build_eval_manifest resolves image and gt_gpkg paths under the run output directory."""
     grainseg = _synthetic_grainseg(tmp_path)
     spec = get_variant("PPL+PPXblend")
     stacked = grainseg / spec.paths.test_mosaic_stacked
@@ -315,6 +325,7 @@ def test_build_eval_manifest_materializes_staged_assets_for_eval(tmp_path: Path)
 
 
 def test_build_eval_manifest_resolves_staged_gt_gpkg(tmp_path: Path) -> None:
+    """INTENT: build_eval_manifest resolves gt_gpkg to an on-disk file after staging."""
     grainseg = _synthetic_grainseg(tmp_path)
     spec = get_variant("PPL+PPXblend")
     stacked = grainseg / spec.paths.test_mosaic_stacked
@@ -353,6 +364,7 @@ def test_build_eval_manifest_resolves_staged_gt_gpkg(tmp_path: Path) -> None:
 
 
 def test_build_eval_manifest_rejects_scratch_gt_gpkg(tmp_path: Path) -> None:
+    """INTENT: build_eval_manifest rejects gt_gpkg paths outside the staged work directory."""
     grainseg = _synthetic_grainseg(tmp_path)
     source = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -371,6 +383,7 @@ def test_build_eval_manifest_rejects_scratch_gt_gpkg(tmp_path: Path) -> None:
 
 
 def test_build_eval_manifest_gt_gpkg_overrides_source(tmp_path: Path) -> None:
+    """INTENT: build_eval_manifest honors an explicit gt_gpkg override in the run output directory."""
     grainseg = _synthetic_grainseg(tmp_path)
     source = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -411,6 +424,7 @@ def test_build_eval_manifest_gt_gpkg_overrides_source(tmp_path: Path) -> None:
 
 
 def test_build_eval_manifest_preserves_gt_txt(tmp_path: Path) -> None:
+    """INTENT: build_eval_manifest retains gt_txt and gt_origin fields for patch manifests."""
     grainseg = tmp_path / "grainseg"
     grainseg.mkdir()
     image_path = grainseg / "patch001.tif"
@@ -462,6 +476,7 @@ def test_build_eval_manifest_preserves_gt_txt(tmp_path: Path) -> None:
 
 
 def test_collect_manifest_samples_multi_input_anchor(tmp_path: Path) -> None:
+    """INTENT: collect_manifest_samples picks the PPL anchor image from a multi-channel manifest."""
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL+AllPPX", grainseg_root=grainseg
@@ -496,6 +511,7 @@ def test_collect_manifest_samples_multi_input_anchor(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("variant", all_variant_names())
 def test_build_whole_manifest_all_variants(tmp_path: Path, variant: str) -> None:
+    """INTENT: build_unet_whole_manifest validates for every registered variant and train/test split."""
     grainseg = tmp_path / "GrainSeg"
     spec = get_variant(variant)
     for suffix in spec.unet.input_suffixes:

@@ -8,6 +8,7 @@ from unet.semantic_metrics import compute_semantic_metrics_dict, per_class_iou
 
 
 def test_per_class_iou_known_confusion() -> None:
+    """INTENT: per-class IoU and semantic metrics dict match hand-computed values on a known confusion matrix."""
     gt = np.array(
         [
             [0, 0, 1, 1],

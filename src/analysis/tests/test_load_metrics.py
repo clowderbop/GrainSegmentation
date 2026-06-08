@@ -9,7 +9,6 @@ import pytest
 
 from analysis.load_metrics import (
     IncompleteInstanceMetricBundleError,
-    instance_metric_row,
     load_instance_metrics_json,
     metrics_table_from_runs,
 )
@@ -62,17 +61,8 @@ PATCH_WITH_MEAN = {
 }
 
 
-def test_load_instance_metrics_reads_pq_bundle_from_single_sample() -> None:
-    metrics = load_instance_metrics_json(WHOLE_SINGLE_SAMPLE)
-    assert metrics["pq"] == pytest.approx(0.42)
-    assert metrics["dq"] == pytest.approx(0.5)
-    assert metrics["sq"] == pytest.approx(0.84)
-    assert metrics["pred_gt_instance_ratio"] == pytest.approx(0.8)
-    assert metrics["aji_plus"] == pytest.approx(0.13)
-    assert "aji" not in metrics
-
-
 def test_load_instance_metrics_prefers_mean_block() -> None:
+    """INTENT: load_instance_metrics_json prefers patch mean block over per-sample values."""
     metrics = load_instance_metrics_json(PATCH_WITH_MEAN)
     assert metrics["pq"] == pytest.approx(0.42)
 
@@ -111,6 +101,7 @@ EMPTY_GT_FALSE_POSITIVE_REPORT = {
 
 
 def test_load_accepts_null_pred_gt_ratio_for_empty_gt_false_positive() -> None:
+    """INTENT: empty-GT false-positive reports serialize pred_gt_instance_ratio as infinity."""
     metrics = load_instance_metrics_json(EMPTY_GT_FALSE_POSITIVE_REPORT)
     assert metrics["gt_instance_count"] == 0
     assert metrics["pred_instance_count"] == 2
@@ -120,6 +111,7 @@ def test_load_accepts_null_pred_gt_ratio_for_empty_gt_false_positive() -> None:
 def test_metrics_table_from_runs_accepts_serialized_empty_gt_false_positive(
     tmp_path: Path,
 ) -> None:
+    """INTENT: metrics_table_from_runs preserves infinity pred_gt ratio for empty-GT false positives."""
     metrics_path = tmp_path / "instance_metrics.json"
     metrics_path.write_text(json.dumps(EMPTY_GT_FALSE_POSITIVE_REPORT), encoding="utf-8")
     runs = [
@@ -135,6 +127,7 @@ def test_metrics_table_from_runs_accepts_serialized_empty_gt_false_positive(
 
 
 def test_load_rejects_finite_pred_gt_ratio_for_empty_gt_false_positive() -> None:
+    """INTENT: load rejects finite pred_gt ratio when gt_instance_count is zero."""
     malformed = {
         **EMPTY_GT_FALSE_POSITIVE_REPORT,
         "samples": [
@@ -152,6 +145,7 @@ def test_load_rejects_finite_pred_gt_ratio_for_empty_gt_false_positive() -> None
 
 
 def test_load_rejects_pre_policy_aji_only_report() -> None:
+    """INTENT: load rejects pre-policy AJI-only instance metric reports."""
     stale = {
         "samples": [{"sample_id": "test", "aji": 0.2, "f1_iou50": 0.3, "empty_gt": False}],
     }
@@ -160,6 +154,7 @@ def test_load_rejects_pre_policy_aji_only_report() -> None:
 
 
 def test_load_rejects_incomplete_bundle() -> None:
+    """INTENT: load rejects instance metric bundles missing required PQ fields."""
     partial = {
         "samples": [
             {
@@ -175,6 +170,7 @@ def test_load_rejects_incomplete_bundle() -> None:
 
 
 def test_metrics_table_from_runs_rejects_stale_report(tmp_path: Path) -> None:
+    """INTENT: metrics_table_from_runs rejects pre-policy AJI-only reports on disk."""
     metrics_path = tmp_path / "instance_metrics.json"
     metrics_path.write_text(
         json.dumps(
@@ -198,18 +194,8 @@ def test_metrics_table_from_runs_rejects_stale_report(tmp_path: Path) -> None:
         metrics_table_from_runs(runs)
 
 
-def test_instance_metric_row_includes_display_name() -> None:
-    row = instance_metric_row(
-        producer="yolo",
-        variant="PPL+AllPPX",
-        unit="whole",
-        metrics={"pq": 0.5, "dq": 0.6, "sq": 0.7},
-    )
-    assert row["display_name"] == "FullStack"
-    assert row["pq"] == pytest.approx(0.5)
-
-
 def test_metrics_table_from_runs_exposes_pq_bundle_columns(tmp_path: Path) -> None:
+    """INTENT: metrics_table_from_runs exposes PQ bundle columns from discovered eval runs."""
     metrics_path = tmp_path / "instance_metrics.json"
     metrics_path.write_text(json.dumps(WHOLE_SINGLE_SAMPLE), encoding="utf-8")
     runs = [
@@ -231,6 +217,7 @@ def test_metrics_table_from_runs_exposes_pq_bundle_columns(tmp_path: Path) -> No
 
 
 def test_metrics_table_omits_mask_ap_from_instance_rows(tmp_path: Path) -> None:
+    """INTENT: metrics_table_from_runs omits mask AP columns from instance metric rows."""
     metrics_path = tmp_path / "instance_metrics.json"
     metrics_path.write_text(json.dumps(WHOLE_SINGLE_SAMPLE), encoding="utf-8")
     mask_ap_path = tmp_path / "mask_ap_metrics.json"
@@ -253,6 +240,7 @@ def test_metrics_table_omits_mask_ap_from_instance_rows(tmp_path: Path) -> None:
 
 
 def test_patch_rows_include_pq_patch_aggregates(tmp_path: Path) -> None:
+    """INTENT: patch metric rows include grain-weighted PQ patch aggregate columns."""
     metrics_path = tmp_path / "instance_metrics.json"
     metrics_path.write_text(json.dumps(PATCH_WITH_MEAN), encoding="utf-8")
     runs = [

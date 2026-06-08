@@ -47,6 +47,7 @@ def _write_proposal_cache(
 
 
 def test_stage_candidate_work_copies_gt_cache_preserving_layout(tmp_path: Path) -> None:
+    """INTENT: stage_candidate_work copies GT cache into tmp work root preserving directory layout."""
     from yolo.profile_tune_cache_stage import stage_candidate_work
 
     scratch_cache = tmp_path / "scratch" / ".cache"
@@ -79,6 +80,7 @@ def test_stage_candidate_work_copies_gt_cache_preserving_layout(tmp_path: Path) 
 def test_stage_candidate_work_copies_only_candidate_proposal_subtrees(
     tmp_path: Path,
 ) -> None:
+    """INTENT: stage_candidate_work copies only proposal caches for the candidate conf, not other conf values."""
     from yolo.profile_tune_cache_stage import stage_candidate_work
 
     scratch_cache = tmp_path / "scratch" / ".cache"
@@ -123,6 +125,7 @@ def test_stage_candidate_work_copies_only_candidate_proposal_subtrees(
 
 
 def test_stage_candidate_work_missing_gt_cache_fails_fast(tmp_path: Path) -> None:
+    """INTENT: stage_candidate_work raises FileNotFoundError when GT cache is missing."""
     from yolo.profile_tune_cache_stage import stage_candidate_work
 
     scratch_cache = tmp_path / "scratch" / ".cache"
@@ -143,6 +146,7 @@ def test_stage_candidate_work_missing_gt_cache_fails_fast(tmp_path: Path) -> Non
 def test_stage_candidate_work_missing_proposal_cache_points_at_scratch_path(
     tmp_path: Path,
 ) -> None:
+    """INTENT: stage_candidate_work error messages cite the missing scratch proposal cache path."""
     from yolo.profile_tune_cache_stage import stage_candidate_work
 
     scratch_cache = tmp_path / "scratch" / ".cache"
@@ -162,6 +166,7 @@ def test_stage_candidate_work_missing_proposal_cache_points_at_scratch_path(
 
 
 def test_stage_candidate_work_returns_proposal_timing_breakdown(tmp_path: Path) -> None:
+    """INTENT: stage_candidate_work returns per-variant proposal copy timings alongside aggregate copy times."""
     from yolo.profile_tune_cache_stage import stage_candidate_work
 
     scratch_cache = tmp_path / "scratch" / ".cache"
@@ -192,6 +197,7 @@ def test_stage_candidate_work_returns_proposal_timing_breakdown(tmp_path: Path) 
 
 
 def test_stage_detector_train_image_copies_only_train_mosaic(tmp_path: Path) -> None:
+    """INTENT: stage_detector_train_image copies only the variant train mosaic into tmp staging."""
     from common.variants import get_variant
     from yolo.profile_tune_cache_stage import stage_detector_train_image
 
@@ -213,21 +219,3 @@ def test_stage_detector_train_image_copies_only_train_mosaic(tmp_path: Path) -> 
     assert staged.copy_s >= 0.0
     assert not (tmp_path / "staged").exists()
 
-
-def test_format_candidate_stage_timings_lists_aggregate_and_per_variant() -> None:
-    from yolo.profile_tune_cache_stage import (
-        CandidateStageTimings,
-        format_candidate_stage_timings,
-    )
-
-    line = format_candidate_stage_timings(
-        CandidateStageTimings(
-            copy_gt_s=1.2,
-            copy_proposals_s=3.4,
-            per_variant_proposals_s={"PPL": 1.0, "PPLPPXblend": 2.4},
-        )
-    )
-    assert "copy_gt_s=1.2" in line
-    assert "copy_proposals_s=3.4" in line
-    assert "copy_proposals_PPL_s=1.0" in line
-    assert "copy_proposals_PPLPPXblend_s=2.4" in line

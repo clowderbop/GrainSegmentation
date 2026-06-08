@@ -61,11 +61,13 @@ def grainseg_tree(tmp_path: Path) -> Path:
 
 
 def test_latest_patch_job_dir_picks_newest(grainseg_tree: Path) -> None:
+    """INTENT: latest_patch_job_dir selects the newest patch job directory by mtime."""
     variant_dir = grainseg_tree / "eval/yolo_patches/PPL"
     assert latest_patch_job_dir(variant_dir).name == "200"
 
 
 def test_discover_eval_runs_whole_and_patch(grainseg_tree: Path) -> None:
+    """INTENT: discover_eval_runs finds whole and latest patch eval runs for both producers."""
     runs = discover_eval_runs(grainseg_tree)
     yolo_whole = [r for r in runs if r.producer == "yolo" and r.unit == "whole"]
     unet_whole = [r for r in runs if r.producer == "unet" and r.unit == "whole"]
@@ -78,6 +80,7 @@ def test_discover_eval_runs_whole_and_patch(grainseg_tree: Path) -> None:
 
 
 def test_discover_ultralytics_val(grainseg_tree: Path) -> None:
+    """INTENT: discover_ultralytics_val locates Ultralytics validation metrics by convention."""
     refs = discover_ultralytics_val(grainseg_tree)
     assert refs == [
         UltralyticsValRef(
@@ -88,6 +91,7 @@ def test_discover_ultralytics_val(grainseg_tree: Path) -> None:
 
 
 def test_discover_raises_when_whole_run_missing(tmp_path: Path) -> None:
+    """INTENT: strict discover_eval_runs raises when required whole-section runs are missing."""
     root = tmp_path / "GrainSeg"
     with pytest.raises(DiscoveryError, match="yolo whole"):
         discover_eval_runs(root, strict=True)

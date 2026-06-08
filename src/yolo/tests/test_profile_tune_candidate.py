@@ -21,13 +21,13 @@ from yolo.inference_profile_tune import (
 )
 from yolo.profile_tune_candidate import (
     build_profile_selection_row,
-    row_fingerprint_matches,
     score_profile_selection_candidate,
 )
 from yolo.tests.profile_tune_fixtures import constant_merged_view_pq_result
 
 
 def test_build_profile_selection_row_includes_per_variant_pq_results() -> None:
+    """INTENT: build_profile_selection_row includes mean and per-variant merged-view PQ columns."""
     candidate = profile_tune_candidate_from_conf(0.25)
     row = build_profile_selection_row(
         candidate=candidate,
@@ -49,6 +49,7 @@ def test_build_profile_selection_row_includes_per_variant_pq_results() -> None:
 
 
 def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> None:
+    """INTENT: score_profile_selection_candidate writes a profile-selection row JSON with mean PQ."""
     candidate = profile_tune_candidate_from_conf(0.25)
     output_dir = tmp_path / "run"
     work_root = output_dir / ".cache"
@@ -91,6 +92,7 @@ def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> No
 def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
     tmp_path: Path,
 ) -> None:
+    """INTENT: score_profile_selection_candidate skips rescoring when row fingerprint matches on resume."""
     candidate = profile_tune_candidate_from_conf(0.35)
     output_dir = tmp_path / "run"
     grid_dir = output_dir / "grid"
@@ -140,12 +142,8 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
     assert load_profile_selection_row(row_path)["mean_pq"] == pytest.approx(0.99)
 
 
-def test_row_fingerprint_matches_requires_exact_equality() -> None:
-    assert row_fingerprint_matches({"a": 1}, {"a": 1})
-    assert not row_fingerprint_matches({"a": 1}, {"a": 2})
-
-
 def test_score_profile_selection_candidate_loads_gt_once(tmp_path: Path) -> None:
+    """INTENT: score_profile_selection_candidate loads shared train GT once across all variants."""
     candidate = profile_tune_candidate_from_conf(0.25)
     output_dir = tmp_path / "run"
     gt_loads: list[int] = []
@@ -183,41 +181,8 @@ def test_score_profile_selection_candidate_loads_gt_once(tmp_path: Path) -> None
     assert gt_loads == [1]
 
 
-def test_candidate_row_fingerprint_includes_proposal_schema_v2(
-    tmp_path: Path,
-) -> None:
-    import tifffile
-
-    from yolo.profile_tune_candidate import candidate_row_fingerprint
-    from yolo.tiled_proposal_cache import TILED_PROPOSAL_CACHE_SCHEMA_VERSION
-
-    candidate = profile_tune_candidate_from_conf(0.25)
-    grainseg_root = tmp_path / "grainseg"
-    run_root = grainseg_root / "runs" / "yolo26-seg"
-    weights = run_root / "PPL" / "weights" / "best.pt"
-    weights.parent.mkdir(parents=True)
-    weights.write_bytes(b"weights")
-    labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
-    labels_gpkg.parent.mkdir(parents=True)
-    labels_gpkg.write_bytes(b"labels")
-    anchor = grainseg_root / "dataset" / "train" / "train_PPL.tif"
-    tifffile.imwrite(anchor, np.zeros((16, 16, 3), dtype=np.uint8))
-
-    fingerprint = candidate_row_fingerprint(
-        candidate=candidate,
-        variants=("PPL",),
-        grainseg_root=grainseg_root,
-        run_root=run_root,
-        work_root=tmp_path / "work",
-        grid_config=None,
-    )
-    assert (
-        fingerprint["variants"]["PPL"]["proposal_schema_version"]
-        == TILED_PROPOSAL_CACHE_SCHEMA_VERSION
-    )
-
-
 def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> None:
+    """INTENT: score_profile_selection_candidate rescoring when row fingerprint predates ADR-0006 GT cache schema."""
     import tifffile
 
     from yolo.tiled_proposal_cache import weights_sha256

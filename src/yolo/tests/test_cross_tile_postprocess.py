@@ -17,6 +17,7 @@ from yolo.tiled_proposal_cache import tiled_proposal_record_from_tile_mask
 
 
 def test_prediction_set_from_disjoint_collector_records() -> None:
+    """INTENT: postprocess builds a canonical prediction set from disjoint collector records."""
     height, width = 16, 16
     records = tiled_proposal_records_disjoint_via_collector(height, width, mask_threshold=0.5)
     for record in records:
@@ -30,6 +31,7 @@ def test_prediction_set_from_disjoint_collector_records() -> None:
 
 
 def test_merged_view_matches_direct_association_on_fixture() -> None:
+    """INTENT: postprocess module output matches direct association on a fixture."""
     proposals, height, width = slice_boundary_duplicate_pair()
     direct = associate_tiled_proposals(proposals, height=height, width=width)
     records = [

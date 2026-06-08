@@ -120,6 +120,7 @@ def _phased_instance_map(semantic: np.ndarray, params: WatershedParamSet) -> np.
 
 
 def test_watershed_semantic_prep_handles_empty_interior() -> None:
+    """INTENT: watershed semantic prep returns zero base extraction for empty interior masks."""
     semantic = np.zeros((32, 32), dtype=np.uint8)
     prep = build_watershed_semantic_prep(semantic)
 
@@ -138,6 +139,7 @@ def test_watershed_semantic_prep_handles_empty_interior() -> None:
 
 
 def test_watershed_semantic_prep_exposes_shape_and_dtype_invariants() -> None:
+    """INTENT: watershed semantic prep exposes expected shape, dtype, and mask invariants for two-grain input."""
     semantic = _two_grain_semantic()
     prep = build_watershed_semantic_prep(semantic)
 
@@ -153,6 +155,7 @@ def test_watershed_semantic_prep_exposes_shape_and_dtype_invariants() -> None:
 
 
 def test_watershed_base_extraction_labels_grains_before_area_filter() -> None:
+    """INTENT: watershed base extraction labels multiple grains before min-area filtering."""
     prep = build_watershed_semantic_prep(_two_grain_semantic())
     base = watershed_base_extraction(
         prep,
@@ -170,6 +173,7 @@ def test_watershed_base_extraction_labels_grains_before_area_filter() -> None:
 
 
 def test_watershed_area_filter_drops_small_components_and_relabels() -> None:
+    """INTENT: watershed area filter drops sub-threshold components and relabels survivors contiguously."""
     base = np.zeros((10, 10), dtype=np.int32)
     base[1:3, 1:3] = 1  # 4 px — dropped
     base[1:6, 5:8] = 2  # 15 px — kept, becomes label 1
@@ -197,6 +201,7 @@ def test_watershed_area_filter_drops_small_components_and_relabels() -> None:
 def test_phased_extraction_matches_monolithic_for_representative_params(
     params: WatershedParamSet,
 ) -> None:
+    """INTENT: phased watershed extraction matches monolithic reference for representative param sets."""
     semantic = _two_grain_semantic_with_boundaries()
     reference = _monolithic_watershed_reference(
         semantic,
@@ -212,6 +217,7 @@ def test_phased_extraction_matches_monolithic_for_representative_params(
 
 
 def test_phased_extraction_matches_monolithic_for_default_grid() -> None:
+    """INTENT: phased watershed extraction matches monolithic reference across the default tune grid."""
     semantic = _two_grain_semantic_with_boundaries()
     grid = load_watershed_tune_grid().grid
     for params in iter_watershed_tune_param_sets(grid):
@@ -229,6 +235,7 @@ def test_phased_extraction_matches_monolithic_for_default_grid() -> None:
 
 
 def test_instance_map_for_watershed_params_uses_phased_pipeline() -> None:
+    """INTENT: instance_map_for_watershed_params delegates to the phased watershed pipeline."""
     semantic = _two_grain_semantic()
     params = WatershedParamSet(5, 0, 1, 0, False, None)
     expected = _phased_instance_map(semantic, params)

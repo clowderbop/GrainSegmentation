@@ -54,7 +54,7 @@ def detector_tune_layout(tmp_path: Path) -> dict[str, Path]:
 def test_write_detector_proposal_cache_does_not_create_staged_manifest_tree(
     detector_tune_layout: dict[str, Path],
 ) -> None:
-    """Profile tune detector reads a local train TIFF without persistent manifest staging."""
+    """INTENT: write_detector_proposal_cache stages train TIFF locally without a persistent manifest tree."""
     layout = detector_tune_layout
     staging_dir = layout["output_dir"] / "tmpdir"
     staged_root = layout["work_root"] / layout["variant"] / "staged"
@@ -87,6 +87,7 @@ def test_write_detector_proposal_cache_does_not_create_staged_manifest_tree(
 def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
     detector_tune_layout: dict[str, Path],
 ) -> None:
+    """INTENT: write_detector_proposal_cache reuses a valid on-disk proposal cache without running detection."""
     layout = detector_tune_layout
     conf = 0.25
     fixed_mask = load_test_inference_recipe().yolo.profile.mask_threshold
@@ -146,7 +147,7 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
 def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
     detector_tune_layout: dict[str, Path],
 ) -> None:
-    """Detector write path stores v2 crop-local RLE on disk, not full-section dense masks."""
+    """INTENT: write_detector_proposal_cache persists crop-local RLE proposals, not full-section dense masks."""
     layout = detector_tune_layout
     conf = 0.2
     fixed_mask = load_test_inference_recipe().yolo.profile.mask_threshold
@@ -211,6 +212,7 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
 def test_profile_tune_detector_main_runs_variant_bundle_for_array_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """INTENT: profile_tune_detector CLI dispatches the variant bundle matching --array-index."""
     import yaml
 
     from yolo.profile_tune_detector import main
@@ -253,6 +255,7 @@ def test_profile_tune_detector_main_runs_variant_bundle_for_array_index(
 def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
     detector_tune_layout: dict[str, Path],
 ) -> None:
+    """INTENT: run_detector_variant_bundle skips conf values with valid caches and computes only missing ones."""
     from yolo.inference_profile_tune import load_tune_grid
     from yolo.profile_tune_detector import run_detector_variant_bundle
 

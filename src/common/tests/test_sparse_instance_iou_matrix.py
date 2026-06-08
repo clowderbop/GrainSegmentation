@@ -42,10 +42,12 @@ def _assert_bundle_matches_dense_reference(gt: np.ndarray, pred: np.ndarray) -> 
 
 
 def test_sparse_iou_matrix_empty_maps() -> None:
+    """INTENT: build_instance_iou_matrix matches the dense reference for empty label maps."""
     _assert_matrix_matches_dense_reference(blank_map(8, 8), blank_map(8, 8))
 
 
 def test_sparse_iou_matrix_single_perfect_match() -> None:
+    """INTENT: build_instance_iou_matrix matches the dense reference for a perfect single-instance overlap."""
     gt = blank_map(16, 16)
     pred = blank_map(16, 16)
     paint_box(gt, 1, 2, 2, 10, 10)
@@ -54,6 +56,7 @@ def test_sparse_iou_matrix_single_perfect_match() -> None:
 
 
 def test_sparse_iou_matrix_non_overlapping_instances_are_zero() -> None:
+    """INTENT: build_instance_iou_matrix assigns zero IoU to gt instances with no overlapping prediction."""
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)
     paint_box(gt, 1, 4, 4, 14, 14)
@@ -68,11 +71,13 @@ def test_sparse_iou_matrix_non_overlapping_instances_are_zero() -> None:
 
 
 def test_sparse_iou_matrix_split_merge_overlap() -> None:
+    """INTENT: build_instance_iou_matrix matches the dense reference on the split-merge fixture."""
     gt, pred = get_bundle_fixture("split_merge")
     _assert_matrix_matches_dense_reference(gt, pred)
 
 
 def test_sparse_iou_matrix_gapped_label_ids() -> None:
+    """INTENT: build_instance_iou_matrix matches the dense reference when label ids are non-contiguous."""
     gt = blank_map(24, 24)
     pred = blank_map(24, 24)
     paint_box(gt, 7, 2, 2, 10, 10)
@@ -84,6 +89,7 @@ def test_sparse_iou_matrix_gapped_label_ids() -> None:
 def test_compute_instance_metric_bundle_unchanged_after_sparse_matrix(
     fixture_name: str,
 ) -> None:
+    """INTENT: compute_instance_metric_bundle agrees with the dense reference across bundle fixtures."""
     gt, pred = get_bundle_fixture(fixture_name)
     _assert_matrix_matches_dense_reference(gt, pred)
     _assert_bundle_matches_dense_reference(gt, pred)

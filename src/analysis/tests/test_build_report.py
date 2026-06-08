@@ -30,6 +30,7 @@ from analysis.tests.test_load_metrics import PATCH_WITH_MEAN, PQ_SAMPLE_ROW
 def test_build_reporting_bundle_empty_discover_records_skips_without_crash(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle completes with skip reasons when no eval runs are discovered."""
     root = tmp_path / "GrainSeg"
     root.mkdir()
     out = tmp_path / "reporting"
@@ -43,6 +44,7 @@ def test_build_reporting_bundle_empty_discover_records_skips_without_crash(
 
 
 def test_build_reporting_bundle_writes_derived_and_summary(tmp_path: Path) -> None:
+    """INTENT: build_reporting_bundle writes derived metrics CSV and analysis summary JSON."""
     root = tmp_path / "GrainSeg"
     _write_json(
         root / "eval/yolo_PPL/instance_metrics.json",
@@ -94,6 +96,7 @@ def _figure_ready_eval_tree(root: Path) -> None:
 
 
 def test_build_reporting_bundle_writes_thesis_core_tables(tmp_path: Path) -> None:
+    """INTENT: build_reporting_bundle writes thesis-core derived ranking and matrix tables."""
     root = tmp_path / "GrainSeg"
     _figure_ready_eval_tree(root)
     out = tmp_path / "reporting"
@@ -143,6 +146,7 @@ def _producer_comparison_eval_tree(root: Path) -> None:
 
 
 def test_build_reporting_bundle_writes_producer_comparison_tables(tmp_path: Path) -> None:
+    """INTENT: build_reporting_bundle writes producer comparison derived tables when both exist."""
     root = tmp_path / "GrainSeg"
     _producer_comparison_eval_tree(root)
     out = tmp_path / "reporting"
@@ -166,6 +170,7 @@ def test_build_reporting_bundle_writes_producer_comparison_tables(tmp_path: Path
 def test_build_reporting_bundle_skips_family_comparison_without_both_producers(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle skips model comparison outputs with only one producer."""
     root = tmp_path / "GrainSeg"
     _write_json(
         root / "eval/yolo_PPL/instance_metrics.json",
@@ -193,6 +198,7 @@ def test_build_reporting_bundle_skips_family_comparison_without_both_producers(
 def test_build_reporting_bundle_skips_model_comparison_for_mosaic_producers(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle skips model comparison when producers lack shared inputs."""
     root = tmp_path / "GrainSeg"
     _write_json(
         root / "eval/yolo_PPL/instance_metrics.json",
@@ -230,6 +236,7 @@ def test_build_reporting_bundle_skips_model_comparison_for_mosaic_producers(
 def test_build_reporting_bundle_skips_ppl_heatmap_when_renderer_writes_no_file(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle records skip when PPL heatmap renderer produces no file."""
     pytest.importorskip("matplotlib")
     pytest.importorskip("seaborn")
 
@@ -258,6 +265,7 @@ def test_build_reporting_bundle_skips_ppl_heatmap_when_renderer_writes_no_file(
 def test_build_reporting_bundle_registers_figure_outputs_when_rendering_disabled(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle records figure skip reasons when rendering is disabled."""
     root = tmp_path / "GrainSeg"
     _producer_comparison_eval_tree(root)
     out = tmp_path / "reporting"
@@ -273,6 +281,7 @@ def test_build_reporting_bundle_registers_figure_outputs_when_rendering_disabled
 def test_build_reporting_bundle_writes_pq_matrix_and_heatmap_with_figures(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle writes PQ matrix CSV and headline figures when enabled."""
     pytest.importorskip("matplotlib")
     pytest.importorskip("seaborn")
 
@@ -300,6 +309,7 @@ def test_build_reporting_bundle_writes_pq_matrix_and_heatmap_with_figures(
 
 
 def test_build_reporting_bundle_writes_failure_mode_outputs(tmp_path: Path) -> None:
+    """INTENT: build_reporting_bundle writes failure-mode classification table and rules markdown."""
     root = tmp_path / "GrainSeg"
     _figure_ready_eval_tree(root)
     out = tmp_path / "reporting"
@@ -361,6 +371,7 @@ def _patch_and_whole_eval_tree(root: Path) -> None:
 def test_build_reporting_bundle_writes_patch_to_whole_and_threshold_diagnostics(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle writes patch-to-whole and threshold diagnostic outputs."""
     pytest.importorskip("matplotlib")
     pytest.importorskip("seaborn")
 
@@ -389,6 +400,7 @@ def test_build_reporting_bundle_writes_patch_to_whole_and_threshold_diagnostics(
 def test_build_reporting_bundle_skips_patch_to_whole_without_patch_rows(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle skips patch-to-whole outputs when patch rows are absent."""
     root = tmp_path / "GrainSeg"
     _figure_ready_eval_tree(root)
     out = tmp_path / "reporting"
@@ -411,6 +423,7 @@ def test_build_reporting_bundle_skips_strictness_drop_without_f1_columns(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle skips strictness-drop plot when F1 columns are unavailable."""
     root = tmp_path / "GrainSeg"
     _figure_ready_eval_tree(root)
     out = tmp_path / "reporting"
@@ -427,6 +440,7 @@ def test_build_reporting_bundle_skips_strictness_drop_without_f1_columns(
 def test_build_reporting_bundle_skips_precision_recall_when_not_informative(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle skips precision-recall plot when IoU75 spread is flat."""
     root = tmp_path / "GrainSeg"
     _write_json(
         root / "eval/yolo_PPL/instance_metrics.json",
@@ -459,6 +473,7 @@ def test_build_reporting_bundle_skips_failure_mode_without_dq_sq(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle skips failure-mode outputs when DQ/SQ metrics are unavailable."""
     root = tmp_path / "GrainSeg"
     _figure_ready_eval_tree(root)
     out = tmp_path / "reporting"

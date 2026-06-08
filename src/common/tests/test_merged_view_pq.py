@@ -13,7 +13,6 @@ from common.instance_overlap import (
 )
 from common.metrics import PQ_MATCH_IOU, greedy_one_to_one_matches
 from common.merged_view_pq import (
-    MERGED_VIEW_PQ_COUNT_KEYS,
     MERGED_VIEW_PQ_RESULT_KEYS,
     coerce_merged_view_pq_value,
     compute_merged_view_pq,
@@ -27,37 +26,6 @@ from common.tests.merged_view_fixtures import (
     paint_box,
     scale_fixture_many_ids_few_co_occurring_pairs,
 )
-
-
-def test_merged_view_pq_count_keys_are_subset_of_result_keys() -> None:
-    assert MERGED_VIEW_PQ_COUNT_KEYS <= frozenset(MERGED_VIEW_PQ_RESULT_KEYS)
-
-
-def test_format_merged_view_pq_value_formats_counts_as_int_strings() -> None:
-    assert format_merged_view_pq_value("tp", 2) == "2"
-    assert format_merged_view_pq_value("pq", 0.82) == "0.82000000"
-
-
-def test_instance_overlap_stats_reports_co_occurring_pairs_and_areas() -> None:
-    """Regression import path: overlap primitive stays on merged_view_pq exports."""
-    from common.merged_view_pq import instance_overlap_stats
-
-    gt = blank_map(32, 32)
-    pred = blank_map(32, 32)
-    paint_box(gt, 1, 4, 4, 20, 20)
-    paint_box(pred, 1, 4, 4, 20, 20)
-    paint_box(pred, 2, 22, 22, 30, 30)
-
-    stats = instance_overlap_stats(gt, pred)
-
-    assert stats.gt_ids == [1]
-    assert stats.pred_ids == [1, 2]
-    assert stats.gt_areas[1] == 16 * 16
-    assert stats.pred_areas[1] == 16 * 16
-    assert stats.pred_areas[2] == 8 * 8
-    assert list(
-        zip(stats.pair_gt_ids, stats.pair_pred_ids, stats.pair_intersections, strict=True)
-    ) == [(1, 1, 16 * 16)]
 
 
 _BUNDLE_PQ_FIELDS = (
@@ -86,6 +54,7 @@ def _assert_pq_matches_bundle(gt: np.ndarray, pred: np.ndarray) -> None:
 
 
 def test_compute_merged_view_pq_with_gt_prep_matches_uncached_path() -> None:
+    """INTENT: compute_merged_view_pq with gt_prep matches the uncached PQ computation."""
     gt, pred = BUNDLE_FIXTURE_BUILDERS["split_merge"]()
     prep = gt_overlap_prep(gt)
 
@@ -95,107 +64,34 @@ def test_compute_merged_view_pq_with_gt_prep_matches_uncached_path() -> None:
     assert cached_gt == reference
 
 
-def test_compute_merged_view_pq_matches_bundle_on_perfect_single_grain() -> None:
-    gt = blank_map(32, 32)
-    pred = blank_map(32, 32)
-    paint_box(gt, 1, 4, 4, 20, 20)
-    paint_box(pred, 1, 4, 4, 20, 20)
+@pytest.mark.parametrize("fixture_name", tuple(BUNDLE_FIXTURE_BUILDERS))
+def test_compute_merged_view_pq_matches_bundle(fixture_name: str) -> None:
+    """INTENT: compute_merged_view_pq agrees with compute_instance_metric_bundle across fixture maps."""
+    gt, pred = BUNDLE_FIXTURE_BUILDERS[fixture_name]()
     _assert_pq_matches_bundle(gt, pred)
     result = compute_merged_view_pq(gt, pred)
-    assert result["tp"] == 1
-    assert result["num_cooccurring_pairs"] == 1
-    assert result["num_pairs_above_pq_threshold"] == 1
-    assert result["min_matched_iou"] == pytest.approx(1.0)
-
-
-def test_compute_merged_view_pq_matches_bundle_on_both_empty() -> None:
-    _assert_pq_matches_bundle(blank_map(16, 16), blank_map(16, 16))
-
-
-def test_compute_merged_view_pq_matches_bundle_on_empty_prediction() -> None:
-    gt = blank_map(24, 24)
-    pred = blank_map(24, 24)
-    paint_box(gt, 1, 2, 2, 14, 14)
-    paint_box(gt, 2, 16, 16, 22, 22)
-    _assert_pq_matches_bundle(gt, pred)
-
-
-def test_compute_merged_view_pq_matches_bundle_on_missed_grain() -> None:
-    gt = blank_map(32, 32)
-    pred = blank_map(32, 32)
-    paint_box(gt, 1, 4, 4, 14, 14)
-    paint_box(gt, 2, 18, 18, 28, 28)
-    paint_box(pred, 1, 4, 4, 14, 14)
-    _assert_pq_matches_bundle(gt, pred)
-
-
-def test_compute_merged_view_pq_matches_bundle_on_empty_ground_truth() -> None:
-    gt = blank_map(20, 20)
-    pred = blank_map(20, 20)
-    paint_box(pred, 1, 4, 4, 16, 16)
-    _assert_pq_matches_bundle(gt, pred)
-
-
-def test_compute_merged_view_pq_matches_bundle_on_pq_decomposition() -> None:
-    gt = blank_map(48, 48)
-    pred = blank_map(48, 48)
-    paint_box(gt, 1, 4, 4, 18, 18)
-    paint_box(gt, 2, 28, 28, 44, 44)
-    paint_box(pred, 1, 4, 4, 18, 18)
-    paint_box(pred, 2, 28, 28, 44, 44)
-    paint_box(pred, 3, 4, 28, 18, 44)
-    _assert_pq_matches_bundle(gt, pred)
-    result = compute_merged_view_pq(gt, pred)
-    assert result["tp"] == 2
-    assert result["fp"] == 1
-    assert result["fn"] == 0
-
-
-def test_compute_merged_view_pq_matches_bundle_on_duplicate_predictions() -> None:
-    gt = blank_map(32, 32)
-    pred = blank_map(32, 32)
-    paint_box(gt, 1, 6, 6, 22, 22)
-    paint_box(pred, 1, 6, 6, 22, 22)
-    paint_box(pred, 2, 8, 8, 20, 20)
-    _assert_pq_matches_bundle(gt, pred)
-    result = compute_merged_view_pq(gt, pred)
-    assert result["tp"] == 1
-    assert result["fp"] == 1
-    assert result["near_miss_pred_count"] >= 0
-
-
-def test_compute_merged_view_pq_matches_bundle_on_gapped_label_ids() -> None:
-    """Non-contiguous instance ids must not skew PQ, counts, or IoU50 P/R/F1 vs bundle."""
-    gt = blank_map(48, 48)
-    pred = blank_map(48, 48)
-    paint_box(gt, 10, 4, 4, 18, 18)
-    paint_box(gt, 50, 28, 28, 44, 44)
-    paint_box(pred, 10, 4, 4, 18, 18)
-    paint_box(pred, 50, 28, 28, 44, 44)
-    paint_box(pred, 200, 4, 28, 18, 44)
-
-    _assert_pq_matches_bundle(gt, pred)
-    result = compute_merged_view_pq(gt, pred)
-    assert result["tp"] == 2
-    assert result["fp"] == 1
-    assert result["fn"] == 0
-
-
-def test_compute_merged_view_pq_matches_bundle_on_split_merge_overlap() -> None:
-    gt = blank_map(48, 48)
-    pred = blank_map(48, 48)
-    paint_box(gt, 1, 10, 10, 20, 20)
-    paint_box(gt, 2, 28, 28, 38, 38)
-    paint_box(pred, 1, 10, 10, 20, 20)
-    paint_box(pred, 1, 20, 20, 28, 28)
-    paint_box(pred, 1, 28, 28, 32, 32)
-    _assert_pq_matches_bundle(gt, pred)
-    result = compute_merged_view_pq(gt, pred)
-    assert result["num_cooccurring_pairs"] == 2
-    assert result["tp"] == 1
-    assert result["min_matched_iou"] == result["max_matched_iou"] == result["median_matched_iou"]
-    assert result["min_matched_iou"] == pytest.approx(5 / 9)
-    assert result["sq"] == pytest.approx(5 / 9)
+    if fixture_name == "perfect_single":
+        assert result["tp"] == 1
+        assert result["num_cooccurring_pairs"] == 1
+        assert result["num_pairs_above_pq_threshold"] == 1
+        assert result["min_matched_iou"] == pytest.approx(1.0)
+    elif fixture_name == "pq_decomposition":
+        assert result["tp"] == 2
+        assert result["fp"] == 1
+        assert result["fn"] == 0
+    elif fixture_name == "duplicate_preds":
+        assert result["tp"] == 1
+        assert result["fp"] == 1
+    elif fixture_name == "gapped_label_ids":
+        assert result["tp"] == 2
+        assert result["fp"] == 1
+        assert result["fn"] == 0
+    elif fixture_name == "split_merge":
+        assert result["num_cooccurring_pairs"] == 2
+        assert result["tp"] == 1
+        assert result["min_matched_iou"] == result["max_matched_iou"] == result["median_matched_iou"]
+        assert result["min_matched_iou"] == pytest.approx(5 / 9)
+        assert result["sq"] == pytest.approx(5 / 9)
 
 
 _TUNE_SELECTION_PQ_FIELDS = (
@@ -211,7 +107,7 @@ _TUNE_SELECTION_PQ_FIELDS = (
 
 
 def test_compute_merged_view_pq_on_many_ids_few_co_occurring_pairs() -> None:
-    """Scale fixture: many ids, sparse overlaps, tune-path selection fields."""
+    """INTENT: compute_merged_view_pq reports correct sparse-overlap counts on a large-id scale fixture."""
     num_gt = 120
     num_pred = 1500
     num_matched = 4
@@ -240,7 +136,7 @@ def test_compute_merged_view_pq_on_many_ids_few_co_occurring_pairs() -> None:
 def test_compute_merged_view_pq_avoids_dense_gt_by_pred_matrix_on_scale_fixture(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Regression: tune-path PQ must not allocate or scan nt x np_ dense IoU work."""
+    """INTENT: compute_merged_view_pq avoids dense GT-by-prediction IoU matrix work on scale fixtures."""
     import common.instance_overlap as overlap_mod
     import common.metrics as metrics_mod
 
@@ -270,6 +166,7 @@ def test_compute_merged_view_pq_avoids_dense_gt_by_pred_matrix_on_scale_fixture(
 
 @pytest.mark.parametrize("fixture_name", tuple(BUNDLE_FIXTURE_BUILDERS))
 def test_sparse_greedy_matching_matches_dense_semantics(fixture_name: str) -> None:
+    """INTENT: greedy_one_to_one_matches_from_overlap matches dense greedy matching across bundle fixtures."""
     from common.metrics import greedy_one_to_one_matches_from_overlap
 
     gt, pred = BUNDLE_FIXTURE_BUILDERS[fixture_name]()
@@ -281,6 +178,7 @@ def test_sparse_greedy_matching_matches_dense_semantics(fixture_name: str) -> No
 
 
 def test_near_miss_counts_when_best_iou_is_positive_but_not_a_match() -> None:
+    """INTENT: compute_merged_view_pq counts near-miss forensics when best IoU is positive but below threshold."""
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)
     paint_box(gt, 1, 8, 8, 24, 24)
@@ -297,6 +195,7 @@ def test_near_miss_counts_when_best_iou_is_positive_but_not_a_match() -> None:
 
 
 def test_zero_overlap_prediction_does_not_count_as_near_miss() -> None:
+    """INTENT: compute_merged_view_pq does not count disjoint false-positive predictions as near misses."""
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)
     paint_box(gt, 1, 4, 4, 14, 14)
@@ -315,6 +214,7 @@ def test_zero_overlap_prediction_does_not_count_as_near_miss() -> None:
 
 
 def test_matched_prediction_forensics_exclude_matched_instances() -> None:
+    """INTENT: compute_merged_view_pq reports zero near-miss forensics when all instances match."""
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)
     paint_box(gt, 1, 4, 4, 14, 14)
@@ -336,6 +236,7 @@ def test_matched_prediction_forensics_exclude_matched_instances() -> None:
 
 
 def test_pairs_above_pq_threshold_uses_strict_iou_gt_half() -> None:
+    """INTENT: compute_merged_view_pq requires strict IoU greater than 0.5 for pairs_above_pq_threshold."""
     gt = blank_map(16, 16)
     pred = blank_map(16, 16)
     paint_box(gt, 1, 0, 0, 10, 10)
@@ -351,6 +252,9 @@ def test_pairs_above_pq_threshold_uses_strict_iou_gt_half() -> None:
 
 
 def test_coerce_and_format_forensics_fields() -> None:
+    """INTENT: coerce_merged_view_pq_value and format_merged_view_pq_value handle count and float fields."""
+    assert format_merged_view_pq_value("tp", 2) == "2"
+    assert format_merged_view_pq_value("pq", 0.82) == "0.82000000"
     forensics_counts = (
         "num_cooccurring_pairs",
         "num_pairs_above_pq_threshold",
@@ -368,6 +272,7 @@ def test_coerce_and_format_forensics_fields() -> None:
 
 
 def test_flatten_and_parse_forensics_fields_roundtrip() -> None:
+    """INTENT: flatten_merged_view_pq_results_by_suffix and merged_view_pq_result_from_prefixed_columns round-trip."""
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)
     paint_box(gt, 1, 8, 8, 24, 24)
@@ -382,30 +287,4 @@ def test_flatten_and_parse_forensics_fields_roundtrip() -> None:
     assert parsed["near_miss_pred_count"] == 1
     assert parsed["avg_best_iou_unmatched_pred"] == pytest.approx(
         result["avg_best_iou_unmatched_pred"]
-    )
-
-
-def test_instance_metric_bundle_keys_unchanged() -> None:
-    from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
-
-    assert INSTANCE_METRIC_BUNDLE_KEYS == (
-        "pq",
-        "dq",
-        "sq",
-        "tp",
-        "fp",
-        "fn",
-        "precision_iou50",
-        "recall_iou50",
-        "f1_iou50",
-        "precision_iou75",
-        "recall_iou75",
-        "f1_iou75",
-        "mP_iou50_95",
-        "mR_iou50_95",
-        "mF1_iou50_95",
-        "gt_instance_count",
-        "pred_instance_count",
-        "pred_gt_instance_ratio",
-        "aji_plus",
     )

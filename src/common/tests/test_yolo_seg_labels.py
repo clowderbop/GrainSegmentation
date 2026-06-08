@@ -13,6 +13,7 @@ from common.yolo_seg_labels import (
 
 
 def test_read_gt_labels_without_confidence(tmp_path: Path) -> None:
+    """INTENT: read_yolo_seg_gt_label_rows parses normalized polygon vertices without a confidence column."""
     width, height = 100, 80
     expected = np.array(
         [[10.0, 10.0], [50.0, 10.0], [30.0, 40.0]], dtype=np.float32
@@ -32,6 +33,7 @@ def test_read_gt_labels_without_confidence(tmp_path: Path) -> None:
 
 
 def test_read_pred_labels_with_confidence(tmp_path: Path) -> None:
+    """INTENT: read_yolo_seg_pred_label_rows parses polygon vertices and trailing confidence values."""
     width, height = 64, 64
     expected = np.array(
         [[5.0, 5.0], [20.0, 5.0], [12.0, 18.0]], dtype=np.float32

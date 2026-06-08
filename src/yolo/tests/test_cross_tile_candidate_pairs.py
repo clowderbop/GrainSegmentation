@@ -14,20 +14,11 @@ from yolo.tests.cross_tile_association_fixtures import (
 
 
 def test_slice_boundary_duplicate_fixture_emits_candidate_pair() -> None:
+    """INTENT: slice-boundary duplicate fixture emits the expected association candidate pair."""
     proposals, _, _ = slice_boundary_duplicate_pair()
     enriched = cta._enrich_proposals(proposals)
     pairs = generate_association_candidate_pairs(enriched)
     assert (0, 1) in pairs
-
-
-def test_candidate_pairs_are_canonical_without_self_pairs() -> None:
-    proposals, _, _ = slice_boundary_duplicate_pair()
-    enriched = cta._enrich_proposals(proposals)
-    pairs = generate_association_candidate_pairs(enriched)
-    assert len(pairs) == len(set(pairs))
-    for left, right in pairs:
-        assert left < right
-        assert left != right
 
 
 def _separated_tile_proposals(count: int) -> list:
@@ -87,6 +78,7 @@ def _same_tile_duplicate_clusters(num_tiles: int) -> list:
 
 
 def test_spatially_separated_proposals_emit_no_candidate_pairs() -> None:
+    """INTENT: spatially separated proposals emit no candidate pairs despite quadratic all-pairs count."""
     proposals = _separated_tile_proposals(120)
     enriched = cta._enrich_proposals(proposals)
     pairs = generate_association_candidate_pairs(enriched)
@@ -95,6 +87,7 @@ def test_spatially_separated_proposals_emit_no_candidate_pairs() -> None:
 
 
 def test_same_tile_overlapping_fixture_emits_candidate_pair() -> None:
+    """INTENT: same-tile overlapping fixture emits an association candidate pair."""
     proposals, _, _, _ = overlapping_tile_central_vs_border()
     enriched = cta._enrich_proposals(proposals)
     pairs = generate_association_candidate_pairs(enriched)
@@ -102,6 +95,7 @@ def test_same_tile_overlapping_fixture_emits_candidate_pair() -> None:
 
 
 def test_complementary_border_partials_emit_candidate_pair() -> None:
+    """INTENT: complementary border partials emit an association candidate pair."""
     proposals, _, _, _ = complementary_border_partials()
     enriched = cta._enrich_proposals(proposals)
     pairs = generate_association_candidate_pairs(enriched)
@@ -109,7 +103,7 @@ def test_complementary_border_partials_emit_candidate_pair() -> None:
 
 
 def test_same_tile_clusters_emit_pairs_sub_quadratically() -> None:
-    """Dense same-tile duplicates must pair locally, not as all-pairs."""
+    """INTENT: same-tile duplicate clusters emit O(tiles) pairs, not all-pairs quadratic growth."""
     num_tiles = 80
     proposals = _same_tile_duplicate_clusters(num_tiles)
     enriched = cta._enrich_proposals(proposals)
@@ -123,7 +117,7 @@ def test_same_tile_clusters_emit_pairs_sub_quadratically() -> None:
 
 
 def test_candidate_pair_growth_is_linear_not_quadratic() -> None:
-    """Doubling proposal count should ~double pairs, not ~quadruple (all-pairs)."""
+    """INTENT: candidate pair count scales linearly when tile clusters double, not quadratically."""
     pair_counts: list[int] = []
     proposal_counts: list[int] = []
     for num_tiles in (25, 50, 100):

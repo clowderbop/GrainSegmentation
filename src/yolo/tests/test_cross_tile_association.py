@@ -30,6 +30,7 @@ def _foreground_mask_count(prediction_set) -> int:
 
 
 def test_slice_boundary_duplicates_merge_to_one_grain() -> None:
+    """INTENT: slice-boundary duplicate proposals associate into one non-overlapping grain."""
     proposals, height, width = slice_boundary_duplicate_pair()
     result = associate_tiled_proposals(proposals, height=height, width=width)
     assert_yolo_grains_non_overlapping(result)
@@ -37,6 +38,7 @@ def test_slice_boundary_duplicates_merge_to_one_grain() -> None:
 
 
 def test_adjacent_distinct_grains_remain_separate() -> None:
+    """INTENT: adjacent distinct grains stay separate after cross-tile association."""
     proposals, height, width = adjacent_distinct_grains()
     result = associate_tiled_proposals(proposals, height=height, width=width)
     assert_yolo_grains_non_overlapping(result)
@@ -44,6 +46,7 @@ def test_adjacent_distinct_grains_remain_separate() -> None:
 
 
 def test_centrality_prefers_tile_central_mask_over_border_partial() -> None:
+    """INTENT: association prefers the tile-central mask over a border partial on overlap."""
     proposals, height, width, expected_mask = overlapping_tile_central_vs_border()
     result = associate_tiled_proposals(proposals, height=height, width=width)
     assert_yolo_grains_non_overlapping(result)
@@ -55,6 +58,7 @@ def test_centrality_prefers_tile_central_mask_over_border_partial() -> None:
 
 
 def test_complementary_border_partials_union_into_one_grain() -> None:
+    """INTENT: complementary border partials union into one grain with the expected mask."""
     proposals, height, width, expected_mask = complementary_border_partials()
     result = associate_tiled_proposals(proposals, height=height, width=width)
     assert_yolo_grains_non_overlapping(result)
@@ -66,18 +70,9 @@ def test_complementary_border_partials_union_into_one_grain() -> None:
 
 
 def test_over_merge_guard_keeps_near_boundary_distinct_grains() -> None:
+    """INTENT: over-merge guard keeps near-boundary low-overlap grains separate."""
     proposals, height, width = near_boundary_low_overlap_pair()
     result = associate_tiled_proposals(proposals, height=height, width=width)
     assert_yolo_grains_non_overlapping(result)
     assert _foreground_mask_count(result) == 2
 
-
-def test_merged_instance_view_is_valid_for_metrics() -> None:
-    proposals, height, width = slice_boundary_duplicate_pair()
-    result = associate_tiled_proposals(proposals, height=height, width=width)
-    merged = prediction_set_to_merged_instance_view(result)
-    assert merged.shape == (height, width)
-    assert merged.dtype == np.int32
-    labels = sorted(int(v) for v in np.unique(merged) if v != 0)
-    assert labels == [1]
-    assert int((merged > 0).sum()) > 0

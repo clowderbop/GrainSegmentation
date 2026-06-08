@@ -62,6 +62,7 @@ def test_default_grid_extraction_cache_ratio_from_axis_structure() -> None:
 
 
 def test_cached_instance_map_matches_brute_force_for_single_param() -> None:
+    """INTENT: tune-cache instance maps match brute-force extraction for one param set."""
     semantic = _multi_grain_semantic_with_boundaries()
     params = WatershedParamSet(5, 0, 1, 0, False, None)
     grid = load_watershed_tune_grid().grid
@@ -74,6 +75,7 @@ def test_cached_instance_map_matches_brute_force_for_single_param() -> None:
 
 
 def test_cached_instance_maps_match_brute_force_for_default_grid() -> None:
+    """INTENT: tune-cache instance maps match brute-force extraction across the default grid."""
     semantic = _multi_grain_semantic_with_boundaries()
     grid = load_watershed_tune_grid().grid
     cache = build_watershed_tune_sample_caches([semantic])[0]
@@ -85,6 +87,7 @@ def test_cached_instance_maps_match_brute_force_for_default_grid() -> None:
 
 
 def test_mean_train_pq_cached_does_not_require_pred_semantic_arrays() -> None:
+    """INTENT: cached mean PQ scoring matches brute-force without passing raw semantic arrays."""
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
     params = WatershedParamSet(5, 0, 1, 0, False, None)
@@ -102,6 +105,7 @@ def test_mean_train_pq_cached_does_not_require_pred_semantic_arrays() -> None:
 
 
 def test_cached_scoring_matches_brute_force_for_default_grid() -> None:
+    """INTENT: cached grid scoring and best-row selection match brute-force for the default grid."""
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
     grid = load_watershed_tune_grid().grid
@@ -146,6 +150,7 @@ def test_cached_scoring_matches_brute_force_for_default_grid() -> None:
 def test_tune_cache_runs_one_base_extraction_per_unique_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """INTENT: tune cache invokes base watershed extraction once per unique base key."""
     import unet.watershed_tune_extraction_cache as cache_mod
 
     semantic = _multi_grain_semantic_with_boundaries()
@@ -170,6 +175,7 @@ def test_tune_cache_runs_one_base_extraction_per_unique_key(
 def test_tune_scoring_reuses_prebuilt_gt_overlap_preps_across_grid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """INTENT: cached grid scoring reuses prebuilt GT overlap preps without recomputing them."""
     import common.instance_overlap as overlap_mod
 
     gt = _two_grain_gt()
@@ -202,6 +208,7 @@ def test_tune_scoring_reuses_prebuilt_gt_overlap_preps_across_grid(
 def test_tune_scoring_runs_overlap_extraction_per_combo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """INTENT: cached grid scoring runs overlap extraction once per watershed param combo."""
     import common.merged_view_pq as pq_mod
 
     gt = _two_grain_gt()
@@ -234,6 +241,7 @@ def test_tune_scoring_runs_overlap_extraction_per_combo(
 def test_cached_scoring_logs_extraction_cache_miss_then_hit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """INTENT: extraction-cache logging reports one miss then one hit for distinct base keys."""
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
     caches = build_watershed_tune_sample_caches([semantic])
@@ -266,6 +274,7 @@ def test_cached_scoring_logs_extraction_cache_miss_then_hit(
 def test_default_grid_extraction_cache_log_miss_and_hit_counts(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """INTENT: default-grid cache logging reports misses per base key and hits for reused keys."""
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
     grid = load_watershed_tune_grid().grid
@@ -292,6 +301,7 @@ def test_default_grid_extraction_cache_log_miss_and_hit_counts(
 
 
 def test_mean_train_pq_cached_logs_phase_timings(capsys: pytest.CaptureFixture[str]) -> None:
+    """INTENT: cached mean PQ scoring logs watershed and metrics phase timings when enabled."""
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
     grid = load_watershed_tune_grid().grid

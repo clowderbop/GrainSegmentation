@@ -15,6 +15,7 @@ from yolo.tests.phase_logging_assertions import (
 def test_associate_tiled_proposals_logs_association_sub_phases(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """INTENT: cross-tile association logs enrich, pair-build, and merge sub-phases."""
     proposals, height, width = slice_boundary_duplicate_pair()
     associate_tiled_proposals(proposals, height=height, width=width, log_timings=True)
     out = capsys.readouterr().out
@@ -35,6 +36,7 @@ def test_associate_tiled_proposals_logs_association_sub_phases(
 def test_merged_instance_view_logs_rasterize_phase(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """INTENT: merged instance view construction logs association and rasterize phases."""
     from yolo.cross_tile_postprocess import merged_instance_view_from_tiled_proposal_records
     from yolo.tests.profile_tune_fixtures import (
         tiled_proposal_records_disjoint_via_collector,

@@ -50,6 +50,7 @@ def _score_and_row(
 def test_watershed_tune_scoring_calls_compute_merged_view_pq_not_eval_bundle(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """INTENT: watershed tune scoring routes through merged-view PQ, not instance metric bundle."""
     import unet.extraction_tune_scoring as scoring
 
     pq_calls = 0
@@ -82,6 +83,7 @@ def test_watershed_tune_scoring_calls_compute_merged_view_pq_not_eval_bundle(
 
 
 def test_watershed_tune_best_selection_uses_mean_pq_only() -> None:
+    """INTENT: best watershed param selection picks the highest mean PQ, not worse extractions."""
     good = WatershedParamSet(5, 0, 1, 0, False, None)
     bad = WatershedParamSet(1, 0, 1, 0, False, None)
     semantic = cached_semantic_pred_speckle_prone()
@@ -100,6 +102,7 @@ def test_watershed_tune_best_selection_uses_mean_pq_only() -> None:
 def test_watershed_tune_grid_csv_includes_merged_view_pq_mean_and_per_sample_fields() -> (
     None
 ):
+    """INTENT: watershed tune CSV rows expose merged-view PQ mean and per-sample fields only."""
     params = WatershedParamSet(5, 0, 1, 0, False, None)
     mean_pq, per_sample, row = _score_and_row(params)
 
@@ -126,6 +129,7 @@ def test_watershed_tune_grid_csv_includes_merged_view_pq_mean_and_per_sample_fie
 def test_watershed_tune_best_json_includes_merged_view_pq_mean_and_per_sample_fields() -> (
     None
 ):
+    """INTENT: watershed best JSON summary carries merged-view PQ mean and per-sample fields."""
     params = WatershedParamSet(5, 0, 1, 0, False, None)
     _, _, row = _score_and_row(params)
 
@@ -147,7 +151,7 @@ def test_watershed_tune_best_json_includes_merged_view_pq_mean_and_per_sample_fi
 
 
 def test_watershed_tune_diagnostics_surface_catastrophic_over_segmentation() -> None:
-    """Failed extraction stays visible: many preds, near-zero PQ, not hidden in artifacts."""
+    """INTENT: catastrophic over-segmentation remains visible in tune CSV and best JSON artifacts."""
     gt = two_grain_merged_instance_view()
     semantic = cached_semantic_pred_speckle_prone()
     params = WatershedParamSet(1, 0, 1, 0, False, None)

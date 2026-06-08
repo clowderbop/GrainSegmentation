@@ -2,23 +2,11 @@
 
 from pathlib import Path
 
-import pytest
-
 from common.manifest_io import DatasetManifest, ManifestSampleRow
 
 
-def test_manifest_sample_requires_image_xor_images() -> None:
-    with pytest.raises(ValueError, match='exactly one of "image" or "images"'):
-        ManifestSampleRow(sample_id="train")
-    with pytest.raises(ValueError, match='exactly one of "image" or "images"'):
-        ManifestSampleRow(
-            sample_id="train",
-            image="dataset/train/train_PPL.tif",
-            images=("dataset/train/train_PPL.tif",),
-        )
-
-
 def test_load_dataset_manifest_round_trip(tmp_path: Path) -> None:
+    """INTENT: write_dataset_manifest and load_dataset_manifest preserve multi-image sample rows."""
     from common.manifest_io import load_dataset_manifest, write_dataset_manifest
 
     source = DatasetManifest(

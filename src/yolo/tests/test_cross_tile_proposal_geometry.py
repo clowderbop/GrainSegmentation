@@ -33,7 +33,7 @@ def _zeros_allocation_violations() -> tuple[list[tuple[int, ...]], object]:
 
 
 def test_enrich_and_pair_compare_avoid_full_section_mask_allocation() -> None:
-    """Enrichment and pair comparison must not allocate section-sized boolean planes."""
+    """INTENT: proposal enrichment and pair comparison avoid section-sized mask allocation."""
     proposals, _, _ = slice_boundary_duplicate_pair()
     violations, spy_zeros = _zeros_allocation_violations()
 
@@ -53,7 +53,7 @@ def test_enrich_and_pair_compare_avoid_full_section_mask_allocation() -> None:
 
 
 def test_associate_tiled_proposals_on_huge_section_smoke() -> None:
-    """Behavioral smoke: association still merges fixtures on train-scale dimensions."""
+    """INTENT: association still merges fixture duplicates on train-scale section dimensions."""
     proposals, _, _ = slice_boundary_duplicate_pair()
     result = associate_tiled_proposals(proposals, height=10_000, width=52_000)
     assert_yolo_grains_non_overlapping(result)
@@ -61,7 +61,7 @@ def test_associate_tiled_proposals_on_huge_section_smoke() -> None:
 
 
 def test_cluster_fusion_avoids_full_section_mask_allocation() -> None:
-    """Cluster fusion must not allocate section-sized boolean planes per member."""
+    """INTENT: cluster fusion avoids section-sized boolean mask allocation per member."""
     proposals, _, _ = slice_boundary_duplicate_pair()
     violations, spy_zeros = _zeros_allocation_violations()
 
@@ -72,6 +72,7 @@ def test_cluster_fusion_avoids_full_section_mask_allocation() -> None:
 
 
 def test_crop_local_ios_matches_full_section_ios_on_fixture_pair() -> None:
+    """INTENT: crop-local mask IoS matches full-section IoS on a fixture proposal pair."""
     proposals, height, width = slice_boundary_duplicate_pair()
     left_seg = segmentation_to_binary_mask(proposals[0].segmentation)
     right_seg = segmentation_to_binary_mask(proposals[1].segmentation)

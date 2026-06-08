@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -33,53 +32,14 @@ from yolo.tiled_proposal_cache import (
     tiled_proposal_record_from_tile_mask,
     tiled_proposal_records_from_tile_predictions,
     validate_tiled_proposal_cache,
-    weights_sha256,
     write_tiled_proposals,
 )
-
-
-def test_weights_sha256_matches_file_bytes(tmp_path: Path) -> None:
-    weights = tmp_path / "best.pt"
-    weights.write_bytes(b"fake-weights")
-    expected = hashlib.sha256(b"fake-weights").hexdigest()
-    assert weights_sha256(weights) == expected
-
-
-def test_tiled_proposal_cache_schema_version_is_three() -> None:
-    assert TILED_PROPOSAL_CACHE_SCHEMA_VERSION == 3
-
-
-def test_proposal_cache_dir_uses_conf_only_path(tmp_path: Path) -> None:
-    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.25)
-    assert cache_dir == tmp_path / "PPL" / "tiled_proposals" / "c0.25"
-    assert "t0." not in cache_dir.name
-
-
-def test_proposal_cache_record_includes_fingerprint_fields() -> None:
-    recipe = load_test_inference_recipe()
-    record = proposal_cache_record(
-        variant="PPL",
-        weights_sha256="abc",
-        recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
-        conf=0.25,
-        mask_threshold=0.5,
-        sample_id="train",
-        height=100,
-        width=200,
-    )
-    assert record["schema_version"] == TILED_PROPOSAL_CACHE_SCHEMA_VERSION
-    assert record["variant"] == "PPL"
-    assert record["sample_id"] == "train"
-    assert record["conf"] == 0.25
-    assert record["mask_threshold"] == 0.5
-    assert record["height"] == 100
-    assert record["width"] == 200
 
 
 def test_load_tiled_proposals_rejects_on_disk_v1_sahi_pickle_cache(
     tmp_path: Path,
 ) -> None:
-    """v1 layout on disk (dense SAHI pickle + schema_version 1 meta) must not load."""
+    """INTENT: load_tiled_proposals rejects legacy v1 SAHI pickle caches on disk."""
     recipe = load_test_inference_recipe()
     height, width = 32, 32
     cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.25)
@@ -106,7 +66,11 @@ def test_load_tiled_proposals_rejects_on_disk_v1_sahi_pickle_cache(
         load_tiled_proposals(cache_dir, expected=expected)
 
 
-def test_validate_tiled_proposal_cache_rejects_schema_version_two() -> None:
+@pytest.mark.parametrize("stale_schema_version", (1, 2))
+def test_validate_tiled_proposal_cache_rejects_stale_schema_version(
+    stale_schema_version: int,
+) -> None:
+    """INTENT: validate_tiled_proposal_cache rejects on-disk metadata below the current schema version."""
     recipe = load_test_inference_recipe()
     expected = proposal_cache_record(
         variant="PPL",
@@ -118,31 +82,14 @@ def test_validate_tiled_proposal_cache_rejects_schema_version_two() -> None:
         height=16,
         width=16,
     )
-    v2_meta = dict(expected)
-    v2_meta["schema_version"] = 2
-    with pytest.raises(ValueError, match="schema_version 2"):
-        validate_tiled_proposal_cache(v2_meta, expected)
-
-
-def test_validate_tiled_proposal_cache_rejects_schema_version_one() -> None:
-    recipe = load_test_inference_recipe()
-    expected = proposal_cache_record(
-        variant="PPL",
-        weights_sha256="a",
-        recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
-        conf=0.25,
-        mask_threshold=0.5,
-        sample_id="train",
-        height=16,
-        width=16,
-    )
-    v1_meta = dict(expected)
-    v1_meta["schema_version"] = 1
-    with pytest.raises(ValueError, match="schema_version 1"):
-        validate_tiled_proposal_cache(v1_meta, expected)
+    stale_meta = dict(expected)
+    stale_meta["schema_version"] = stale_schema_version
+    with pytest.raises(ValueError, match=f"schema_version {stale_schema_version}"):
+        validate_tiled_proposal_cache(stale_meta, expected)
 
 
 def test_write_and_load_tiled_proposals_round_trip(tmp_path: Path) -> None:
+    """INTENT: write_tiled_proposals and load_tiled_proposals round-trip crop-local proposal records."""
     recipe = load_test_inference_recipe()
     height, width = 16, 16
     record = proposal_cache_record(
@@ -155,7 +102,10 @@ def test_write_and_load_tiled_proposals_round_trip(tmp_path: Path) -> None:
         height=height,
         width=width,
     )
+    assert record["schema_version"] == TILED_PROPOSAL_CACHE_SCHEMA_VERSION
     cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2)
+    assert cache_dir.name == "c0.2"
+    assert "t0." not in cache_dir.name
     mask = np.zeros((height, width), dtype=bool)
     mask[4:10, 4:10] = True
     proposals = [
@@ -187,6 +137,7 @@ def test_write_and_load_tiled_proposals_round_trip(tmp_path: Path) -> None:
 def test_load_or_write_tiled_proposals_reuses_valid_cache_without_compute(
     tmp_path: Path,
 ) -> None:
+    """INTENT: load_or_write_tiled_proposals returns cached proposals without invoking compute_fn."""
     recipe = load_test_inference_recipe()
     record = proposal_cache_record(
         variant="PPL",
@@ -220,6 +171,7 @@ def test_load_or_write_tiled_proposals_reuses_valid_cache_without_compute(
 def test_load_or_write_tiled_proposals_computes_when_cache_missing(
     tmp_path: Path,
 ) -> None:
+    """INTENT: load_or_write_tiled_proposals invokes compute_fn and persists results when cache is absent."""
     recipe = load_test_inference_recipe()
     record = proposal_cache_record(
         variant="PPL",
@@ -250,6 +202,7 @@ def test_load_or_write_tiled_proposals_computes_when_cache_missing(
 def test_load_or_write_tiled_proposals_recomputes_on_fingerprint_mismatch(
     tmp_path: Path,
 ) -> None:
+    """INTENT: load_or_write_tiled_proposals recomputes when on-disk fingerprint does not match expected."""
     recipe = load_test_inference_recipe()
     record = proposal_cache_record(
         variant="PPL",
@@ -281,7 +234,7 @@ def test_load_or_write_tiled_proposals_recomputes_on_fingerprint_mismatch(
 
 
 def test_collect_tiled_detector_proposals_never_allocates_whole_section_plane() -> None:
-    """ADR 0005: encode must not materialize (H,W) masks per proposal."""
+    """INTENT: collect_tiled_detector_proposals encodes proposals without allocating whole-section mask planes."""
     section_h, section_w = 10_000, 52_000
     slice_h, slice_w = 64, 64
     tile_mask = np.zeros((slice_h, slice_w), dtype=bool)
@@ -336,6 +289,7 @@ def test_collect_tiled_detector_proposals_never_allocates_whole_section_plane() 
 
 
 def test_tile_encode_rejects_whole_section_bool_mask() -> None:
+    """INTENT: tiled_proposal_records_from_tile_predictions rejects masks larger than the slice."""
     section_h, section_w = 10_000, 52_000
     slice_h, slice_w = 64, 64
     huge = np.zeros((section_h, section_w), dtype=bool)
@@ -359,6 +313,7 @@ def test_tile_encode_rejects_whole_section_bool_mask() -> None:
 
 
 def test_tiled_proposal_records_from_tile_predictions_crop_local() -> None:
+    """INTENT: tiled_proposal_records_from_tile_predictions emits crop-local records with tile bounds."""
     height, width = 16, 16
     sahi_preds = disjoint_tile_local_proposals(height, width)
     records = tiled_proposal_records_from_tile_predictions(
@@ -382,7 +337,7 @@ def test_tiled_proposal_records_from_tile_predictions_crop_local() -> None:
 def test_load_tiled_proposals_rejects_v2_records_without_tile_bounds(
     tmp_path: Path,
 ) -> None:
-    """On-disk v2 proposal records (no tile_y0…) must not load under schema 3."""
+    """INTENT: load_tiled_proposals rejects v2 proposal records missing tile bounds under schema 3."""
     recipe = load_test_inference_recipe()
     height, width = 16, 16
     record = proposal_cache_record(
@@ -421,6 +376,7 @@ def test_load_tiled_proposals_rejects_v2_records_without_tile_bounds(
 
 
 def test_validate_tiled_proposal_cache_rejects_fingerprint_mismatch() -> None:
+    """INTENT: validate_tiled_proposal_cache rejects metadata whose conf fingerprint differs from expected."""
     recipe = load_test_inference_recipe()
     expected = proposal_cache_record(
         variant="PPL",

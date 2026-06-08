@@ -8,6 +8,7 @@ from common.run_provenance import load_run_provenance, write_run_provenance
 
 
 def test_run_provenance_round_trip(tmp_path: Path) -> None:
+    """INTENT: write_run_provenance and load_run_provenance preserve inference run metadata."""
     payload = {
         "producer": "yolo",
         "conf": 0.25,
@@ -19,3 +20,6 @@ def test_run_provenance_round_trip(tmp_path: Path) -> None:
     write_run_provenance(tmp_path, payload)
     loaded = load_run_provenance(tmp_path)
     assert loaded == payload
+    assert loaded["producer"] == "yolo"
+    assert isinstance(loaded["conf"], float)
+    assert isinstance(loaded["slice_height"], int)

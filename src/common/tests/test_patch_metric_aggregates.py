@@ -53,6 +53,7 @@ def _bundle_row(
 
 
 def test_patch_metric_aggregates_cover_full_bundle() -> None:
+    """INTENT: compute_patch_metric_aggregates emits grainy and GT-weighted means for all bundle metrics."""
     rows = [
         _bundle_row(pq=0.2, aji_plus=0.3, gt_instance_count=10, empty_gt=False),
         _bundle_row(
@@ -81,6 +82,7 @@ def test_patch_metric_aggregates_cover_full_bundle() -> None:
 
 
 def test_patch_metric_aggregates_skip_non_finite_values() -> None:
+    """INTENT: compute_patch_metric_aggregates ignores non-finite pred_gt_instance_ratio values when averaging."""
     rows = [
         _bundle_row(
             pq=0.5,

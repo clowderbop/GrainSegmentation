@@ -20,6 +20,7 @@ from common.tests.evaluate_instances_fixtures import perfect_match_eval_sample
 
 
 def test_extract_instance_metric_bundle_from_whole_report(tmp_path: Path) -> None:
+    """INTENT: extract_instance_metric_bundle_from_report returns all bundle keys from an eval report."""
     report = evaluate_instance_samples(
         [perfect_match_eval_sample(tmp_path, sample_id="train")],
         model_type="unet",
@@ -33,6 +34,7 @@ def test_extract_instance_metric_bundle_from_whole_report(tmp_path: Path) -> Non
 
 
 def test_validate_train_whole_section_report_accepts_train_sample() -> None:
+    """INTENT: validate_train_whole_section_report accepts a whole-unit report with sample_id train."""
     report = {
         "metric_kind": "instance",
         "unit": "whole",
@@ -43,6 +45,7 @@ def test_validate_train_whole_section_report_accepts_train_sample() -> None:
 
 
 def test_validate_train_whole_section_report_rejects_patch_unit() -> None:
+    """INTENT: validate_train_whole_section_report rejects reports whose unit is not whole."""
     report = {
         "metric_kind": "instance",
         "unit": "patch",
@@ -54,6 +57,7 @@ def test_validate_train_whole_section_report_rejects_patch_unit() -> None:
 
 
 def test_validate_train_whole_section_report_rejects_wrong_sample_ids() -> None:
+    """INTENT: validate_train_whole_section_report rejects reports with unexpected sample ids."""
     report = {
         "metric_kind": "instance",
         "unit": "whole",
@@ -69,6 +73,7 @@ def test_validate_train_whole_section_report_rejects_wrong_sample_ids() -> None:
 def test_load_train_whole_section_bundle_validates_before_extract(
     tmp_path: Path,
 ) -> None:
+    """INTENT: load_train_whole_section_bundle validates unit=whole before extracting the metric bundle."""
     report = evaluate_instance_samples(
         [perfect_match_eval_sample(tmp_path, sample_id="train")],
         model_type="unet",
@@ -82,6 +87,7 @@ def test_load_train_whole_section_bundle_validates_before_extract(
 
 
 def test_mean_bundle_across_variants_averages_numeric_fields() -> None:
+    """INTENT: mean_bundle_across_variants averages numeric instance metric bundle fields across variants."""
     bundles = {
         variant: {key: 0.0 for key in INSTANCE_METRIC_BUNDLE_KEYS}
         for variant in ("PPL", "PPLPPXblend")

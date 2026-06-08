@@ -16,6 +16,7 @@ _FIXTURE_WIDTH = 64
 
 
 def test_micro_gpkg_matches_golden_instance_map() -> None:
+    """INTENT: gpkg_to_merged_instance_map paints the micro fixture GPKG to the stored golden raster."""
     painted = gpkg_to_merged_instance_map(
         _MICRO_GPKG,
         height=_FIXTURE_HEIGHT,

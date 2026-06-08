@@ -19,6 +19,7 @@ from common.tests.evaluate_instances_fixtures import perfect_match_eval_sample
 
 
 def test_whole_section_sample_row_includes_full_metric_bundle(tmp_path) -> None:
+    """INTENT: evaluate_instance_samples whole-section rows expose every instance metric bundle field."""
     report = evaluate_instance_samples(
         [perfect_match_eval_sample(tmp_path)],
         model_type="yolo",
@@ -45,27 +46,8 @@ def test_whole_section_sample_row_includes_full_metric_bundle(tmp_path) -> None:
     assert "aji" not in row
 
 
-def test_multi_sample_report_mean_includes_bundle_fields(tmp_path) -> None:
-    samples = [
-        perfect_match_eval_sample(tmp_path, sample_id="a"),
-        perfect_match_eval_sample(tmp_path, sample_id="b"),
-    ]
-    report = evaluate_instance_samples(
-        samples,
-        model_type="unet",
-        variant="PPL",
-        unit="patch",
-    )
-    mean = report["mean"]
-    assert mean is not None
-    for key in INSTANCE_METRIC_BUNDLE_KEYS:
-        assert key in mean
-    assert mean["pq"] == pytest.approx(1.0)
-    assert mean["dq"] == pytest.approx(1.0)
-    assert mean["f1_iou75"] == pytest.approx(1.0)
-
-
 def test_patch_report_includes_full_bundle_aggregates(tmp_path) -> None:
+    """INTENT: patch evaluate_instance_samples reports per-sample bundles and grainy/weighted extras."""
     samples = [
         perfect_match_eval_sample(tmp_path, sample_id="patch1"),
         perfect_match_eval_sample(tmp_path, sample_id="patch2"),

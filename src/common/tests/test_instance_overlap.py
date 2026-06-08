@@ -34,6 +34,7 @@ def _pair_triples(stats: OverlapStats) -> list[tuple[int, int, int]]:
 
 
 def test_instance_overlap_stats_pair_order_is_lexicographic_by_gt_then_pred() -> None:
+    """INTENT: instance_overlap_stats returns co-occurring pairs sorted by gt id then pred id."""
     gt, pred = bundle_fixture_split_merge()
     stats = instance_overlap_stats(gt, pred)
 
@@ -42,6 +43,7 @@ def test_instance_overlap_stats_pair_order_is_lexicographic_by_gt_then_pred() ->
 
 
 def test_instance_overlap_stats_split_merge_reports_ordered_pairs_and_areas() -> None:
+    """INTENT: instance_overlap_stats reports correct areas and intersections for a split-merge fixture."""
     gt, pred = bundle_fixture_split_merge()
     stats = instance_overlap_stats(gt, pred)
 
@@ -57,6 +59,7 @@ def test_instance_overlap_stats_split_merge_reports_ordered_pairs_and_areas() ->
 
 
 def test_instance_overlap_stats_empty_prediction_maps_have_gt_areas_only() -> None:
+    """INTENT: instance_overlap_stats lists gt areas and no pairs when the prediction map is empty."""
     gt, pred = bundle_fixture_empty_pred()
     stats = instance_overlap_stats(gt, pred)
 
@@ -68,6 +71,7 @@ def test_instance_overlap_stats_empty_prediction_maps_have_gt_areas_only() -> No
 
 
 def test_instance_overlap_stats_empty_ground_truth_maps_have_pred_areas_only() -> None:
+    """INTENT: instance_overlap_stats lists pred areas and no pairs when the ground-truth map is empty."""
     gt, pred = bundle_fixture_empty_gt()
     stats = instance_overlap_stats(gt, pred)
 
@@ -79,6 +83,7 @@ def test_instance_overlap_stats_empty_ground_truth_maps_have_pred_areas_only() -
 
 
 def test_instance_overlap_stats_duplicate_predictions_report_all_co_occurring_pairs() -> None:
+    """INTENT: instance_overlap_stats records separate intersections for each overlapping prediction."""
     gt, pred = bundle_fixture_duplicate_preds()
     stats = instance_overlap_stats(gt, pred)
 
@@ -97,6 +102,7 @@ def test_instance_overlap_stats_duplicate_predictions_report_all_co_occurring_pa
 
 
 def test_instance_overlap_stats_both_empty_maps() -> None:
+    """INTENT: instance_overlap_stats returns empty id lists and no pairs for blank maps."""
     gt, pred = get_bundle_fixture("both_empty")
     stats = instance_overlap_stats(gt, pred)
 
@@ -108,6 +114,7 @@ def test_instance_overlap_stats_both_empty_maps() -> None:
 
 
 def test_instance_overlap_stats_perfect_single_instance_pair() -> None:
+    """INTENT: instance_overlap_stats reports a full-area intersection for a perfect single-grain match."""
     gt, pred = get_bundle_fixture("perfect_single")
     stats = instance_overlap_stats(gt, pred)
 
@@ -120,6 +127,7 @@ def test_instance_overlap_stats_perfect_single_instance_pair() -> None:
 
 
 def test_instance_overlap_stats_gapped_label_ids_remain_sorted() -> None:
+    """INTENT: instance_overlap_stats preserves non-contiguous label ids in sorted order."""
     gt = blank_map(24, 24)
     pred = blank_map(24, 24)
     paint_box(gt, 7, 2, 2, 10, 10)
@@ -133,6 +141,7 @@ def test_instance_overlap_stats_gapped_label_ids_remain_sorted() -> None:
 
 
 def test_instance_overlap_stats_reports_disjoint_pred_instances_separately() -> None:
+    """INTENT: instance_overlap_stats omits pairs for predictions that do not overlap any ground truth."""
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)
     paint_box(gt, 1, 4, 4, 20, 20)
@@ -150,6 +159,7 @@ def test_instance_overlap_stats_reports_disjoint_pred_instances_separately() -> 
 
 
 def test_gt_overlap_prep_captures_sorted_ids_and_areas() -> None:
+    """INTENT: gt_overlap_prep caches sorted ground-truth ids and per-label areas from a label map."""
     gt = blank_map(32, 32)
     paint_box(gt, 3, 4, 4, 12, 12)
     paint_box(gt, 7, 20, 20, 28, 28)
@@ -162,6 +172,7 @@ def test_gt_overlap_prep_captures_sorted_ids_and_areas() -> None:
 
 
 def test_instance_overlap_stats_with_gt_prep_matches_full_extraction() -> None:
+    """INTENT: instance_overlap_stats with gt_prep matches the uncached full extraction path."""
     gt, pred = bundle_fixture_split_merge()
     prep = gt_overlap_prep(gt)
 
@@ -176,6 +187,7 @@ def test_instance_overlap_stats_with_gt_prep_matches_full_extraction() -> None:
 
 
 def test_instance_overlap_stats_non_overlapping_instances_omit_zero_intersection_pairs() -> None:
+    """INTENT: instance_overlap_stats excludes zero-intersection gt-pred pairs from the sparse pair list."""
     gt = blank_map(32, 32)
     pred = blank_map(32, 32)
     paint_box(gt, 1, 4, 4, 12, 12)

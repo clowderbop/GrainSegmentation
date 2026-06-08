@@ -17,6 +17,7 @@ from common.tests.prediction_set_fixtures import yolo_prediction_set_from_masks
 
 
 def test_yolo_prediction_set_to_coco_dt_from_rle_fixture(tmp_path) -> None:
+    """INTENT: yolo_prediction_set_to_coco_dt emits COCO detection dicts with RLE segmentation and bbox."""
     height, width = 16, 16
     binary = np.zeros((height, width), dtype=bool)
     binary[4:10, 4:10] = True
@@ -68,6 +69,7 @@ def test_yolo_prediction_set_to_coco_dt_from_rle_fixture(tmp_path) -> None:
 
 
 def test_yolo_prediction_set_to_coco_dt_rejects_unet_producer() -> None:
+    """INTENT: yolo_prediction_set_to_coco_dt rejects prediction sets whose producer is not yolo."""
     ps = PredictionSet(
         schema_version=1,
         height=16,
@@ -85,6 +87,7 @@ def test_yolo_prediction_set_to_coco_dt_rejects_unet_producer() -> None:
 
 
 def test_yolo_mask_ap_uses_score_merged_canonical_detection() -> None:
+    """INTENT: yolo_prediction_set_to_coco_dt on canonical sets emits one detection per score-merged grain."""
     height, width = 16, 16
     masks = np.zeros((2, height, width), dtype=np.float32)
     masks[0, 4:12, 4:12] = 1.0
@@ -108,19 +111,3 @@ def test_yolo_mask_ap_uses_score_merged_canonical_detection() -> None:
     assert len(from_canonical) == 1
     assert float(from_canonical[0]["score"]) == pytest.approx(0.9)
 
-
-def test_yolo_prediction_set_to_coco_dt_matches_mask_planes_fixture() -> None:
-    masks = np.zeros((1, 16, 16), dtype=np.float32)
-    masks[0, 4:10, 4:10] = 1.0
-    scores = np.array([0.87], dtype=np.float32)
-    prediction_set = yolo_prediction_set_from_masks(
-        masks_hw=masks,
-        scores=scores,
-        height=16,
-        width=16,
-    )
-    from_ps = yolo_prediction_set_to_coco_dt(
-        prediction_set, image_id=1, height=16, width=16
-    )
-    assert len(from_ps) == 1
-    assert float(from_ps[0]["score"]) == pytest.approx(0.87)

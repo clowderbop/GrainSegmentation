@@ -22,6 +22,7 @@ def _write_rgb_tiff(path: Path) -> None:
 
 
 def test_load_whole_predict_pairs_uses_manifest_sample_id(tmp_path: Path) -> None:
+    """INTENT: whole predict pair loading uses manifest sample_id for output naming."""
     work = tmp_path / "staged"
     image_name = "test_PPL.tif"
     _write_rgb_tiff(work / image_name)

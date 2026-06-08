@@ -28,6 +28,7 @@ def _grainseg_with_ppl(tmp_path: Path) -> Path:
 
 
 def test_resolve_predict_samples_from_manifest(tmp_path: Path) -> None:
+    """INTENT: predict resolves sample ids and image paths from a dataset manifest."""
     grainseg = _grainseg_with_ppl(tmp_path)
     manifest = build_unet_whole_manifest(
         split="train", variant="PPL", grainseg_root=grainseg
@@ -47,6 +48,7 @@ def test_resolve_predict_samples_from_manifest(tmp_path: Path) -> None:
 
 
 def test_manifest_is_required() -> None:
+    """INTENT: predict CLI requires --manifest and rejects invocations without it."""
     parser = _build_arg_parser()
     with pytest.raises(SystemExit):
         parser.parse_args(["--model-path", "m.keras", "--output-dir", "out"])

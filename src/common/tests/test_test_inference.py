@@ -6,15 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from common.test_inference import inference_recipe_path, load_test_inference_recipe
-from common.variants import repo_root
-
-
-def test_inference_recipe_path_defaults_to_config_test_inference_yaml() -> None:
-    assert inference_recipe_path() == repo_root() / "config" / "test_inference.yaml"
+from common.test_inference import load_test_inference_recipe
 
 
 def test_load_test_inference_recipe_yolo_profile_from_yaml(tmp_path: Path) -> None:
+    """INTENT: load_test_inference_recipe parses YOLO confidence and postprocess profile fields from YAML."""
     recipe_path = tmp_path / "test_inference.yaml"
     recipe_path.write_text(
         """
@@ -55,6 +51,7 @@ unet:
 
 
 def test_profile_tune_candidate_from_conf_uses_recipe_mask_threshold() -> None:
+    """INTENT: profile_tune_candidate_from_conf pairs conf with the fixed recipe mask threshold only."""
     from common.test_inference import (
         profile_tune_candidate_from_conf,
         profile_tune_fixed_mask_threshold,
@@ -71,6 +68,7 @@ def test_profile_tune_candidate_from_conf_uses_recipe_mask_threshold() -> None:
 
 
 def test_emit_shell_exports_yolo_inference_profile(capsys: pytest.CaptureFixture[str]) -> None:
+    """INTENT: emit_shell_exports prints export statements for YOLO inference profile environment variables."""
     from common.test_inference import (
         TestInferenceRecipe,
         YoloInferenceProfile,

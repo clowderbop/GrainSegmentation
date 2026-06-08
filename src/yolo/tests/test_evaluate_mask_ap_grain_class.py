@@ -12,6 +12,7 @@ from yolo.coco_instance_ap import evaluate_mask_ap
 
 
 def test_evaluate_mask_ap_positive_when_gt_and_dt_share_grain_class() -> None:
+    """INTENT: mask AP is positive when GT and predictions share grain class 0."""
     height, width = 64, 64
     gt_poly = box(12, 12, 52, 52)
     gt_anns = build_gt_annotations(

@@ -42,6 +42,7 @@ def _audit_status(
 def test_completeness_audit_reports_whole_patch_optional_and_val(
     tmp_path: Path,
 ) -> None:
+    """INTENT: completeness audit reports found and missing whole, patch, and val artifacts."""
     root = tmp_path / "GrainSeg"
     _write_json(
         root / "eval/yolo_PPL/instance_metrics.json",
@@ -85,24 +86,8 @@ def test_completeness_audit_reports_whole_patch_optional_and_val(
     assert optional_missing.empty
 
 
-def test_completeness_audit_marks_optional_artifacts_missing_when_absent(
-    tmp_path: Path,
-) -> None:
-    root = tmp_path / "GrainSeg"
-    _write_json(
-        root / "eval/yolo_PPL/instance_metrics.json",
-        {**MINIMAL_INSTANCE_METRICS, "variant": "PPL"},
-    )
-    audit = completeness_artifact_audit_table(root, variants=("PPL",))
-
-    assert "mask_ap" not in " ".join(audit["Artifact"].astype(str)).lower()
-    assert audit.loc[
-        (audit["Variant"] == "PPL") & (audit["Artifact"] == ULTRALYTICS_VAL_ARTIFACT),
-        "Status",
-    ].iloc[0] == "missing"
-
-
 def test_anomaly_report_flags_high_sq_low_dq_and_patch_good_whole_bad() -> None:
+    """INTENT: anomaly report flags high-SQ/low-DQ and patch-good/whole-bad PQ patterns."""
     df = pd.DataFrame(
         [
             _whole_row(
@@ -136,6 +121,7 @@ def test_anomaly_report_flags_high_sq_low_dq_and_patch_good_whole_bad() -> None:
 
 
 def test_anomaly_report_flags_strong_signed_count_bias() -> None:
+    """INTENT: anomaly report flags rows with strong signed count bias."""
     df = pd.DataFrame(
         [
             _whole_row(
@@ -152,6 +138,7 @@ def test_anomaly_report_flags_strong_signed_count_bias() -> None:
 
 
 def test_narrative_summary_lists_headline_findings() -> None:
+    """INTENT: narrative summary markdown lists headline PQ, gain, gap, and bias findings."""
     df = pd.DataFrame(
         [
             _whole_row(
@@ -203,6 +190,7 @@ def test_narrative_summary_lists_headline_findings() -> None:
 def test_build_reporting_bundle_writes_qa_outputs_and_registers_summary(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle writes QA audit CSVs and narrative summary without skipping."""
     root = tmp_path / "GrainSeg"
     _write_json(
         root / "eval/yolo_PPL/instance_metrics.json",

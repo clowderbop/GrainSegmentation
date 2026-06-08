@@ -34,6 +34,7 @@ def _write_manifest(path: Path, sample_id: str) -> None:
 
 
 def test_extract_instances_writes_prediction_set_and_provenance(tmp_path: Path) -> None:
+    """INTENT: CC extract_instances writes prediction sets and run provenance without legacy instance dirs."""
     sample_id = "patch001"
     semantic_dir = tmp_path / "semantic"
     semantic_dir.mkdir()
@@ -77,6 +78,7 @@ def test_extract_instances_writes_prediction_set_and_provenance(tmp_path: Path) 
 def test_extract_instances_watershed_writes_prediction_set_and_provenance(
     tmp_path: Path,
 ) -> None:
+    """INTENT: watershed extract_instances writes prediction sets and records watershed params in provenance."""
     sample_id = "patch001"
     semantic_dir = tmp_path / "semantic"
     semantic_dir.mkdir()

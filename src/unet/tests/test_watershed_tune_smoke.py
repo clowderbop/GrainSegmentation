@@ -15,6 +15,7 @@ from unet.watershed_tune_smoke import (
 def test_run_watershed_tune_smoke_scores_one_combo_with_phase_timings(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """INTENT: smoke harness scores one combo and logs watershed and metrics phase timings."""
     mean_pq, per_sample = run_watershed_tune_smoke(
         default_smoke_watershed_params(),
         height=64,
@@ -41,6 +42,7 @@ def test_run_watershed_tune_smoke_scores_one_combo_with_phase_timings(
 def test_run_watershed_tune_smoke_uses_phased_extraction_not_tune_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """INTENT: smoke harness scores via phased extraction, not the tune extraction cache."""
     import unet.watershed_tune_extraction_cache as cache_mod
 
     cache_called = False
@@ -67,6 +69,7 @@ def test_run_watershed_tune_smoke_uses_phased_extraction_not_tune_cache(
 def test_run_watershed_tune_smoke_uses_compute_merged_view_pq_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """INTENT: smoke harness routes scoring through merged-view PQ, not legacy bundle metrics."""
     import unet.extraction_tune_scoring as scoring
 
     pq_calls = 0
@@ -91,6 +94,7 @@ def test_run_watershed_tune_smoke_uses_compute_merged_view_pq_route(
 def test_watershed_tune_smoke_cli_runs_one_combo(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    """INTENT: watershed tune smoke CLI runs one param combo and prints completion diagnostics."""
     from unet.watershed_tune_smoke import main
 
     main(

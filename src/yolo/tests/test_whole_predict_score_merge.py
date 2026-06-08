@@ -55,6 +55,7 @@ def test_whole_predict_writes_cross_tile_canonical_set(
     mock_pairs: MagicMock,
     tmp_path: Path,
 ) -> None:
+    """INTENT: whole predict persists a cross-tile-associated canonical prediction set."""
     height, width = 16, 16
     image_path = tmp_path / "test_PPL.tif"
     image_path.write_bytes(b"\x00" * 64)
@@ -82,6 +83,7 @@ def test_whole_run_provenance_records_cross_tile_association(
     mock_pairs: MagicMock,
     tmp_path: Path,
 ) -> None:
+    """INTENT: whole predict run provenance records cross-tile association at predict time."""
     image_path = tmp_path / "test_PPL.tif"
     image_path.write_bytes(b"\x00" * 64)
     out_dir = tmp_path / "out"
@@ -105,7 +107,7 @@ def test_whole_predict_calls_scaled_associate_tiled_proposals(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Held-out whole predict fuses tiled proposals via scaled cross-tile association."""
+    """INTENT: whole predict fuses tiled proposals through scaled cross-tile association."""
     import yolo.cross_tile_postprocess as postprocess
     from yolo.cross_tile_association import associate_tiled_proposals as real_associate
 
@@ -151,7 +153,7 @@ def test_whole_predict_does_not_use_score_merge(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Whole-section production path must not SAHI slice-merge + score-paint."""
+    """INTENT: whole predict never invokes score-merge proposal fusion."""
     def fail_score_merge(*_args: object, **_kwargs: object):
         raise AssertionError(
             "whole predict must not call merge_yolo_proposals_by_score"
@@ -183,6 +185,7 @@ def test_whole_predict_logs_sliding_window_and_association_phases(
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
+    """INTENT: whole predict logs sliding-window and cross-tile association phase progress."""
     from yolo.tests.phase_logging_assertions import (
         assert_done_timing_lines,
         assert_substrings_in_order,

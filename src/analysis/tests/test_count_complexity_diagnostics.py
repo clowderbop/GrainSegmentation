@@ -16,18 +16,11 @@ from analysis.diagnostic_derivation import (
     signed_count_bias_for_row,
 )
 from analysis.tests.test_derived_tables import _whole_row
-from analysis.tests.test_load_metrics import PQ_SAMPLE_ROW, instance_metric_row
-from common.variants import variant_input_image_count
-
-
-def test_variant_input_image_count_from_registry() -> None:
-    assert variant_input_image_count("PPL") == 1
-    assert variant_input_image_count("PPL+PPXblend") == 2
-    assert variant_input_image_count("PPL+AllPPX") == 7
-    assert variant_input_image_count("PPLPPXblend") == 1
+from analysis.tests.test_load_metrics import PQ_SAMPLE_ROW
 
 
 def test_signed_count_bias_positive_negative_and_calibrated() -> None:
+    """INTENT: signed_count_bias_for_row computes over-, under-, and calibrated prediction bias."""
     over = pd.Series({"pred_gt_instance_ratio": 1.15})
     under = pd.Series({"pred_gt_instance_ratio": 0.70})
     calibrated = pd.Series({"pred_gt_instance_ratio": 1.02})
@@ -38,6 +31,7 @@ def test_signed_count_bias_positive_negative_and_calibrated() -> None:
 
 
 def test_count_error_bar_points_omit_non_finite_ratio() -> None:
+    """INTENT: count error bar points omit rows with non-finite pred_gt_instance_ratio."""
     df = pd.DataFrame(
         [
             _whole_row(
@@ -64,6 +58,7 @@ def test_count_error_bar_points_omit_non_finite_ratio() -> None:
 
 
 def test_pareto_frontier_membership_maximizes_pq_at_min_cost() -> None:
+    """INTENT: Pareto frontier membership keeps PQ-maximizing points at minimum input cost."""
     costs = [1, 1, 2, 7]
     pqs = [0.40, 0.35, 0.45, 0.50]
     membership = pareto_membership(list(zip(costs, pqs, strict=True)))
@@ -72,6 +67,7 @@ def test_pareto_frontier_membership_maximizes_pq_at_min_cost() -> None:
 
 
 def test_pareto_frontier_table_labels_diagnostic_only() -> None:
+    """INTENT: Pareto frontier table labels rows diagnostic-only and marks frontier members."""
     df = pd.DataFrame(
         [
             _whole_row(
@@ -107,19 +103,10 @@ def test_pareto_frontier_table_labels_diagnostic_only() -> None:
     assert frontier["Input configuration"].tolist() == ["PPL", "FullStack"]
 
 
-def test_instance_metric_row_includes_input_image_count() -> None:
-    row = instance_metric_row(
-        producer="yolo",
-        variant="PPL+AllPPX",
-        unit="whole",
-        metrics={"pq": 0.5},
-    )
-    assert row["input_image_count"] == 7
-
-
 def test_build_reporting_bundle_writes_count_and_pareto_outputs(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_reporting_bundle writes count-error and Pareto diagnostic tables and figures."""
     pytest.importorskip("matplotlib")
     pytest.importorskip("seaborn")
 

@@ -101,6 +101,17 @@ def bundle_fixture_aji_plus_duplicates() -> tuple[np.ndarray, np.ndarray]:
     return gt, pred
 
 
+def bundle_fixture_gapped_label_ids() -> tuple[np.ndarray, np.ndarray]:
+    gt = blank_map(48, 48)
+    pred = blank_map(48, 48)
+    paint_box(gt, 10, 4, 4, 18, 18)
+    paint_box(gt, 50, 28, 28, 44, 44)
+    paint_box(pred, 10, 4, 4, 18, 18)
+    paint_box(pred, 50, 28, 28, 44, 44)
+    paint_box(pred, 200, 4, 28, 18, 44)
+    return gt, pred
+
+
 BUNDLE_FIXTURE_BUILDERS: dict[str, Callable[[], tuple[np.ndarray, np.ndarray]]] = {
     "perfect_single": bundle_fixture_perfect_single,
     "both_empty": bundle_fixture_both_empty,
@@ -112,6 +123,7 @@ BUNDLE_FIXTURE_BUILDERS: dict[str, Callable[[], tuple[np.ndarray, np.ndarray]]] 
     "poor_mask": bundle_fixture_poor_mask,
     "pq_decomposition": bundle_fixture_pq_decomposition,
     "aji_plus_duplicates": bundle_fixture_aji_plus_duplicates,
+    "gapped_label_ids": bundle_fixture_gapped_label_ids,
 }
 
 

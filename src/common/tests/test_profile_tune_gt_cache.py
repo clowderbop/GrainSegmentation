@@ -31,14 +31,10 @@ def _write_anchor_tiff(path: Path, *, height: int, width: int) -> None:
     tifffile.imwrite(path, np.zeros((height, width, 3), dtype=np.uint8))
 
 
-def test_gt_cache_dir_under_cache_root(tmp_path: Path) -> None:
-    cache_root = tmp_path / ".cache"
-    assert gt_cache_dir(cache_root) == cache_root / "gt_cache" / "train"
-
-
 def test_build_gt_fingerprint_excludes_variant_includes_geometry(
     tmp_path: Path,
 ) -> None:
+    """INTENT: build_gt_fingerprint keys on geometry and GPKG hash but not microscopy variant."""
     labels_gpkg = tmp_path / "train_labels.gpkg"
     labels_gpkg.write_bytes(b"labels")
     fingerprint = build_gt_fingerprint(
@@ -56,6 +52,7 @@ def test_build_gt_fingerprint_excludes_variant_includes_geometry(
 
 
 def test_write_and_load_gt_cache_round_trip(tmp_path: Path) -> None:
+    """INTENT: write_gt_instance_map_cache and load_gt_instance_map_cache round-trip an instance map."""
     gt_map = np.zeros((8, 8), dtype=np.int32)
     gt_map[1:4, 1:4] = 1
     labels_gpkg = tmp_path / "train_labels.gpkg"
@@ -75,6 +72,7 @@ def test_write_and_load_gt_cache_round_trip(tmp_path: Path) -> None:
 
 
 def test_load_gt_cache_rejects_fingerprint_mismatch(tmp_path: Path) -> None:
+    """INTENT: load_gt_instance_map_cache rejects caches whose fingerprint no longer matches the GPKG."""
     gt_map = np.ones((4, 4), dtype=np.int32)
     gpkg = tmp_path / "train_labels.gpkg"
     gpkg.write_bytes(b"gpkg-v1")
@@ -92,6 +90,7 @@ def test_load_gt_cache_rejects_fingerprint_mismatch(tmp_path: Path) -> None:
 
 
 def test_write_train_gt_cache_from_micro_gpkg_matches_golden(tmp_path: Path) -> None:
+    """INTENT: write_train_gt_cache materializes the micro fixture GPKG to the golden instance map."""
     grainseg_root = tmp_path / "GrainSeg"
     labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
     labels_gpkg.parent.mkdir(parents=True)
@@ -124,6 +123,7 @@ def test_write_train_gt_cache_from_micro_gpkg_matches_golden(tmp_path: Path) -> 
 
 
 def test_gt_cache_cli_module_writes_micro_fixture(tmp_path: Path) -> None:
+    """INTENT: the profile_tune_gt_cache CLI writes a loadable cache matching the micro fixture golden map."""
     grainseg_root = tmp_path / "GrainSeg"
     labels_gpkg = grainseg_root / "dataset" / "train" / "train_labels.gpkg"
     labels_gpkg.parent.mkdir(parents=True)

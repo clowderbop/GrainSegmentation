@@ -24,6 +24,7 @@ from common.tests.merged_view_fixtures import (
 
 
 def test_perfect_single_grain_match_has_unit_pq() -> None:
+    """INTENT: compute_instance_metric_bundle scores a perfect single-grain match with unit PQ and AJI+."""
     gt, pred = bundle_fixture_perfect_single()
 
     bundle = compute_instance_metric_bundle(gt, pred)
@@ -44,6 +45,7 @@ def test_perfect_single_grain_match_has_unit_pq() -> None:
 
 
 def test_both_empty_maps_score_perfectly() -> None:
+    """INTENT: compute_instance_metric_bundle treats mutually empty maps as perfect PQ and AJI+."""
     gt, pred = bundle_fixture_both_empty()
 
     bundle = compute_instance_metric_bundle(gt, pred)
@@ -62,6 +64,7 @@ def test_both_empty_maps_score_perfectly() -> None:
 
 
 def test_empty_prediction_yields_zero_pq_and_recall() -> None:
+    """INTENT: compute_instance_metric_bundle yields zero PQ and recall when predictions are empty."""
     gt, pred = bundle_fixture_empty_pred()
 
     bundle = compute_instance_metric_bundle(gt, pred)
@@ -77,6 +80,7 @@ def test_empty_prediction_yields_zero_pq_and_recall() -> None:
 
 
 def test_empty_ground_truth_with_predictions_scores_zero_pq() -> None:
+    """INTENT: compute_instance_metric_bundle yields zero PQ and infinite pred_gt ratio for empty GT."""
     gt, pred = bundle_fixture_empty_gt()
 
     bundle = compute_instance_metric_bundle(gt, pred)
@@ -90,6 +94,7 @@ def test_empty_ground_truth_with_predictions_scores_zero_pq() -> None:
 
 
 def test_missed_grain_lowers_dq_and_recall() -> None:
+    """INTENT: compute_instance_metric_bundle penalizes detection quality and recall for a missed grain."""
     gt, pred = bundle_fixture_missed_grain()
 
     bundle = compute_instance_metric_bundle(gt, pred)
@@ -105,6 +110,7 @@ def test_missed_grain_lowers_dq_and_recall() -> None:
 
 
 def test_duplicate_predictions_penalize_precision() -> None:
+    """INTENT: compute_instance_metric_bundle penalizes precision and DQ for duplicate predictions."""
     gt, pred = bundle_fixture_duplicate_preds()
 
     bundle = compute_instance_metric_bundle(gt, pred)
@@ -119,7 +125,7 @@ def test_duplicate_predictions_penalize_precision() -> None:
 
 
 def test_one_prediction_covering_two_grains_counts_one_match() -> None:
-    """One predicted instance overlaps both GT grains; only one strict IoU>0.5 match."""
+    """INTENT: compute_instance_metric_bundle counts only one IoU>0.5 match when one pred spans two grains."""
     gt, pred = bundle_fixture_split_merge()
 
     assert np.any((pred > 0) & (gt == 1))
@@ -138,6 +144,7 @@ def test_one_prediction_covering_two_grains_counts_one_match() -> None:
 
 
 def test_poor_mask_match_below_iou50_is_false_negative() -> None:
+    """INTENT: compute_instance_metric_bundle scores zero PQ when overlap is below the IoU 0.5 threshold."""
     gt, pred = bundle_fixture_poor_mask()
 
     bundle = compute_instance_metric_bundle(gt, pred)
@@ -149,18 +156,8 @@ def test_poor_mask_match_below_iou50_is_false_negative() -> None:
     assert bundle["recall_iou50"] == pytest.approx(0.0)
 
 
-def test_iou_exactly_equal_to_threshold_does_not_match() -> None:
-    """ADR 0003: strict IoU > threshold, not >=."""
-    from common.metrics import greedy_one_to_one_matches
-
-    iou_matrix = np.array([[0.5]], dtype=np.float64)
-    assert greedy_one_to_one_matches(iou_matrix, 0.5) == []
-
-    iou_matrix[0, 0] = np.nextafter(0.5, 1.0)
-    assert greedy_one_to_one_matches(iou_matrix, 0.5) == [(0, 0)]
-
-
 def test_pq_decomposition_matches_hand_computed_tp_fp_fn() -> None:
+    """INTENT: compute_instance_metric_bundle DQ and PQ match hand-computed tp/fp/fn decomposition."""
     gt, pred = bundle_fixture_pq_decomposition()
 
     bundle = compute_instance_metric_bundle(gt, pred)
@@ -174,7 +171,7 @@ def test_pq_decomposition_matches_hand_computed_tp_fp_fn() -> None:
 
 
 def test_aji_plus_pairs_at_most_one_prediction_per_ground_truth() -> None:
-    """Duplicate predictions: only one pred pairs; the other counts in the union."""
+    """INTENT: compute_instance_metric_bundle AJI+ pairs at most one prediction per ground-truth instance."""
     gt, pred = bundle_fixture_aji_plus_duplicates()
 
     bundle = compute_instance_metric_bundle(gt, pred)

@@ -4,7 +4,7 @@
 #SBATCH --mem=256G
 #SBATCH --cpus-per-task=8
 #SBATCH --gpus-per-node=rtx_pro_6000:1
-#SBATCH --time=04:00:00
+#SBATCH --time=00:15:00
 
 set -euo pipefail
 # shellcheck source=SLURM/utils/enter_job.sh

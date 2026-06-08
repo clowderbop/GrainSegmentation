@@ -11,7 +11,7 @@ WATERSHED_TUNE_PREDICT_RESOURCES: dict[str, str] = {
     "mem": "256G",
     "cpus-per-task": "8",
     "gpus-per-node": "rtx_pro_6000:1",
-    "time": "04:00:00",
+    "time": "00:15:00",
 }
 
 WATERSHED_TUNE_TUNE_RESOURCES: dict[str, str] = {

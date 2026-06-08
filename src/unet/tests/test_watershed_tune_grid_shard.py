@@ -11,6 +11,7 @@ from unet.watershed_tune_grid_shard import (
     WatershedTuneShard,
     iter_watershed_tune_param_sets_for_shard,
     iter_watershed_tune_shards,
+    watershed_tune_shard_combo_count,
     watershed_tune_shard_count,
 )
 
@@ -95,6 +96,15 @@ def test_custom_grid_shards_partition_full_grid_without_gaps_or_duplicates(
     monolithic = list(iter_watershed_tune_param_sets(grid))
     assert len(monolithic) == 1 * 2 * 2 * 2 * 1 * 1
     assert _shard_param_sets_union(grid) == monolithic
+
+
+def test_watershed_tune_shard_combo_count_matches_materialized_shard_length() -> None:
+    """INTENT: shard combo count helper matches iterator length without materializing twice."""
+    grid = load_watershed_tune_grid().grid
+    for shard in iter_watershed_tune_shards(grid):
+        assert watershed_tune_shard_combo_count(grid, shard) == len(
+            list(iter_watershed_tune_param_sets_for_shard(grid, shard))
+        )
 
 
 def test_default_grid_yields_six_shards_of_twelve_combinations_each() -> None:

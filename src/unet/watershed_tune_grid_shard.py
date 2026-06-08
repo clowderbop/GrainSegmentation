@@ -33,6 +33,19 @@ def iter_watershed_tune_shards(grid: WatershedTuneGrid) -> Iterable[WatershedTun
         )
 
 
+def watershed_tune_shard_combo_count(
+    grid: WatershedTuneGrid,
+    _shard: WatershedTuneShard,
+) -> int:
+    """Return combo count for one shard without materializing the param iterator."""
+    return (
+        len(grid.watershed_connectivity)
+        * len(grid.min_area_px)
+        * len(grid.exclude_border)
+        * len(grid.ridge_level)
+    )
+
+
 def iter_watershed_tune_param_sets_for_shard(
     grid: WatershedTuneGrid,
     shard: WatershedTuneShard,

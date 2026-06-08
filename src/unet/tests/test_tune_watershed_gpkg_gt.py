@@ -12,84 +12,27 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import tifffile
-import yaml
 
 from unet import tune_watershed
 from unet.tune_watershed import _collect_samples
+from unet.tests.tune_watershed_cli_fixtures import (
+    MICRO_GPKG,
+    TUNE_CLI_HEIGHT,
+    TUNE_CLI_WIDTH,
+    make_tune_collect_args,
+    write_mini_tune_grid,
+)
 from unet.watershed_tune_extraction_cache import (
     build_watershed_tune_sample_caches,
     mean_train_pq_for_watershed_params_cached,
 )
 
-_REPO_SRC = Path(__file__).resolve().parents[2]
-_MICRO_GPKG = (
-    _REPO_SRC
-    / "common"
-    / "tests"
-    / "fixtures"
-    / "gpkg_merged_instance_map"
-    / "micro_labels.gpkg"
-)
-_GOLDEN_NPZ = _MICRO_GPKG.parent / "instance_map.npz"
-_HEIGHT = 48
-_WIDTH = 64
+_GOLDEN_NPZ = MICRO_GPKG.parent / "instance_map.npz"
 
 
 def _golden_map() -> np.ndarray:
     with np.load(_GOLDEN_NPZ) as data:
         return np.asarray(data["instance_map"], dtype=np.int32)
-
-
-def _make_tune_collect_args(
-    tmp_path: Path,
-    *,
-    sample_id: str = "train",
-    pred_shape: tuple[int, int] = (_HEIGHT, _WIDTH),
-    image_shape: tuple[int, int] = (_HEIGHT, _WIDTH),
-    paint_semantic_region: bool = False,
-) -> Namespace:
-    """Minimal manifest + cached pred (+ manifest RGB stub) for ``_collect_samples``."""
-    pred_height, pred_width = pred_shape
-    image_height, image_width = image_shape
-
-    image_path = tmp_path / f"{sample_id}_PPL.tif"
-    rgb = np.zeros((image_height, image_width, 3), dtype=np.uint8)
-    tifffile.imwrite(image_path, rgb, photometric="rgb")
-
-    pred_path = tmp_path / "preds" / f"{sample_id}_pred.tif"
-    pred_path.parent.mkdir(parents=True)
-    semantic = np.zeros((pred_height, pred_width), dtype=np.uint8)
-    if paint_semantic_region:
-        semantic[8:20, 8:24] = 1
-    tifffile.imwrite(pred_path, semantic)
-
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "variant": "PPL",
-                "unit": "whole",
-                "grainseg_root": str(tmp_path),
-                "path_base": "work_root",
-                "samples": [
-                    {
-                        "sample_id": sample_id,
-                        "image": str(image_path),
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    return Namespace(
-        manifest=manifest_path,
-        gt_gpkg=_MICRO_GPKG,
-        preds_dir=tmp_path / "preds",
-        max_samples=None,
-        num_inputs=None,
-    )
 
 
 def test_collect_samples_works_with_metadata_only_manifest_without_rgb_files(
@@ -99,7 +42,7 @@ def test_collect_samples_works_with_metadata_only_manifest_without_rgb_files(
     sample_id = "train"
     pred_path = tmp_path / "preds" / f"{sample_id}_pred.tif"
     pred_path.parent.mkdir(parents=True)
-    semantic = np.zeros((_HEIGHT, _WIDTH), dtype=np.uint8)
+    semantic = np.zeros((TUNE_CLI_HEIGHT, TUNE_CLI_WIDTH), dtype=np.uint8)
     semantic[8:20, 8:24] = 1
     tifffile.imwrite(pred_path, semantic)
 
@@ -125,24 +68,24 @@ def test_collect_samples_works_with_metadata_only_manifest_without_rgb_files(
 
     args = Namespace(
         manifest=manifest_path,
-        gt_gpkg=_MICRO_GPKG,
+        gt_gpkg=MICRO_GPKG,
         preds_dir=tmp_path / "preds",
         max_samples=None,
         num_inputs=None,
     )
     sample_ids, true_instances, pred_semantic = _collect_samples(args)
     assert sample_ids == [sample_id]
-    assert true_instances[0].shape == (_HEIGHT, _WIDTH)
-    assert pred_semantic[0].shape == (_HEIGHT, _WIDTH)
+    assert true_instances[0].shape == (TUNE_CLI_HEIGHT, TUNE_CLI_WIDTH)
+    assert pred_semantic[0].shape == (TUNE_CLI_HEIGHT, TUNE_CLI_WIDTH)
 
 
 def test_collect_samples_uses_pred_geometry_without_loading_rgb(
     tmp_path: Path,
 ) -> None:
     """INTENT: _collect_samples uses cached pred shape for GT painting without loading RGB."""
-    args = _make_tune_collect_args(
+    args = make_tune_collect_args(
         tmp_path,
-        pred_shape=(_HEIGHT, _WIDTH),
+        pred_shape=(TUNE_CLI_HEIGHT, TUNE_CLI_WIDTH),
         image_shape=(32, 40),
         paint_semantic_region=True,
     )
@@ -153,15 +96,15 @@ def test_collect_samples_uses_pred_geometry_without_loading_rgb(
 
     load_rgb.assert_not_called()
     assert sample_ids == ["train"]
-    assert true_instances[0].shape == (_HEIGHT, _WIDTH)
-    assert pred_semantic[0].shape == (_HEIGHT, _WIDTH)
+    assert true_instances[0].shape == (TUNE_CLI_HEIGHT, TUNE_CLI_WIDTH)
+    assert pred_semantic[0].shape == (TUNE_CLI_HEIGHT, TUNE_CLI_WIDTH)
 
 
 def test_collect_samples_raises_on_gt_pred_shape_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """INTENT: _collect_samples raises a sample-named error when painted GT and pred shapes differ."""
-    args = _make_tune_collect_args(tmp_path)
+    args = make_tune_collect_args(tmp_path)
 
     def _wrong_shape_gt(*_args: object, **_kwargs: object) -> np.ndarray:
         return np.zeros((10, 10), dtype=np.int32)
@@ -174,7 +117,7 @@ def test_collect_samples_raises_on_gt_pred_shape_mismatch(
 
 def test_collect_samples_gpkg_gt_matches_golden(tmp_path: Path) -> None:
     """INTENT: _collect_samples paints GPKG scene polygons to match the golden instance map."""
-    args = _make_tune_collect_args(tmp_path, paint_semantic_region=True)
+    args = make_tune_collect_args(tmp_path, paint_semantic_region=True)
     sample_ids, true_instances, _pred_semantic = _collect_samples(args)
 
     assert sample_ids == ["train"]
@@ -187,22 +130,8 @@ def test_tune_watershed_main_uses_extraction_cache_for_cached_preds_workflow(
 ) -> None:
     """INTENT: tune_watershed main builds tune caches once and scores every grid combo via cached path."""
     grid_path = tmp_path / "mini_grid.yaml"
-    grid_path.write_text(
-        yaml.safe_dump(
-            {
-                "grid": {
-                    "min_distance": [5, 9],
-                    "boundary_dilate_iter": [0],
-                    "watershed_connectivity": [1],
-                    "min_area_px": [0, 64],
-                    "exclude_border": [0],
-                    "ridge_level": [None],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    args = _make_tune_collect_args(tmp_path, paint_semantic_region=True)
+    write_mini_tune_grid(grid_path)
+    args = make_tune_collect_args(tmp_path, paint_semantic_region=True)
     out_csv = tmp_path / "grid.csv"
     out_json = tmp_path / "best.json"
 

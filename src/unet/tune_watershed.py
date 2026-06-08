@@ -40,10 +40,18 @@ from unet.watershed_tune_extraction_cache import (
 )
 from unet.watershed_tune_grid import (
     WATERSHED_TUNE_GRID_CONFIG_REL,
+    WatershedTuneGrid,
     iter_watershed_tune_param_sets,
     load_watershed_tune_grid,
     watershed_tune_candidate_count,
     watershed_tune_grid_path,
+)
+from unet.watershed_tune_grid_shard import (
+    WatershedTuneShard,
+    iter_watershed_tune_param_sets_for_shard,
+    iter_watershed_tune_shards,
+    watershed_tune_shard_combo_count,
+    watershed_tune_shard_count,
 )
 
 
@@ -108,6 +116,24 @@ def _build_arg_parser() -> argparse.ArgumentParser:
             "(for verifying base-extraction vs scored-combo ratio in SLURM logs)"
         ),
     )
+    parser.add_argument(
+        "--shard-index",
+        type=int,
+        default=None,
+        help="1-based shard index (shard mode; requires shard axis args)",
+    )
+    parser.add_argument(
+        "--shard-min-distance",
+        type=int,
+        default=None,
+        help="Fixed min_distance for this shard (shard mode)",
+    )
+    parser.add_argument(
+        "--shard-boundary-dilate-iter",
+        type=int,
+        default=None,
+        help="Fixed boundary_dilate_iter for this shard (shard mode)",
+    )
 
     return parser
 
@@ -136,6 +162,21 @@ def _validate_tune_args(
             f"preds-dir is not a directory: {preds_dir.resolve()}",
             parser=parser,
         )
+    shard_args = (
+        args.shard_index,
+        args.shard_min_distance,
+        args.shard_boundary_dilate_iter,
+    )
+    if any(value is not None for value in shard_args) and any(
+        value is None for value in shard_args
+    ):
+        raise_cli_argument_error(
+            "shard mode requires --shard-index, --shard-min-distance, and "
+            "--shard-boundary-dilate-iter together",
+            parser=parser,
+        )
+    if args.shard_index is not None and args.shard_index < 1:
+        raise_cli_argument_error("shard-index must be >= 1", parser=parser)
 
 
 def _resolve_watershed_samples(args: argparse.Namespace) -> list[dict]:
@@ -195,6 +236,43 @@ def _collect_samples(
     return sample_ids, true_instances, pred_semantic
 
 
+def _resolve_watershed_tune_shard(
+    args: argparse.Namespace,
+    tune_grid: WatershedTuneGrid,
+) -> WatershedTuneShard | None:
+    if args.shard_index is None:
+        return None
+    shard = WatershedTuneShard(
+        index=args.shard_index,
+        min_distance=args.shard_min_distance,
+        boundary_dilate_iter=args.shard_boundary_dilate_iter,
+    )
+    valid_shards = list(iter_watershed_tune_shards(tune_grid))
+    for valid_shard in valid_shards:
+        if shard == valid_shard:
+            return valid_shard
+    raise_cli_argument_error(
+        "shard descriptor does not match any shard for the loaded grid: "
+        f"index={shard.index}, min_distance={shard.min_distance}, "
+        f"boundary_dilate_iter={shard.boundary_dilate_iter}"
+    )
+
+
+def _tune_combo_progress_label(
+    *,
+    combo_idx: int,
+    grid_size: int,
+    shard: WatershedTuneShard | None,
+    shard_count: int,
+    shard_size: int,
+) -> str:
+    if shard is None:
+        return f"[{combo_idx}/{grid_size}]"
+    return (
+        f"shard {shard.index}/{shard_count}, combo {combo_idx}/{shard_size}"
+    )
+
+
 def main() -> None:
     args = _parse_args()
     grid_spec = load_watershed_tune_grid(args.grid_config)
@@ -203,11 +281,25 @@ def main() -> None:
     if args.num_inputs is None:
         raise_cli_argument_error("Could not determine num_inputs")
 
+    shard = _resolve_watershed_tune_shard(args, tune_grid)
     grid_size = watershed_tune_candidate_count(tune_grid)
+    shard_count = watershed_tune_shard_count(tune_grid) if shard is not None else 0
+    shard_size = (
+        watershed_tune_shard_combo_count(tune_grid, shard)
+        if shard is not None
+        else grid_size
+    )
     base_key_count = watershed_base_extraction_key_count(tune_grid)
     sample_caches = build_watershed_tune_sample_caches(pred_semantic)
     gt_overlap_preps = build_gt_overlap_preps(true_instances)
     _log(f"Grid size: {grid_size} combinations on {len(sample_ids)} sample(s).")
+    if shard is not None:
+        _log(
+            f"Shard mode: shard {shard.index}/{shard_count} "
+            f"(min_distance={shard.min_distance}, "
+            f"boundary_dilate_iter={shard.boundary_dilate_iter}), "
+            f"{shard_size} combination(s)."
+        )
     _log(
         f"Extraction cache: up to {base_key_count} on-demand base maps per sample "
         f"(≤{base_key_count * len(sample_ids)} base extractions for this grid)."
@@ -236,13 +328,20 @@ def main() -> None:
     with out_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for combo_idx, params in enumerate(
-            iter_watershed_tune_param_sets(tune_grid), start=1
-        ):
-            _log(
-                f"[{combo_idx}/{grid_size}] scoring "
-                f"({format_watershed_param_set(params)}) …"
+        param_sets = (
+            iter_watershed_tune_param_sets_for_shard(tune_grid, shard)
+            if shard is not None
+            else iter_watershed_tune_param_sets(tune_grid)
+        )
+        for combo_idx, params in enumerate(param_sets, start=1):
+            progress = _tune_combo_progress_label(
+                combo_idx=combo_idx,
+                grid_size=grid_size,
+                shard=shard,
+                shard_count=shard_count,
+                shard_size=shard_size,
             )
+            _log(f"{progress} scoring ({format_watershed_param_set(params)}) …")
             t0 = time.perf_counter()
             mean_pq, per_sample_pq = mean_train_pq_for_watershed_params_cached(
                 true_instances,
@@ -254,17 +353,19 @@ def main() -> None:
                 log_extraction_cache=args.log_extraction_cache,
             )
             elapsed = time.perf_counter() - t0
-            mean_pq_value = float(mean_pq["pq"])
-            if best_so_far_pq is None or mean_pq_value > best_so_far_pq:
-                best_so_far_pq = mean_pq_value
-                best_so_far_idx = combo_idx
-            best_note = (
-                f" | best: {best_so_far_pq:.6f} @ #{best_so_far_idx}"
-                if best_so_far_pq is not None and best_so_far_idx is not None
-                else ""
-            )
+            best_note = ""
+            if shard is None:
+                mean_pq_value = float(mean_pq["pq"])
+                if best_so_far_pq is None or mean_pq_value > best_so_far_pq:
+                    best_so_far_pq = mean_pq_value
+                    best_so_far_idx = combo_idx
+                best_note = (
+                    f" | best: {best_so_far_pq:.6f} @ #{best_so_far_idx}"
+                    if best_so_far_pq is not None and best_so_far_idx is not None
+                    else ""
+                )
             _log(
-                f"[{combo_idx}/{grid_size}] mean "
+                f"{progress} mean "
                 f"{format_merged_view_pq_audit_line(mean_pq)} "
                 f"({format_watershed_param_set(params)}) {elapsed:.1f}s{best_note}"
             )
@@ -280,6 +381,11 @@ def main() -> None:
             writer.writerow(row)
             f.flush()
             grid_rows.append(row)
+
+    _log(f"\nWrote grid results to {out_path}")
+
+    if shard is not None:
+        return
 
     best_row = select_best_watershed_tune_row(grid_rows)
     best_params = WatershedParamSet(
@@ -302,7 +408,6 @@ def main() -> None:
     _log(f"  exclude_border: {best_params.exclude_border}")
     _log(f"  ridge_level: {format_watershed_ridge_level(best_params.ridge_level)}")
     _log(f"  {_mean_audit_line_from_tune_row(best_row)}")
-    _log(f"\nWrote grid results to {out_path}")
 
     if args.output_json:
         summary = watershed_best_json_summary(

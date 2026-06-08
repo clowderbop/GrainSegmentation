@@ -36,11 +36,11 @@ class WatershedScoringTimings:
         return self.watershed_s + self.metrics_s
 
 
-def _log_timing(phase: str, elapsed_s: float) -> None:
+def log_scoring_phase_timing(phase: str, elapsed_s: float) -> None:
     print(f"    {phase} {elapsed_s:.1f}s", flush=True)
 
 
-def _log_phase_start(phase: str, *, prefix: str = "") -> None:
+def log_scoring_phase_start(phase: str, *, prefix: str = "") -> None:
     line = f"running {phase} …"
     if prefix:
         print(f"  {prefix}{line}", flush=True)
@@ -127,24 +127,43 @@ def merged_view_pq_for_sample(
     pred_semantic: np.ndarray,
     params: WatershedParamSet,
     *,
+    pred_instances: np.ndarray | None = None,
     timings: WatershedScoringTimings | None = None,
     log_prefix: str = "",
 ) -> MergedViewPqResult:
+    if pred_instances is None:
+        if timings is not None:
+            log_scoring_phase_start("watershed", prefix=log_prefix)
+        t0 = time.perf_counter()
+        pred_instances = instance_map_for_watershed_params(pred_semantic, params)
+        if timings is not None:
+            timings.watershed_s = time.perf_counter() - t0
+            log_scoring_phase_timing("watershed", timings.watershed_s)
     if timings is not None:
-        _log_phase_start("watershed", prefix=log_prefix)
-    t0 = time.perf_counter()
-    pred_instances = instance_map_for_watershed_params(pred_semantic, params)
-    if timings is not None:
-        timings.watershed_s = time.perf_counter() - t0
-        _log_timing("watershed", timings.watershed_s)
-    if timings is not None:
-        _log_phase_start("metrics", prefix=log_prefix)
+        log_scoring_phase_start("metrics", prefix=log_prefix)
     t0 = time.perf_counter()
     result = compute_merged_view_pq(true_instances, pred_instances)
     if timings is not None:
         timings.metrics_s = time.perf_counter() - t0
-        _log_timing("metrics", timings.metrics_s)
+        log_scoring_phase_timing("metrics", timings.metrics_s)
     return result
+
+
+def _watershed_tune_sample_prefix(
+    idx: int,
+    n_samples: int,
+    sample_ids: Sequence[str] | None,
+    *,
+    log: bool,
+) -> str:
+    if not log or sample_ids is None:
+        return ""
+    sid = sample_ids[idx]
+    return (
+        f"[{idx + 1}/{n_samples}] {sid}: "
+        if n_samples > 1
+        else f"{sid}: "
+    )
 
 
 def mean_train_pq_for_watershed_params(
@@ -152,6 +171,7 @@ def mean_train_pq_for_watershed_params(
     pred_semantic_per_sample: Sequence[np.ndarray],
     params: WatershedParamSet,
     *,
+    get_pred_instances: Callable[[int, WatershedParamSet], np.ndarray] | None = None,
     sample_ids: Sequence[str] | None = None,
     log: bool = False,
 ) -> tuple[dict[str, float | int], list[dict[str, float | int]]]:
@@ -165,19 +185,24 @@ def mean_train_pq_for_watershed_params(
         zip(true_instances_per_sample, pred_semantic_per_sample, strict=True)
     ):
         timings = WatershedScoringTimings() if log else None
-        sample_prefix = ""
-        if log and sample_ids is not None:
-            sid = sample_ids[idx]
-            sample_prefix = (
-                f"[{idx + 1}/{n_samples}] {sid}: "
-                if n_samples > 1
-                else f"{sid}: "
-            )
+        sample_prefix = _watershed_tune_sample_prefix(
+            idx, n_samples, sample_ids, log=log
+        )
+        pred_instances: np.ndarray | None = None
+        if get_pred_instances is not None:
+            if timings is not None:
+                log_scoring_phase_start("watershed", prefix=sample_prefix)
+            t0 = time.perf_counter()
+            pred_instances = get_pred_instances(idx, params)
+            if timings is not None:
+                timings.watershed_s = time.perf_counter() - t0
+                log_scoring_phase_timing("watershed", timings.watershed_s)
         result = dict(
             merged_view_pq_for_sample(
                 true_instances,
                 pred_semantic,
                 params,
+                pred_instances=pred_instances,
                 timings=timings,
                 log_prefix=sample_prefix,
             )

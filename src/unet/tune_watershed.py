@@ -26,12 +26,16 @@ from unet.extraction_tune_scoring import (
     format_merged_view_pq_audit_line,
     format_watershed_param_set,
     format_watershed_ridge_level,
-    mean_train_pq_for_watershed_params,
     select_best_watershed_tune_row,
     watershed_best_json_summary,
     watershed_per_sample_columns,
     watershed_tune_fieldnames,
     watershed_tune_row,
+)
+from unet.watershed_tune_extraction_cache import (
+    build_watershed_tune_sample_caches,
+    mean_train_pq_for_watershed_params_cached,
+    watershed_base_extraction_key_count,
 )
 from unet.watershed_tune_grid import (
     WATERSHED_TUNE_GRID_CONFIG_REL,
@@ -191,7 +195,13 @@ def main() -> None:
         raise_cli_argument_error("Could not determine num_inputs")
 
     grid_size = watershed_tune_candidate_count(tune_grid)
+    base_key_count = watershed_base_extraction_key_count(tune_grid)
+    sample_caches = build_watershed_tune_sample_caches(pred_semantic)
     _log(f"Grid size: {grid_size} combinations on {len(sample_ids)} sample(s).")
+    _log(
+        f"Extraction cache: up to {base_key_count} on-demand base maps per sample "
+        f"(≤{base_key_count * len(sample_ids)} base extractions for this grid)."
+    )
     _log(f"Grid config: {watershed_tune_grid_path(args.grid_config)}")
     _log(
         "Grid axes: "
@@ -224,9 +234,9 @@ def main() -> None:
                 f"({format_watershed_param_set(params)}) …"
             )
             t0 = time.perf_counter()
-            mean_pq, per_sample_pq = mean_train_pq_for_watershed_params(
+            mean_pq, per_sample_pq = mean_train_pq_for_watershed_params_cached(
                 true_instances,
-                pred_semantic,
+                sample_caches,
                 params,
                 sample_ids=sample_ids,
                 log=True,

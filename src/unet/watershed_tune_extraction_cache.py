@@ -10,6 +10,7 @@ import numpy as np
 from common.instance_overlap import GtOverlapPrep, gt_overlap_prep
 from unet.extraction_tune_scoring import (
     WatershedParamSet,
+    watershed_tune_sample_prefix,
     mean_train_pq_for_watershed_params,
 )
 from unet.instance_masks import (
@@ -19,6 +20,17 @@ from unet.instance_masks import (
     watershed_base_extraction,
 )
 from unet.watershed_tune_grid import WatershedTuneGrid, iter_watershed_tune_param_sets
+
+
+def log_extraction_cache_lookup(
+    *,
+    hit: bool,
+    sample_id: str | None = None,
+    prefix: str = "",
+) -> None:
+    status = "hit" if hit else "miss"
+    sid = f" ({sample_id})" if sample_id else ""
+    print(f"{prefix}    extraction cache: {status}{sid}", flush=True)
 
 
 @dataclass(frozen=True)
@@ -83,9 +95,15 @@ class WatershedTuneSampleCache:
         return self._prep
 
     def base_label_map(self, key: WatershedBaseExtractionKey) -> np.ndarray:
+        base, _ = self.lookup_base_label_map(key)
+        return base
+
+    def lookup_base_label_map(
+        self, key: WatershedBaseExtractionKey
+    ) -> tuple[np.ndarray, bool]:
         cached = self._base_maps.get(key)
         if cached is not None:
-            return cached
+            return cached, True
         base = watershed_base_extraction(
             self._prep,
             min_distance=key.min_distance,
@@ -95,7 +113,7 @@ class WatershedTuneSampleCache:
             ridge_level=key.ridge_level,
         )
         self._base_maps[key] = base
-        return base
+        return base, False
 
 
 def build_watershed_tune_sample_caches(
@@ -128,8 +146,17 @@ def build_gt_overlap_preps(
 def instance_map_from_tune_cache(
     cache: WatershedTuneSampleCache,
     params: WatershedParamSet,
+    *,
+    log_extraction_cache: bool = False,
+    sample_id: str | None = None,
+    log_prefix: str = "",
 ) -> np.ndarray:
-    base = cache.base_label_map(base_extraction_key_from_params(params))
+    key = base_extraction_key_from_params(params)
+    base, hit = cache.lookup_base_label_map(key)
+    if log_extraction_cache:
+        log_extraction_cache_lookup(
+            hit=hit, sample_id=sample_id, prefix=log_prefix
+        )
     return watershed_area_filter(base, params.min_area_px)
 
 
@@ -141,16 +168,30 @@ def mean_train_pq_for_watershed_params_cached(
     gt_overlap_preps: Sequence[GtOverlapPrep] | None = None,
     sample_ids: Sequence[str] | None = None,
     log: bool = False,
+    log_extraction_cache: bool = False,
 ) -> tuple[dict[str, float | int], list[dict[str, float | int]]]:
     if len(true_instances_per_sample) != len(sample_caches):
         raise ValueError("true instances and sample caches must have the same length")
+    n_samples = len(true_instances_per_sample)
+
+    def get_pred_instances(idx: int, p: WatershedParamSet) -> np.ndarray:
+        prefix = watershed_tune_sample_prefix(
+            idx, n_samples, sample_ids, log=log_extraction_cache
+        )
+        sid = sample_ids[idx] if sample_ids is not None else None
+        return instance_map_from_tune_cache(
+            sample_caches[idx],
+            p,
+            log_extraction_cache=log_extraction_cache,
+            sample_id=sid,
+            log_prefix=prefix,
+        )
+
     return mean_train_pq_for_watershed_params(
         true_instances_per_sample,
         [cache.semantic for cache in sample_caches],
         params,
-        get_pred_instances=lambda idx, p: instance_map_from_tune_cache(
-            sample_caches[idx], p
-        ),
+        get_pred_instances=get_pred_instances,
         gt_overlap_preps=gt_overlap_preps,
         sample_ids=sample_ids,
         log=log,

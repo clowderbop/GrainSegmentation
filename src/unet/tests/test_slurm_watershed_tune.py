@@ -94,6 +94,12 @@ def test_run_watershed_tuning_stages_manifest_metadata_without_channel_copies() 
     assert "stage_manifest_run_in_unet_env" in predict_text
 
 
+def test_run_watershed_tuning_passes_log_extraction_cache_when_env_set() -> None:
+    text = run_watershed_tuning_script_path().read_text(encoding="utf-8")
+    assert "LOG_EXTRACTION_CACHE" in text
+    assert "--log-extraction-cache" in text
+
+
 def test_run_watershed_tuning_requires_preds_dir_not_model_path() -> None:
     script = run_watershed_tuning_script_path()
     text = script.read_text(encoding="utf-8")
@@ -192,3 +198,26 @@ def test_unet_runbook_documents_production_grid_runtime_and_login_node_policy() 
     assert "MergedViewPqResult" in section
     assert "login node" in section.lower()
     assert "SLURM" in section
+
+
+def test_unet_runbook_documents_extraction_cache_ratio_and_log_verification() -> None:
+    section = watershed_tune_runbook_path().read_text(encoding="utf-8").split(
+        "## Watershed tuning", 1
+    )[1].split("## CC vs watershed", 1)[0]
+    assert "watershed_tune_extraction_cache" in section
+    assert "24" in section
+    assert "72" in section
+    assert "extraction cache: hit" in section
+    assert "extraction cache: miss" in section
+    assert "--log-extraction-cache" in section
+    assert "LOG_EXTRACTION_CACHE" in section
+
+
+def test_unet_runbook_documents_grid_csv_row_order_for_diffing() -> None:
+    section = watershed_tune_runbook_path().read_text(encoding="utf-8").split(
+        "## Watershed tuning", 1
+    )[1].split("## CC vs watershed", 1)[0]
+    assert "Grid CSV row order" in section
+    assert "itertools.product" in section
+    assert "min_distance" in section
+    assert "ridge_level" in section

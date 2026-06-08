@@ -100,6 +100,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         )
+    parser.add_argument(
+        "--log-extraction-cache",
+        action="store_true",
+        help=(
+            "Log per-combo extraction cache hit/miss lines "
+            "(for verifying base-extraction vs scored-combo ratio in SLURM logs)"
+        ),
+    )
 
     return parser
 
@@ -243,6 +251,7 @@ def main() -> None:
                 gt_overlap_preps=gt_overlap_preps,
                 sample_ids=sample_ids,
                 log=True,
+                log_extraction_cache=args.log_extraction_cache,
             )
             elapsed = time.perf_counter() - t0
             mean_pq_value = float(mean_pq["pq"])

@@ -153,7 +153,7 @@ def merged_view_pq_for_sample(
     return result
 
 
-def _watershed_tune_sample_prefix(
+def watershed_tune_sample_prefix(
     idx: int,
     n_samples: int,
     sample_ids: Sequence[str] | None,
@@ -194,7 +194,7 @@ def mean_train_pq_for_watershed_params(
         zip(true_instances_per_sample, pred_semantic_per_sample, strict=True)
     ):
         timings = WatershedScoringTimings() if log else None
-        sample_prefix = _watershed_tune_sample_prefix(
+        sample_prefix = watershed_tune_sample_prefix(
             idx, n_samples, sample_ids, log=log
         )
         pred_instances: np.ndarray | None = None

@@ -209,6 +209,66 @@ def test_tune_scoring_runs_overlap_extraction_per_combo(
     assert overlap_calls == watershed_tune_candidate_count(grid)
 
 
+def test_cached_scoring_logs_extraction_cache_miss_then_hit(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    gt = _two_grain_gt()
+    semantic = _multi_grain_semantic_with_boundaries()
+    caches = build_watershed_tune_sample_caches([semantic])
+    gt_preps = build_gt_overlap_preps([gt])
+    params_miss = WatershedParamSet(5, 0, 1, 0, False, None)
+    params_hit = WatershedParamSet(5, 0, 1, 64, False, None)
+
+    mean_train_pq_for_watershed_params_cached(
+        [gt],
+        caches,
+        params_miss,
+        gt_overlap_preps=gt_preps,
+        sample_ids=["train"],
+        log_extraction_cache=True,
+    )
+    mean_train_pq_for_watershed_params_cached(
+        [gt],
+        caches,
+        params_hit,
+        gt_overlap_preps=gt_preps,
+        sample_ids=["train"],
+        log_extraction_cache=True,
+    )
+
+    out = capsys.readouterr().out
+    assert out.count("extraction cache: miss") == 1
+    assert out.count("extraction cache: hit") == 1
+
+
+def test_default_grid_extraction_cache_log_miss_and_hit_counts(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    gt = _two_grain_gt()
+    semantic = _multi_grain_semantic_with_boundaries()
+    grid = load_watershed_tune_grid().grid
+    caches = build_watershed_tune_sample_caches([semantic])
+    gt_preps = build_gt_overlap_preps([gt])
+    base_key_count = watershed_base_extraction_key_count(grid)
+    combo_count = watershed_tune_candidate_count(grid)
+
+    for params in iter_watershed_tune_param_sets(grid):
+        mean_train_pq_for_watershed_params_cached(
+            [gt],
+            caches,
+            params,
+            gt_overlap_preps=gt_preps,
+            sample_ids=["train"],
+            log_extraction_cache=True,
+        )
+
+    out = capsys.readouterr().out
+    assert out.count("extraction cache: miss") == base_key_count
+    assert out.count("extraction cache: hit") == combo_count - base_key_count
+    assert base_key_count == 24
+    assert combo_count == 72
+
+
 def test_mean_train_pq_cached_logs_phase_timings(capsys: pytest.CaptureFixture[str]) -> None:
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()

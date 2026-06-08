@@ -67,3 +67,43 @@ def test_tune_watershed_invalid_preds_dir_exits_with_clear_error(
             ]
         )
     assert "preds-dir is not a directory" in capsys.readouterr().err
+
+
+def test_tune_watershed_cli_log_extraction_cache_defaults_off() -> None:
+    args = _build_arg_parser().parse_args(
+        [
+            "--preds-dir",
+            "/tmp/preds",
+            "--manifest",
+            "m.json",
+            "--gt-gpkg",
+            "gt.gpkg",
+            "--output-csv",
+            "out.csv",
+        ]
+    )
+    assert args.log_extraction_cache is False
+
+
+def test_tune_watershed_cli_accepts_log_extraction_cache() -> None:
+    args = _build_arg_parser().parse_args(
+        [
+            "--preds-dir",
+            "/tmp/preds",
+            "--manifest",
+            "m.json",
+            "--gt-gpkg",
+            "gt.gpkg",
+            "--output-csv",
+            "out.csv",
+            "--log-extraction-cache",
+        ]
+    )
+    assert args.log_extraction_cache is True
+
+
+def test_tune_watershed_wires_log_extraction_cache_from_cli_flag() -> None:
+    text = (Path(__file__).resolve().parents[1] / "tune_watershed.py").read_text(
+        encoding="utf-8"
+    )
+    assert "log_extraction_cache=args.log_extraction_cache" in text

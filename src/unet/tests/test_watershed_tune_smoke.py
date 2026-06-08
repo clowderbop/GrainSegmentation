@@ -65,6 +65,32 @@ def test_run_watershed_tune_smoke_scores_one_combo_with_phase_timings(
     assert int(mean_pq["gt_instance_count"]) == 2
 
 
+def test_run_watershed_tune_smoke_uses_phased_extraction_not_tune_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import unet.watershed_tune_extraction_cache as cache_mod
+
+    cache_called = False
+    real_cached = cache_mod.mean_train_pq_for_watershed_params_cached
+
+    def spy_cached(*args, **kwargs):
+        nonlocal cache_called
+        cache_called = True
+        return real_cached(*args, **kwargs)
+
+    monkeypatch.setattr(
+        cache_mod, "mean_train_pq_for_watershed_params_cached", spy_cached
+    )
+
+    run_watershed_tune_smoke(
+        WatershedParamSet(5, 0, 1, 0, False, None),
+        height=64,
+        width=64,
+    )
+
+    assert not cache_called
+
+
 def test_run_watershed_tune_smoke_uses_compute_merged_view_pq_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

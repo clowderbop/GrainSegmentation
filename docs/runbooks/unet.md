@@ -84,6 +84,10 @@ Train-side watershed tuning still selects by **whole-section PQ** on the train *
 
 Default grid (`config/watershed_tune_grid.yaml`): **72** scored combinations, **24** full base extractions per sample. The GT overlap prep is a modest metrics-side win (avoids redundant GT `bincount` bookkeeping; pred-side overlap dominates metrics time on large sections) — see docstring on `build_gt_overlap_preps`.
 
+**Verifying cache behavior in SLURM logs:** pass `--log-extraction-cache` to `unet.tune_watershed` (or set `LOG_EXTRACTION_CACHE=1` in `run_watershed_tuning.sh`) to emit optional per-combo lines: `extraction cache: miss (sample_id)` when a new base watershed label map is computed, or `extraction cache: hit (sample_id)` when reusing a cached base for a different `min_area_px`. On the default grid with one train sample, expect **24** miss lines and **48** hit lines across the full job (72 combos). Without the flag, only startup summary and per-combo phase timings are logged (`Extraction cache: up to 24 on-demand base maps per sample` is always printed).
+
+**Grid CSV row order:** rows follow `itertools.product` over the YAML axis order (`min_distance`, `boundary_dilate_iter`, `watershed_connectivity`, `min_area_px`, `exclude_border`, `ridge_level`). Order is stable for diffing reruns when `config/watershed_tune_grid.yaml` is unchanged.
+
 **Runtime (order of magnitude):** expect **many hours per registry variant** on the train whole section (~10k×52k merged view): roughly tens of minutes per grid combo before extraction caching, multiplied by the configured candidate count from `config/watershed_tune_grid.yaml`. The tune SLURM job requests **12 hours** wall time (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
 
 | Output | Path |

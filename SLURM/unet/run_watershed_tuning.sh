@@ -134,6 +134,9 @@ TUNE_CMD=(
     --num-inputs "$NUM_INPUTS"
     --grid-config "$GRID_CONFIG"
 )
+if [ "${LOG_EXTRACTION_CACHE:-0}" = "1" ]; then
+    TUNE_CMD+=(--log-extraction-cache)
+fi
 
 echo "Running watershed tuning (variant=$VARIANT, subdir=$WATERSHED_SUBDIR)..."
 echo "  dataset:  $DATASET_DIR"

@@ -120,6 +120,7 @@ def watershed_tune_candidate_count(grid: WatershedTuneGrid) -> int:
 def iter_watershed_tune_param_sets(
     grid: WatershedTuneGrid,
 ) -> Iterable[WatershedParamSet]:
+    """Yield grid combos in stable ``itertools.product`` axis order for CSV rows."""
     for tup in itertools.product(
         grid.min_distance,
         grid.boundary_dilate_iter,

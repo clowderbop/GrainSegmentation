@@ -10,8 +10,11 @@ import yaml
 from common.variants import repo_root
 from unet.slurm_watershed_tune import run_watershed_tuning_script_path
 from unet.tune_watershed import _build_arg_parser
+from unet.extraction_tune_scoring import WatershedParamSet
 from unet.watershed_tune_grid import (
     WATERSHED_TUNE_GRID_CONFIG_REL,
+    first_watershed_tune_param_set,
+    iter_watershed_tune_param_sets,
     load_watershed_tune_grid,
     watershed_tune_candidate_count,
     watershed_tune_grid_path,
@@ -79,6 +82,16 @@ def test_committed_watershed_tune_grid_candidate_count_matches_loader() -> None:
         * len(grid.exclude_border)
         * len(grid.ridge_level)
     )
+
+
+def test_default_grid_param_iteration_order_is_stable_for_csv_diffing() -> None:
+    grid = load_watershed_tune_grid().grid
+    assert first_watershed_tune_param_set(grid) == WatershedParamSet(
+        5, 0, 1, 0, False, None
+    )
+    ordered = list(iter_watershed_tune_param_sets(grid))
+    assert len(ordered) == 72
+    assert ordered == list(iter_watershed_tune_param_sets(grid))
 
 
 def test_tune_watershed_cli_accepts_grid_config(tmp_path: Path) -> None:

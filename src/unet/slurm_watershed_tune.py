@@ -49,3 +49,11 @@ def run_watershed_tuning_script_path() -> Path:
 
 def submit_watershed_tuning_script_path() -> Path:
     return repo_root() / "SLURM" / "unet" / "submit_watershed_tuning.sh"
+
+
+def run_watershed_tune_shard_script_path() -> Path:
+    return repo_root() / "SLURM" / "unet" / "run_watershed_tune_shard.sh"
+
+
+def run_watershed_tune_merge_script_path() -> Path:
+    return repo_root() / "SLURM" / "unet" / "run_watershed_tune_merge.sh"

@@ -6,8 +6,15 @@ import itertools
 from dataclasses import dataclass
 from typing import Iterable
 
+from pathlib import Path
+
 from unet.extraction_tune_scoring import WatershedParamSet
-from unet.watershed_tune_grid import WatershedTuneGrid, iter_watershed_tune_param_sets
+from unet.watershed_tune_grid import (
+    WatershedTuneGrid,
+    iter_watershed_tune_param_sets,
+    load_watershed_tune_grid,
+    watershed_tune_grid_path,
+)
 
 
 @dataclass(frozen=True)
@@ -19,6 +26,15 @@ class WatershedTuneShard:
 
 def watershed_tune_shard_count(grid: WatershedTuneGrid) -> int:
     return len(grid.min_distance) * len(grid.boundary_dilate_iter)
+
+
+def watershed_tune_shard_count_for_grid_config(
+    grid_config: Path | None = None,
+) -> int:
+    """Return SLURM array size for axis-aligned shards loaded from a grid YAML."""
+    return watershed_tune_shard_count(
+        load_watershed_tune_grid(watershed_tune_grid_path(grid_config)).grid
+    )
 
 
 def iter_watershed_tune_shards(grid: WatershedTuneGrid) -> Iterable[WatershedTuneShard]:

@@ -26,7 +26,8 @@ flowchart TD
 |-------|---------------|------------|
 | Tune + train | `submit_tune_and_train_variants.sh` | `run_tune_and_train_variant.sh` |
 | Watershed predict | `submit_watershed_tuning.sh` | `run_watershed_tune_predict.sh` |
-| Watershed tune | `submit_watershed_tuning.sh` | `run_watershed_tuning.sh` |
+| Watershed tune (default) | `submit_watershed_tuning.sh` | `run_watershed_tune_shard.sh` (array) → `run_watershed_tune_merge.sh` |
+| Watershed tune (monolithic) | `submit_watershed_tuning.sh --single-job` | `run_watershed_tuning.sh` |
 | Train instance compare | `submit_cc_vs_watershed_train_eval.sh` | `run_whole_test_eval.sh` ×2 |
 | Test whole | `submit_whole_test_eval.sh` | `run_whole_test_eval.sh` |
 | Test patches | `submit_patch_test_eval.sh` | `run_patch_test_eval.sh` |
@@ -61,16 +62,21 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 
 **Submit:** `bash SLURM/unet/submit_watershed_tuning.sh`
 
-**Default:** two-phase workflow per **input configuration** (registry variant):
+**Default:** predict-then-tune with parallel grid shards per **input configuration** (registry variant):
 
 1. **Predict** — `run_watershed_tune_predict.sh` runs sliding-window U-Net inference once on the train whole section and writes durable semantic predictions to scratch.
-2. **Tune** — `run_watershed_tuning.sh` reads cached preds via `--preds-dir` only and scores the watershed grid from `config/watershed_tune_grid.yaml` (override with `GRID_CONFIG` / `--grid-config`). The tune job never runs U-Net inference.
+2. **Shard tune** — a throttled SLURM job array (`run_watershed_tune_shard.sh`) scores one axis-aligned shard per task from cached preds via `--preds-dir` only. Shard count equals `len(min_distance) × len(boundary_dilate_iter)` in the grid YAML (six shards of twelve combos each on the default grid). Each shard job writes `watershed_grid_{run_tag}_shard_{index}.csv` and does not emit best JSON.
+3. **Merge** — `run_watershed_tune_merge.sh` concatenates shard CSVs, selects the winner by train **mean_pq**, and writes the canonical `watershed_grid_{run_tag}.csv` plus `watershed_best_{merge_job_id}.json`. Downstream whole eval and CC-vs-watershed selection resolve the latest `watershed_best_*.json` by mtime as before.
 
-`submit_watershed_tuning.sh` submits predict then tune with `--dependency=afterok` per variant. A combined predict+tune single job is not the default path.
+`submit_watershed_tuning.sh` assigns a shared **run tag** per variant at submit time so shard outputs and merge inputs resolve predictably. The dependency chain is predict → shard array → merge (`--dependency=afterok`).
 
-**Resubmit tune only:** after predict jobs have already written semantic preds to scratch, `submit_watershed_tuning.sh --use-cached-preds` submits tune jobs only (no predict, no dependency, no model weights required).
+**Resubmit tune only:** after predict jobs have already written semantic preds to scratch, `submit_watershed_tuning.sh --use-cached-preds` submits the shard array and merge only (no predict, no model weights required).
 
-**Grid config:** `config/watershed_tune_grid.yaml` — axes under `grid:` (`min_distance`, `boundary_dilate_iter`, `watershed_connectivity`, `min_area_px`, `exclude_border`, `ridge_level`). Loader: `unet.watershed_tune_grid.load_watershed_tune_grid`. Committed config omits pixel-scale `min_distance=1`.
+**Monolithic opt-out:** `submit_watershed_tuning.sh --single-job` submits one `run_watershed_tuning.sh` job per variant that writes grid CSV and best JSON directly (no shard CSVs, no merge job). Use when simpler orchestration is preferred over parallel shard turnaround.
+
+**Throttle:** set `WATERSHED_TUNE_SHARD_MAX_PARALLEL` (default `6`) to cap concurrent shard array tasks when submitting all registry variants.
+
+**Grid config:** `config/watershed_tune_grid.yaml` — axes under `grid:` (`min_distance`, `boundary_dilate_iter`, `watershed_connectivity`, `min_area_px`, `exclude_border`, `ridge_level`). Loader: `unet.watershed_tune_grid.load_watershed_tune_grid`. Override at submit time via `--grid-config` or `GRID_CONFIG`; shard and merge runners receive the path through the exported `GRID_CONFIG` env var (monolithic `run_watershed_tuning.sh` also accepts `--grid-config`). Committed config omits pixel-scale `min_distance=1`.
 
 Train-side watershed tuning still selects by **whole-section PQ** on the train **merged instance view** and persists **`MergedViewPqResult`** audit fields (`best_mean_pq` / `best_mean_*` / `best_per_sample_*` in `watershed_best_*.json`; `mean_*` / `{field}__{sample_id}` in the grid CSV). Selection uses **`pq` / `mean_pq` only**; other fields are diagnostics. Held-out **eval** still uses the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
 
@@ -88,18 +94,21 @@ Default grid (`config/watershed_tune_grid.yaml`): **72** scored combinations, **
 
 **Grid CSV row order:** rows follow `itertools.product` over the YAML axis order (`min_distance`, `boundary_dilate_iter`, `watershed_connectivity`, `min_area_px`, `exclude_border`, `ridge_level`). Order is stable for diffing reruns when `config/watershed_tune_grid.yaml` is unchanged.
 
-**Runtime (order of magnitude):** expect **many hours per registry variant** on the train whole section (~10k×52k merged view): roughly tens of minutes per grid combo before extraction caching, multiplied by the configured candidate count from `config/watershed_tune_grid.yaml`. The tune SLURM job requests **12 hours** wall time (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
+**Runtime (order of magnitude):** on the default grid with extraction caching, expect roughly **2–3 hours per shard** when the cluster runs shards concurrently (twelve combos per shard), versus **10–12 hours** for a monolithic `--single-job` run. Shard jobs request **3 hours** wall time (`run_watershed_tune_shard.sh`); monolithic tune requests **12 hours** (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
 
 | Output | Path |
 |--------|------|
 | Cached preds | `runs/watershed_tune_preds/{slugs.job}/semantic/{sample_id}_pred.tif` |
-| Best params | `runs/watershed_tune/{slugs.job}/watershed_best_*.json` |
+| Shard grid CSV | `runs/watershed_tune/{slugs.job}/watershed_grid_{run_tag}_shard_{index}.csv` |
+| Merged grid CSV | `runs/watershed_tune/{slugs.job}/watershed_grid_{run_tag}.csv` |
+| Best params | `runs/watershed_tune/{slugs.job}/watershed_best_*.json` (latest mtime wins) |
 
 `--dry-run` prints `sbatch` commands without submitting.
 
 ```bash
 bash SLURM/unet/submit_watershed_tuning.sh
 bash SLURM/unet/submit_watershed_tuning.sh --use-cached-preds
+bash SLURM/unet/submit_watershed_tuning.sh --single-job
 ```
 
 ### Pre-SLURM smoke check

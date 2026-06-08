@@ -99,6 +99,31 @@ def test_submit_watershed_tuning_submits_predict_then_tune_with_dependency() -> 
     assert "PREDS_DIR" in text
 
 
+def test_submit_watershed_tuning_supports_tune_only_from_cached_preds() -> None:
+    text = submit_watershed_tuning_script_path().read_text(encoding="utf-8")
+    assert "--use-cached-preds" in text
+    assert "USE_CACHED_PREDS" in text
+    assert "require_cached_preds_dir" in text
+    assert "*_pred.tif" in text
+    result = subprocess.run(
+        [
+            "bash",
+            str(submit_watershed_tuning_script_path()),
+            "--dry-run",
+            "--use-cached-preds",
+        ],
+        cwd=repo_root(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "run_watershed_tune_predict.sh" not in result.stdout
+    assert "run_watershed_tuning.sh" in result.stdout
+    assert "--dependency=afterok" not in result.stdout
+    assert "DRY-RUN tune from cached preds" in result.stderr
+
+
 def test_submit_watershed_tuning_usage_points_at_runbook() -> None:
     result = subprocess.run(
         ["bash", str(submit_watershed_tuning_script_path()), "--help"],

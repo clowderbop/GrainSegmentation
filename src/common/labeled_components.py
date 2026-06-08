@@ -6,21 +6,22 @@ import numpy as np
 
 
 def relabel_sequential(labeled: np.ndarray) -> np.ndarray:
-    ids = sorted(x for x in np.unique(labeled) if x != 0)
-    if not ids:
+    mask = labeled != 0
+    if not mask.any():
         return np.zeros_like(labeled)
+    _, inv = np.unique(labeled[mask], return_inverse=True)
     out = np.zeros_like(labeled)
-    for new_id, old_id in enumerate(ids, start=1):
-        out[labeled == old_id] = new_id
+    out[mask] = inv.astype(np.int32) + 1
     return out
 
 
 def drop_small_components(labeled: np.ndarray, min_area_px: int) -> np.ndarray:
-    if min_area_px <= 0:
+    if min_area_px <= 0 or not np.any(labeled):
         return labeled
+    ids, counts = np.unique(labeled, return_counts=True)
+    drop_ids = ids[(ids != 0) & (counts < min_area_px)]
+    if drop_ids.size == 0:
+        return relabel_sequential(labeled)
     out = labeled.copy()
-    max_id = int(labeled.max())
-    for lid in range(1, max_id + 1):
-        if (labeled == lid).sum() < min_area_px:
-            out[labeled == lid] = 0
+    out[np.isin(labeled, drop_ids)] = 0
     return relabel_sequential(out)

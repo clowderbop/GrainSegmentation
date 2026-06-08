@@ -61,12 +61,14 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 
 **Submit:** `bash SLURM/unet/submit_watershed_tuning.sh`
 
-Required **two-phase** workflow per **input configuration** (registry variant):
+**Default:** two-phase workflow per **input configuration** (registry variant):
 
 1. **Predict** — `run_watershed_tune_predict.sh` runs sliding-window U-Net inference once on the train whole section and writes durable semantic predictions to scratch.
 2. **Tune** — `run_watershed_tuning.sh` reads cached preds via `--preds-dir` only and scores the production default **72-candidate** watershed grid. The tune job never runs U-Net inference.
 
 `submit_watershed_tuning.sh` submits predict then tune with `--dependency=afterok` per variant. A combined predict+tune single job is not the default path.
+
+**Resubmit tune only:** after predict jobs have already written semantic preds to scratch, `submit_watershed_tuning.sh --use-cached-preds` submits tune jobs only (no predict, no dependency, no model weights required).
 
 **Default grid axes** (grain-scale; omits pixel-scale `min_distance=1`): `min_distance=(3, 5, 9)`, `boundary_dilate_iter=(0, 1)`, `watershed_connectivity=(1, 2)`, `min_area_px=(0, 64, 256)`, `exclude_border=(0, 1)`, `ridge_level=(None)` — see `unet.watershed_tune_grid` and `run_watershed_tuning.sh` bash arrays.
 
@@ -83,6 +85,7 @@ Train-side watershed tuning still selects by **whole-section PQ** on the train *
 
 ```bash
 bash SLURM/unet/submit_watershed_tuning.sh
+bash SLURM/unet/submit_watershed_tuning.sh --use-cached-preds
 ```
 
 ### Pre-SLURM smoke check

@@ -22,12 +22,8 @@ GT_GPKG="${GT_GPKG:-$DATASET_DIR/train_labels.gpkg}"
 OUTPUT_DIR="$GRAINSEG_ROOT/runs/watershed_tune"
 
 PREDS_DIR="${PREDS_DIR:-}"
-
-MIN_DISTANCE=(3 5 9)
-BOUNDARY_DILATE_ITER=(0 1)
-WATERSHED_CONNECTIVITY=(1 2)
-MIN_AREA_PX=(0 64 256)
-EXCLUDE_BORDER=(0 1)
+# Default path must match unet.watershed_tune_grid.WATERSHED_TUNE_GRID_CONFIG_REL
+GRID_CONFIG="${GRID_CONFIG:-$REPO_ROOT/config/watershed_tune_grid.yaml}"
 
 function usage {
     local status="${1:-1}"
@@ -99,6 +95,7 @@ require_dir "$PREDS_DIR" "PREDS_DIR is not a directory: $PREDS_DIR"
 
 require_dir "$DATASET_DIR" "Dataset dir not found"
 require_file "$GT_GPKG" "Ground-truth GeoPackage not found"
+require_file "$GRID_CONFIG" "Watershed tune grid config not found: $GRID_CONFIG"
 
 if [ ! -f "$SLURM_ROOT/prepare_env.sh" ]; then
     echo "prepare_env.sh not found at: $SLURM_ROOT/prepare_env.sh" >&2
@@ -135,16 +132,13 @@ TUNE_CMD=(
     --output-json "$OUT_JSON"
     --preds-dir "$PREDS_DIR"
     --num-inputs "$NUM_INPUTS"
-    --min-distance "${MIN_DISTANCE[@]}"
-    --boundary-dilate-iter "${BOUNDARY_DILATE_ITER[@]}"
-    --watershed-connectivity "${WATERSHED_CONNECTIVITY[@]}"
-    --min-area-px "${MIN_AREA_PX[@]}"
-    --exclude-border "${EXCLUDE_BORDER[@]}"
+    --grid-config "$GRID_CONFIG"
 )
 
 echo "Running watershed tuning (variant=$VARIANT, subdir=$WATERSHED_SUBDIR)..."
 echo "  dataset:  $DATASET_DIR"
 echo "  preds:    $PREDS_DIR"
+echo "  grid:     $GRID_CONFIG"
 echo "  CSV:      $OUT_CSV"
 echo "  JSON:     $OUT_JSON"
 "${TUNE_CMD[@]}"

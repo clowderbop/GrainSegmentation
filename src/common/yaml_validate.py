@@ -44,3 +44,14 @@ def require_float_list(raw: Any, *, context: str) -> tuple[float, ...]:
     if not isinstance(raw, list) or not raw:
         raise ValueError(f"{context} must be a non-empty list of numbers")
     return tuple(float(v) for v in raw)
+
+
+def require_int_list(raw: Any, *, context: str) -> tuple[int, ...]:
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{context} must be a non-empty list of integers")
+    out: list[int] = []
+    for index, item in enumerate(raw):
+        if isinstance(item, bool) or not isinstance(item, int):
+            raise ValueError(f"{context}[{index}] must be an integer, got {item!r}")
+        out.append(item)
+    return tuple(out)

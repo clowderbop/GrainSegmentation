@@ -17,25 +17,16 @@ from unet.watershed_tune_fixtures import (
     large_shape_sparse_two_grain_masks,
 )
 from unet.watershed_tune_grid import (
-    DEFAULT_BOUNDARY_DILATE_ITER,
-    DEFAULT_MIN_AREA_PX,
-    DEFAULT_MIN_DISTANCE,
-    DEFAULT_WATERSHED_CONNECTIVITY,
+    first_watershed_tune_param_set,
+    load_watershed_tune_grid,
 )
 
 DEFAULT_SMOKE_SHAPE = (1_000, 5_200)
 
 
 def default_smoke_watershed_params() -> WatershedParamSet:
-    """One representative combo from the production default grid."""
-    return WatershedParamSet(
-        min_distance=DEFAULT_MIN_DISTANCE[0],
-        boundary_dilate_iter=DEFAULT_BOUNDARY_DILATE_ITER[0],
-        watershed_connectivity=DEFAULT_WATERSHED_CONNECTIVITY[0],
-        min_area_px=DEFAULT_MIN_AREA_PX[0],
-        exclude_border=False,
-        ridge_level=None,
-    )
+    """First combo from the configured watershed tune grid."""
+    return first_watershed_tune_param_set(load_watershed_tune_grid().grid)
 
 
 def run_watershed_tune_smoke(
@@ -72,6 +63,7 @@ def run_watershed_tune_smoke(
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
+    default_params = default_smoke_watershed_params()
     parser = argparse.ArgumentParser(
         description=(
             "Run one watershed tune scoring combo on synthetic large-shape masks. "
@@ -91,31 +83,31 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--min-distance",
         type=int,
-        default=DEFAULT_MIN_DISTANCE[0],
+        default=default_params.min_distance,
     )
     parser.add_argument(
         "--boundary-dilate-iter",
         type=int,
-        default=DEFAULT_BOUNDARY_DILATE_ITER[0],
+        default=default_params.boundary_dilate_iter,
     )
     parser.add_argument(
         "--watershed-connectivity",
         type=int,
-        default=DEFAULT_WATERSHED_CONNECTIVITY[0],
+        default=default_params.watershed_connectivity,
         choices=[1, 2],
     )
     parser.add_argument(
         "--min-area-px",
         type=int,
-        default=DEFAULT_MIN_AREA_PX[0],
+        default=default_params.min_area_px,
     )
     parser.add_argument(
         "--exclude-border",
         type=int,
-        default=0,
+        default=int(default_params.exclude_border),
         choices=[0, 1],
     )
-    parser.add_argument("--ridge-level", type=float, default=None)
+    parser.add_argument("--ridge-level", type=float, default=default_params.ridge_level)
     parser.add_argument("--sample-id", default="train")
     return parser
 

@@ -18,6 +18,7 @@ VERSIONED_CONFIG_YAML = (
     "config/variants.yaml",
     "config/test_inference.yaml",
     "config/yolo_inference_profile_tune.yaml",
+    "config/watershed_tune_grid.yaml",
 )
 
 TEXT_SUFFIXES = {

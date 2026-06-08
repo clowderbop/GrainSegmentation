@@ -1,0 +1,10 @@
+# U-Net watershed hyperparameter grid for train whole-section tuning.
+# Override at submit time via GRID_CONFIG / --grid-config.
+grid:
+  min_distance: [5, 9, 11]
+  boundary_dilate_iter: [0, 1]
+  watershed_connectivity: [1, 2]
+  min_area_px: [0, 64, 256]
+  exclude_border: [0, 1]
+  ridge_level:
+    - null

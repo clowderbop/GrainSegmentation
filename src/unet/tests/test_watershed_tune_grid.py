@@ -1,72 +1,121 @@
-"""Default production watershed tune grid contract (scale-watershed-tuning issue 02)."""
+"""Watershed tune grid YAML loader and wiring contracts."""
 
 from __future__ import annotations
 
-import re
+from pathlib import Path
 
+import pytest
+import yaml
+
+from common.variants import repo_root
 from unet.slurm_watershed_tune import run_watershed_tuning_script_path
 from unet.tune_watershed import _build_arg_parser
 from unet.watershed_tune_grid import (
-    DEFAULT_WATERSHED_TUNE_CANDIDATE_COUNT,
-    default_watershed_tune_grid_axes,
+    WATERSHED_TUNE_GRID_CONFIG_REL,
+    load_watershed_tune_grid,
+    watershed_tune_candidate_count,
+    watershed_tune_grid_path,
 )
 
 
-def _bash_int_array(script_text: str, name: str) -> tuple[int, ...]:
-    match = re.search(rf"^{name}=\(([^)]*)\)", script_text, flags=re.MULTILINE)
-    assert match is not None, f"{name}=() not found in run_watershed_tuning.sh"
-    inner = match.group(1).strip()
-    if not inner:
-        return ()
-    return tuple(int(part) for part in inner.split())
+def _write_grid_config(path: Path, grid: dict[str, object]) -> None:
+    path.write_text(yaml.safe_dump({"grid": grid}), encoding="utf-8")
 
 
-def test_default_watershed_tune_grid_excludes_pixel_scale_min_distance() -> None:
-    axes = default_watershed_tune_grid_axes()
-    assert 1 not in axes["min_distance"]
-    assert axes["min_distance"] == (3, 5, 9)
+def test_watershed_tune_grid_path_defaults_to_config_yaml() -> None:
+    assert watershed_tune_grid_path() == repo_root() / WATERSHED_TUNE_GRID_CONFIG_REL
 
 
-def test_default_watershed_tune_grid_includes_min_area_speckle_axis() -> None:
-    axes = default_watershed_tune_grid_axes()
-    assert axes["min_area_px"] == (0, 64, 256)
-    assert any(v > 0 for v in axes["min_area_px"])
+def test_load_committed_watershed_tune_grid_excludes_pixel_scale_min_distance() -> None:
+    grid = load_watershed_tune_grid().grid
+    assert 1 not in grid.min_distance
 
 
-def test_default_watershed_tune_grid_preserves_other_extraction_axes() -> None:
-    axes = default_watershed_tune_grid_axes()
-    assert axes["boundary_dilate_iter"] == (0, 1)
-    assert axes["watershed_connectivity"] == (1, 2)
-    assert axes["exclude_border"] == (0, 1)
-    assert axes["ridge_level"] == (None,)
+def test_load_watershed_tune_grid_rejects_pixel_scale_min_distance(
+    tmp_path: Path,
+) -> None:
+    grid_path = tmp_path / "grid.yaml"
+    _write_grid_config(
+        grid_path,
+        {
+            "min_distance": [1, 5],
+            "boundary_dilate_iter": [0],
+            "watershed_connectivity": [1],
+            "min_area_px": [0],
+            "exclude_border": [0],
+            "ridge_level": [None],
+        },
+    )
+    with pytest.raises(ValueError, match="omit pixel-scale value 1"):
+        load_watershed_tune_grid(grid_path)
 
 
-def test_default_watershed_tune_candidate_count_matches_documented_grid() -> None:
-    assert DEFAULT_WATERSHED_TUNE_CANDIDATE_COUNT == 72
+def test_watershed_tune_candidate_count_matches_product_of_configured_axes(
+    tmp_path: Path,
+) -> None:
+    grid_path = tmp_path / "grid.yaml"
+    _write_grid_config(
+        grid_path,
+        {
+            "min_distance": [5, 9],
+            "boundary_dilate_iter": [0, 1],
+            "watershed_connectivity": [2],
+            "min_area_px": [0, 64],
+            "exclude_border": [0, 1],
+            "ridge_level": [None],
+        },
+    )
+    grid = load_watershed_tune_grid(grid_path).grid
+    assert watershed_tune_candidate_count(grid) == 2 * 2 * 1 * 2 * 2 * 1
 
 
-def _cli_default(dest: str) -> object:
-    for action in _build_arg_parser()._actions:
-        if action.dest == dest:
-            return action.default
-    raise KeyError(dest)
+def test_committed_watershed_tune_grid_candidate_count_matches_loader() -> None:
+    grid = load_watershed_tune_grid().grid
+    assert watershed_tune_candidate_count(grid) == (
+        len(grid.min_distance)
+        * len(grid.boundary_dilate_iter)
+        * len(grid.watershed_connectivity)
+        * len(grid.min_area_px)
+        * len(grid.exclude_border)
+        * len(grid.ridge_level)
+    )
 
 
-def test_tune_watershed_cli_defaults_match_production_grid() -> None:
-    axes = default_watershed_tune_grid_axes()
-    assert _cli_default("min_distance") == list(axes["min_distance"])
-    assert _cli_default("boundary_dilate_iter") == list(axes["boundary_dilate_iter"])
-    assert _cli_default("watershed_connectivity") == list(axes["watershed_connectivity"])
-    assert _cli_default("min_area_px") == list(axes["min_area_px"])
-    assert _cli_default("exclude_border") == list(axes["exclude_border"])
-    assert _cli_default("ridge_level") is None
+def test_tune_watershed_cli_accepts_grid_config(tmp_path: Path) -> None:
+    grid_path = tmp_path / "grid.yaml"
+    _write_grid_config(
+        grid_path,
+        {
+            "min_distance": [5],
+            "boundary_dilate_iter": [0],
+            "watershed_connectivity": [1],
+            "min_area_px": [0],
+            "exclude_border": [0],
+            "ridge_level": [None],
+        },
+    )
+    args = _build_arg_parser().parse_args(
+        [
+            "--preds-dir",
+            "/tmp/preds",
+            "--manifest",
+            "m.json",
+            "--gt-gpkg",
+            "gt.gpkg",
+            "--output-csv",
+            "out.csv",
+            "--grid-config",
+            str(grid_path),
+        ]
+    )
+    assert args.grid_config == grid_path
 
 
-def test_run_watershed_tuning_shell_default_grid_matches_python_contract() -> None:
+def test_run_watershed_tuning_shell_passes_grid_config() -> None:
     text = run_watershed_tuning_script_path().read_text(encoding="utf-8")
-    axes = default_watershed_tune_grid_axes()
-    assert _bash_int_array(text, "MIN_DISTANCE") == axes["min_distance"]
-    assert _bash_int_array(text, "BOUNDARY_DILATE_ITER") == axes["boundary_dilate_iter"]
-    assert _bash_int_array(text, "WATERSHED_CONNECTIVITY") == axes["watershed_connectivity"]
-    assert _bash_int_array(text, "MIN_AREA_PX") == axes["min_area_px"]
-    assert _bash_int_array(text, "EXCLUDE_BORDER") == axes["exclude_border"]
+    assert (
+        f'GRID_CONFIG="${{GRID_CONFIG:-$REPO_ROOT/{WATERSHED_TUNE_GRID_CONFIG_REL}}}"'
+        in text
+    )
+    assert "--grid-config" in text
+    assert "--min-distance" not in text

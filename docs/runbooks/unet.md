@@ -64,17 +64,17 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 **Default:** two-phase workflow per **input configuration** (registry variant):
 
 1. **Predict** — `run_watershed_tune_predict.sh` runs sliding-window U-Net inference once on the train whole section and writes durable semantic predictions to scratch.
-2. **Tune** — `run_watershed_tuning.sh` reads cached preds via `--preds-dir` only and scores the production default **72-candidate** watershed grid. The tune job never runs U-Net inference.
+2. **Tune** — `run_watershed_tuning.sh` reads cached preds via `--preds-dir` only and scores the watershed grid from `config/watershed_tune_grid.yaml` (override with `GRID_CONFIG` / `--grid-config`). The tune job never runs U-Net inference.
 
 `submit_watershed_tuning.sh` submits predict then tune with `--dependency=afterok` per variant. A combined predict+tune single job is not the default path.
 
 **Resubmit tune only:** after predict jobs have already written semantic preds to scratch, `submit_watershed_tuning.sh --use-cached-preds` submits tune jobs only (no predict, no dependency, no model weights required).
 
-**Default grid axes** (grain-scale; omits pixel-scale `min_distance=1`): `min_distance=(3, 5, 9)`, `boundary_dilate_iter=(0, 1)`, `watershed_connectivity=(1, 2)`, `min_area_px=(0, 64, 256)`, `exclude_border=(0, 1)`, `ridge_level=(None)` — see `unet.watershed_tune_grid` and `run_watershed_tuning.sh` bash arrays.
+**Grid config:** `config/watershed_tune_grid.yaml` — axes under `grid:` (`min_distance`, `boundary_dilate_iter`, `watershed_connectivity`, `min_area_px`, `exclude_border`, `ridge_level`). Loader: `unet.watershed_tune_grid.load_watershed_tune_grid`. Committed config omits pixel-scale `min_distance=1`.
 
 Train-side watershed tuning still selects by **whole-section PQ** on the train **merged instance view** and persists **`MergedViewPqResult`** audit fields (`best_mean_pq` / `best_mean_*` / `best_per_sample_*` in `watershed_best_*.json`; `mean_*` / `{field}__{sample_id}` in the grid CSV). Selection uses **`pq` / `mean_pq` only**; other fields are diagnostics. Held-out **eval** still uses the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
 
-**Runtime (order of magnitude):** expect **many hours per registry variant** on the train whole section (~10k×52k merged view): roughly tens of minutes per grid combo before multiply by 72. The tune SLURM job requests **12 hours** wall time (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
+**Runtime (order of magnitude):** expect **many hours per registry variant** on the train whole section (~10k×52k merged view): roughly tens of minutes per grid combo, multiplied by the configured candidate count from `config/watershed_tune_grid.yaml`. The tune SLURM job requests **12 hours** wall time (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
 
 | Output | Path |
 |--------|------|
@@ -96,7 +96,7 @@ Before submitting the full watershed tune grid, exercise one parameter combo on 
 uv run python -m unet.watershed_tune_smoke
 ```
 
-Defaults: train-section aspect ratio at 1/10 scale (`1000×5200`), one representative grid point, real watershed extraction plus `compute_merged_view_pq`. Logs include per-phase `watershed` and `metrics` timings like the tune job.
+Defaults: train-section aspect ratio at 1/10 scale (`1000×5200`), first combo from `config/watershed_tune_grid.yaml`, real watershed extraction plus `compute_merged_view_pq`. Logs include per-phase `watershed` and `metrics` timings like the tune job.
 
 | Flag | Purpose |
 |------|---------|

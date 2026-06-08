@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import argparse
 import csv
-import itertools
 import json
 import re
 import time
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 
@@ -35,11 +34,11 @@ from unet.extraction_tune_scoring import (
     watershed_tune_row,
 )
 from unet.watershed_tune_grid import (
-    DEFAULT_BOUNDARY_DILATE_ITER,
-    DEFAULT_EXCLUDE_BORDER,
-    DEFAULT_MIN_AREA_PX,
-    DEFAULT_MIN_DISTANCE,
-    DEFAULT_WATERSHED_CONNECTIVITY,
+    WATERSHED_TUNE_GRID_CONFIG_REL,
+    iter_watershed_tune_param_sets,
+    load_watershed_tune_grid,
+    watershed_tune_candidate_count,
+    watershed_tune_grid_path,
 )
 
 
@@ -76,45 +75,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=["_PPL", "_PPX1", "_PPX2", "_PPX3", "_PPX4", "_PPX5", "_PPX6"],
     )
-
     parser.add_argument(
-        "--min-distance",
-        type=int,
-        nargs="+",
-        default=list(DEFAULT_MIN_DISTANCE),
-        )
-    parser.add_argument(
-        "--boundary-dilate-iter",
-        type=int,
-        nargs="+",
-        default=list(DEFAULT_BOUNDARY_DILATE_ITER),
-        )
-    parser.add_argument(
-        "--watershed-connectivity",
-        type=int,
-        nargs="+",
-        default=list(DEFAULT_WATERSHED_CONNECTIVITY),
-        choices=[1, 2],
-        )
-    parser.add_argument(
-        "--min-area-px",
-        type=int,
-        nargs="+",
-        default=list(DEFAULT_MIN_AREA_PX),
-        )
-    parser.add_argument(
-        "--exclude-border",
-        type=int,
-        nargs="+",
-        default=list(DEFAULT_EXCLUDE_BORDER),
-        choices=[0, 1],
-        )
-    parser.add_argument(
-        "--ridge-level",
-        type=float,
-        nargs="*",
+        "--grid-config",
+        type=Path,
         default=None,
-        )
+        help=f"Watershed tune grid YAML (default: {WATERSHED_TUNE_GRID_CONFIG_REL})",
+    )
 
     parser.add_argument(
         "--output-csv",
@@ -149,17 +115,6 @@ def _validate_tune_args(
         )
     if not Path(args.gt_gpkg).is_file():
         raise_cli_argument_error(f"gt-gpkg is not a file: {args.gt_gpkg}", parser=parser)
-    if any(v < 1 for v in args.min_distance):
-        raise_cli_argument_error(
-            "min_distance values must be >= 1 (matches extract_instances watershed)",
-            parser=parser,
-        )
-    for name, vals in (
-        ("boundary_dilate_iter", args.boundary_dilate_iter),
-        ("min_area_px", args.min_area_px),
-    ):
-        if any(v < 0 for v in vals):
-            raise_cli_argument_error(f"{name} values must be >= 0", parser=parser)
     if args.max_samples is not None and args.max_samples <= 0:
         raise_cli_argument_error("max_samples must be positive", parser=parser)
     preds_dir = Path(args.preds_dir)
@@ -168,14 +123,6 @@ def _validate_tune_args(
             f"preds-dir is not a directory: {preds_dir.resolve()}",
             parser=parser,
         )
-
-
-def _ridge_level_grid(args: argparse.Namespace) -> list[float | None]:
-    if args.ridge_level is None:
-        return [None]
-    if len(args.ridge_level) == 0:
-        return [None]
-    return list(args.ridge_level)
 
 
 def _resolve_watershed_samples(args: argparse.Namespace) -> list[dict]:
@@ -235,51 +182,25 @@ def _collect_samples(
     return sample_ids, true_instances, pred_semantic
 
 
-def _iter_param_grid(args: argparse.Namespace) -> Iterable[WatershedParamSet]:
-    ridge_levels = _ridge_level_grid(args)
-    for tup in itertools.product(
-        args.min_distance,
-        args.boundary_dilate_iter,
-        args.watershed_connectivity,
-        args.min_area_px,
-        args.exclude_border,
-        ridge_levels,
-    ):
-        md, bdi, wsc, mapx, exb, ridge = tup
-        yield WatershedParamSet(
-            min_distance=int(md),
-            boundary_dilate_iter=int(bdi),
-            watershed_connectivity=int(wsc),
-            min_area_px=int(mapx),
-            exclude_border=bool(int(exb)),
-            ridge_level=ridge,
-        )
-
-
 def main() -> None:
     args = _parse_args()
+    grid_spec = load_watershed_tune_grid(args.grid_config)
+    tune_grid = grid_spec.grid
     sample_ids, true_instances, pred_semantic = _collect_samples(args)
     if args.num_inputs is None:
         raise_cli_argument_error("Could not determine num_inputs")
 
-    ridge_levels = _ridge_level_grid(args)
-    grid_size = (
-        len(args.min_distance)
-        * len(args.boundary_dilate_iter)
-        * len(args.watershed_connectivity)
-        * len(args.min_area_px)
-        * len(args.exclude_border)
-        * len(ridge_levels)
-    )
+    grid_size = watershed_tune_candidate_count(tune_grid)
     _log(f"Grid size: {grid_size} combinations on {len(sample_ids)} sample(s).")
+    _log(f"Grid config: {watershed_tune_grid_path(args.grid_config)}")
     _log(
         "Grid axes: "
-        f"min_distance={list(args.min_distance)}, "
-        f"boundary_dilate_iter={list(args.boundary_dilate_iter)}, "
-        f"watershed_connectivity={list(args.watershed_connectivity)}, "
-        f"min_area_px={list(args.min_area_px)}, "
-        f"exclude_border={list(args.exclude_border)}, "
-        f"ridge_level={list(ridge_levels)}"
+        f"min_distance={list(tune_grid.min_distance)}, "
+        f"boundary_dilate_iter={list(tune_grid.boundary_dilate_iter)}, "
+        f"watershed_connectivity={list(tune_grid.watershed_connectivity)}, "
+        f"min_area_px={list(tune_grid.min_area_px)}, "
+        f"exclude_border={list(tune_grid.exclude_border)}, "
+        f"ridge_level={list(tune_grid.ridge_level)}"
     )
 
     grid_rows: list[dict[str, Any]] = []
@@ -295,7 +216,9 @@ def main() -> None:
     with out_path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        for combo_idx, params in enumerate(_iter_param_grid(args), start=1):
+        for combo_idx, params in enumerate(
+            iter_watershed_tune_param_sets(tune_grid), start=1
+        ):
             _log(
                 f"[{combo_idx}/{grid_size}] scoring "
                 f"({format_watershed_param_set(params)}) …"

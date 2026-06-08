@@ -18,6 +18,7 @@ from unet.slurm_watershed_tune import (
     watershed_tune_preds_semantic_dir,
     watershed_tune_runbook_path,
 )
+from unet.watershed_tune_grid import WATERSHED_TUNE_GRID_CONFIG_REL
 
 
 def test_watershed_tune_preds_semantic_dir_is_per_variant_scratch_layout() -> None:
@@ -163,7 +164,8 @@ def test_unet_runbook_documents_production_grid_runtime_and_login_node_policy() 
     section = watershed_tune_runbook_path().read_text(encoding="utf-8").split(
         "## Watershed tuning", 1
     )[1].split("## CC vs watershed", 1)[0]
-    assert "72" in section
+    assert str(WATERSHED_TUNE_GRID_CONFIG_REL) in section
+    assert "configured candidate count" in section
     assert "min_distance" in section
     assert "min_area_px" in section
     assert "whole-section PQ" in section

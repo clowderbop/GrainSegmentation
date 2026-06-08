@@ -17,7 +17,11 @@ from common.merged_view_pq import (
     format_merged_view_pq_value,
     mean_merged_view_pq_results,
 )
-from unet.instance_masks import semantic_to_instance_label_map_watershed
+from unet.instance_masks import (
+    build_watershed_semantic_prep,
+    watershed_area_filter,
+    watershed_base_extraction,
+)
 
 WATERSHED_SELECTION_OBJECTIVE = "pq"
 
@@ -101,9 +105,21 @@ def instance_map_for_watershed_params(
     pred_semantic: np.ndarray,
     params: WatershedParamSet,
 ) -> np.ndarray:
-    return semantic_to_instance_label_map_watershed(
-        pred_semantic, **_watershed_kwargs(params)
+    kw = _watershed_kwargs(params)
+    prep = build_watershed_semantic_prep(
+        pred_semantic,
+        interior_class=kw["interior_class"],
+        boundary_class=kw["boundary_class"],
     )
+    base = watershed_base_extraction(
+        prep,
+        min_distance=kw["min_distance"],
+        boundary_dilate_iter=kw["boundary_dilate_iter"],
+        watershed_connectivity=kw["watershed_connectivity"],
+        exclude_border=kw["exclude_border"],
+        ridge_level=kw.get("ridge_level"),
+    )
+    return watershed_area_filter(base, kw["min_area_px"])
 
 
 def merged_view_pq_for_sample(

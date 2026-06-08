@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
@@ -11,7 +12,21 @@ from common.labeled_components import drop_small_components
 
 WatershedConnectivity = Literal[1, 2]
 
-__all__ = ["WatershedConnectivity", "semantic_to_instance_label_map_watershed"]
+__all__ = [
+    "WatershedConnectivity",
+    "WatershedSemanticPrep",
+    "build_watershed_semantic_prep",
+    "watershed_area_filter",
+    "watershed_base_extraction",
+]
+
+
+@dataclass(frozen=True)
+class WatershedSemanticPrep:
+    interior: np.ndarray
+    boundary: np.ndarray
+    distance_transform: np.ndarray
+    auto_ridge_level: float
 
 
 def _binary_structure(ndim: int, connectivity: WatershedConnectivity) -> np.ndarray:
@@ -20,44 +35,64 @@ def _binary_structure(ndim: int, connectivity: WatershedConnectivity) -> np.ndar
     return generate_binary_structure(ndim, connectivity)
 
 
-def semantic_to_instance_label_map_watershed(
+def _compute_auto_ridge_level(distance_transform: np.ndarray, interior: np.ndarray) -> float:
+    if not np.any(interior):
+        return 0.0
+    dt = distance_transform
+    neg_dt = -dt[interior]
+    return float(-neg_dt.min() + dt.max() + 1.0)
+
+
+def build_watershed_semantic_prep(
     semantic: np.ndarray,
     *,
     interior_class: int = 1,
     boundary_class: int = 2,
+) -> WatershedSemanticPrep:
+    if semantic.ndim != 2:
+        raise ValueError(f"semantic must be 2D, got shape {semantic.shape}")
+    interior = semantic == interior_class
+    boundary = semantic == boundary_class
+    distance_transform = distance_transform_edt(interior).astype(np.float64)
+    auto_ridge_level = _compute_auto_ridge_level(distance_transform, interior)
+    return WatershedSemanticPrep(
+        interior=interior,
+        boundary=boundary,
+        distance_transform=distance_transform,
+        auto_ridge_level=auto_ridge_level,
+    )
+
+
+def watershed_base_extraction(
+    prep: WatershedSemanticPrep,
+    *,
     min_distance: int = 1,
     footprint: np.ndarray | None = None,
     exclude_border: bool = False,
     boundary_dilate_iter: int = 0,
     ridge_level: float | None = None,
     watershed_connectivity: WatershedConnectivity = 1,
-    min_area_px: int = 0,
 ) -> np.ndarray:
     from skimage.feature import peak_local_max
     from skimage.segmentation import watershed
 
-    if semantic.ndim != 2:
-        raise ValueError(f"semantic must be 2D, got shape {semantic.shape}")
-    interior = semantic == interior_class
-    boundary = semantic == boundary_class
+    interior = prep.interior
     if not np.any(interior):
-        return np.zeros_like(semantic, dtype=np.int32)
+        return np.zeros(interior.shape, dtype=np.int32)
 
-    dt = distance_transform_edt(interior)
-    if ridge_level is None:
-        neg_dt = -dt[interior]
-        ridge_level = float(-neg_dt.min() + dt.max() + 1.0)
+    dt = prep.distance_transform
+    resolved_ridge = prep.auto_ridge_level if ridge_level is None else ridge_level
 
-    elev = np.full(semantic.shape, ridge_level, dtype=np.float64)
-    elev[interior] = -dt[interior].astype(np.float64)
+    elev = np.full(interior.shape, resolved_ridge, dtype=np.float64)
+    elev[interior] = -dt[interior]
 
-    bd = boundary
+    bd = prep.boundary
     if boundary_dilate_iter > 0:
-        struct = _binary_structure(semantic.ndim, 2)
+        struct = _binary_structure(interior.ndim, 2)
         bd = binary_dilation(
-            boundary, structure=struct, iterations=boundary_dilate_iter
+            prep.boundary, structure=struct, iterations=boundary_dilate_iter
         )
-    elev[bd] = ridge_level
+    elev[bd] = resolved_ridge
 
     interior_labels = interior.astype(np.int32)
     coordinates = peak_local_max(
@@ -67,7 +102,7 @@ def semantic_to_instance_label_map_watershed(
         labels=interior_labels,
         exclude_border=exclude_border,
     )
-    markers = np.zeros(semantic.shape, dtype=np.int32)
+    markers = np.zeros(interior.shape, dtype=np.int32)
     if coordinates.size == 0:
         raise ValueError(
             "Watershed marker detection found no local maxima despite non-empty "
@@ -91,6 +126,13 @@ def semantic_to_instance_label_map_watershed(
     ).astype(np.int32)
 
     segmented[interior & (segmented <= 0)] = 0
-    if min_area_px > 0:
-        segmented = drop_small_components(segmented, min_area_px)
     return segmented
+
+
+def watershed_area_filter(
+    base_label_map: np.ndarray,
+    min_area_px: int,
+) -> np.ndarray:
+    if min_area_px > 0:
+        return drop_small_components(base_label_map, min_area_px)
+    return base_label_map

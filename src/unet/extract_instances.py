@@ -19,7 +19,11 @@ from common.prediction_set import (
 )
 from common.run_provenance import write_run_provenance
 from common.semantic_instance import semantic_to_instance_label_map
-from unet.instance_masks import semantic_to_instance_label_map_watershed
+from unet.instance_masks import (
+    build_watershed_semantic_prep,
+    watershed_area_filter,
+    watershed_base_extraction,
+)
 from unet.prediction_cache import prediction_tiff_path
 
 
@@ -107,15 +111,16 @@ def _export_min_area_px(args: argparse.Namespace) -> int:
 def _instances_from_semantic(semantic: np.ndarray, args: argparse.Namespace) -> np.ndarray:
     if args.instance_method == "cc":
         return semantic_to_instance_label_map(semantic, min_area_px=args.min_area_px)
-    return semantic_to_instance_label_map_watershed(
-        semantic,
+    prep = build_watershed_semantic_prep(semantic)
+    base = watershed_base_extraction(
+        prep,
         min_distance=args.watershed_min_distance,
         boundary_dilate_iter=args.watershed_boundary_dilate_iter,
         watershed_connectivity=args.watershed_connectivity,
-        min_area_px=args.watershed_min_area_px,
         exclude_border=args.watershed_exclude_border,
         ridge_level=args.watershed_ridge_level,
     )
+    return watershed_area_filter(base, args.watershed_min_area_px)
 
 
 def _load_semantic_tiff(path: Path) -> np.ndarray:

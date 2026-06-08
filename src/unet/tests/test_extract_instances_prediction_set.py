@@ -72,3 +72,46 @@ def test_extract_instances_writes_prediction_set_and_provenance(tmp_path: Path) 
     assert not (output_dir / "instances").exists()
     assert not (output_dir / "instances" / ".extract_meta.json").exists()
     assert (output_dir / RUN_PROVENANCE_FILENAME).is_file()
+
+
+def test_extract_instances_watershed_writes_prediction_set_and_provenance(
+    tmp_path: Path,
+) -> None:
+    sample_id = "patch001"
+    semantic_dir = tmp_path / "semantic"
+    semantic_dir.mkdir()
+    semantic = np.zeros((32, 32), dtype=np.int32)
+    semantic[8:20, 8:20] = 1
+    semantic[22:30, 22:30] = 1
+    tifffile.imwrite(semantic_dir / f"{sample_id}_pred.tif", semantic)
+
+    manifest_path = tmp_path / "manifest.json"
+    _write_manifest(manifest_path, sample_id)
+
+    output_dir = tmp_path / "out"
+    args = argparse.Namespace(
+        semantic_dir=semantic_dir,
+        output_dir=output_dir,
+        manifest=manifest_path,
+        instance_method="watershed",
+        watershed_min_distance=5,
+        watershed_boundary_dilate_iter=0,
+        watershed_connectivity=1,
+        watershed_min_area_px=0,
+        watershed_exclude_border=False,
+        watershed_ridge_level=None,
+        min_area_px=0,
+    )
+    run_extract_instances(args)
+
+    ps_path = prediction_set_path(output_dir, sample_id)
+    assert ps_path.is_file()
+    prediction_set = load_prediction_set(ps_path)
+    assert prediction_set.producer == "unet"
+    assert len(prediction_set.detections) >= 2
+
+    provenance = load_run_provenance(output_dir)
+    assert provenance["producer"] == "unet"
+    assert provenance["instance_method"] == "watershed"
+    assert provenance["watershed_min_distance"] == 5
+    assert provenance["watershed_min_area_px"] == 0

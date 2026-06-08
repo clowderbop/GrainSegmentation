@@ -74,7 +74,17 @@ sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
 
 Train-side watershed tuning still selects by **whole-section PQ** on the train **merged instance view** and persists **`MergedViewPqResult`** audit fields (`best_mean_pq` / `best_mean_*` / `best_per_sample_*` in `watershed_best_*.json`; `mean_*` / `{field}__{sample_id}` in the grid CSV). Selection uses **`pq` / `mean_pq` only**; other fields are diagnostics. Held-out **eval** still uses the full [**instance metric bundle**](../metrics.md#instance-metrics-all-producers) ([PQ policy](../metrics.md#pq-centered-rerun-policy)).
 
-**Runtime (order of magnitude):** expect **many hours per registry variant** on the train whole section (~10k×52k merged view): roughly tens of minutes per grid combo, multiplied by the configured candidate count from `config/watershed_tune_grid.yaml`. The tune SLURM job requests **12 hours** wall time (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
+**Tune-path performance caches:** `tune_watershed` reuses work across grid combos via `unet.watershed_tune_extraction_cache`:
+
+| Cache | Built | Reused across | Still per combo |
+|-------|-------|---------------|-----------------|
+| Semantic prep (masks, distance transform, auto ridge) | once per sample | all combos | — |
+| Base watershed label maps | on first touch per unique `(min_distance, exclude_border, boundary_dilate_iter, watershed_connectivity, ridge_level)` | `min_area_px` variants sharing that base | scoring |
+| GT overlap prep (`GtOverlapPrep`: ids + areas) | once per sample | all combos | pred overlap + pixel co-occurrence scan |
+
+Default grid (`config/watershed_tune_grid.yaml`): **72** scored combinations, **24** full base extractions per sample. The GT overlap prep is a modest metrics-side win (avoids redundant GT `bincount` bookkeeping; pred-side overlap dominates metrics time on large sections) — see docstring on `build_gt_overlap_preps`.
+
+**Runtime (order of magnitude):** expect **many hours per registry variant** on the train whole section (~10k×52k merged view): roughly tens of minutes per grid combo before extraction caching, multiplied by the configured candidate count from `config/watershed_tune_grid.yaml`. The tune SLURM job requests **12 hours** wall time (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
 
 | Output | Path |
 |--------|------|

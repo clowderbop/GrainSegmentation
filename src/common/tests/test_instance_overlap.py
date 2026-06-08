@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from common.instance_overlap import OverlapStats, instance_overlap_stats
+from common.instance_overlap import (
+    GtOverlapPrep,
+    OverlapStats,
+    gt_overlap_prep,
+    instance_overlap_stats,
+)
 from common.tests.merged_view_fixtures import (
     blank_map,
     bundle_fixture_duplicate_preds,
@@ -142,6 +147,32 @@ def test_instance_overlap_stats_reports_disjoint_pred_instances_separately() -> 
     assert stats.pred_areas[1] == 16 * 16
     assert stats.pred_areas[2] == 8 * 8
     assert _pair_triples(stats) == [(1, 1, 16 * 16)]
+
+
+def test_gt_overlap_prep_captures_sorted_ids_and_areas() -> None:
+    gt = blank_map(32, 32)
+    paint_box(gt, 3, 4, 4, 12, 12)
+    paint_box(gt, 7, 20, 20, 28, 28)
+
+    prep = gt_overlap_prep(gt)
+
+    assert isinstance(prep, GtOverlapPrep)
+    assert prep.gt_ids == [3, 7]
+    assert prep.gt_areas == {3: 8 * 8, 7: 8 * 8}
+
+
+def test_instance_overlap_stats_with_gt_prep_matches_full_extraction() -> None:
+    gt, pred = bundle_fixture_split_merge()
+    prep = gt_overlap_prep(gt)
+
+    full = instance_overlap_stats(gt, pred)
+    cached_gt = instance_overlap_stats(gt, pred, gt_prep=prep)
+
+    assert cached_gt.gt_ids == full.gt_ids
+    assert cached_gt.pred_ids == full.pred_ids
+    assert cached_gt.gt_areas == full.gt_areas
+    assert cached_gt.pred_areas == full.pred_areas
+    assert _pair_triples(cached_gt) == _pair_triples(full)
 
 
 def test_instance_overlap_stats_non_overlapping_instances_omit_zero_intersection_pairs() -> None:

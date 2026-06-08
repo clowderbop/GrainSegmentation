@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from common.instance_overlap import GtOverlapPrep, gt_overlap_prep
 from unet.extraction_tune_scoring import (
     WatershedParamSet,
     mean_train_pq_for_watershed_params,
@@ -103,6 +104,27 @@ def build_watershed_tune_sample_caches(
     return [WatershedTuneSampleCache(semantic) for semantic in pred_semantic_per_sample]
 
 
+def build_gt_overlap_preps(
+    true_instances_per_sample: Sequence[np.ndarray],
+) -> list[GtOverlapPrep]:
+    """Build per-sample GT overlap metadata once per tune job.
+
+    Mirrors ``build_watershed_tune_sample_caches``: tune ``main()`` calls this
+    once and threads the result through every grid combo. Saves repeated GT
+    ``instance_ids`` + ``bincount`` bookkeeping; pred-side overlap extraction
+    and the O(pixels) co-occurrence scan still run per combo.
+
+    **Profiling rationale (issue 04):** On the train whole section, metrics
+    time is dominated by pred-side work (tens of thousands of instances, full
+    raster scan per combo). GT bookkeeping is a small fraction of
+    ``instance_overlap_stats``, so this is a modest incremental win — not
+    comparable to the 24× watershed extraction cache. Shipped because cost is
+    trivial, parity-tested, and avoids 71 redundant GT ``bincount`` passes per
+    sample on a 72-combo grid with no semantic risk.
+    """
+    return [gt_overlap_prep(true_instances) for true_instances in true_instances_per_sample]
+
+
 def instance_map_from_tune_cache(
     cache: WatershedTuneSampleCache,
     params: WatershedParamSet,
@@ -116,6 +138,7 @@ def mean_train_pq_for_watershed_params_cached(
     sample_caches: Sequence[WatershedTuneSampleCache],
     params: WatershedParamSet,
     *,
+    gt_overlap_preps: Sequence[GtOverlapPrep] | None = None,
     sample_ids: Sequence[str] | None = None,
     log: bool = False,
 ) -> tuple[dict[str, float | int], list[dict[str, float | int]]]:
@@ -128,6 +151,7 @@ def mean_train_pq_for_watershed_params_cached(
         get_pred_instances=lambda idx, p: instance_map_from_tune_cache(
             sample_caches[idx], p
         ),
+        gt_overlap_preps=gt_overlap_preps,
         sample_ids=sample_ids,
         log=log,
     )

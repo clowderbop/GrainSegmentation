@@ -12,6 +12,23 @@ def instance_ids(instance_map: np.ndarray) -> list[int]:
 
 
 @dataclass(frozen=True)
+class GtOverlapPrep:
+    """Precomputed ground-truth ids and areas for repeated PQ scoring.
+
+    Must be built from the same merged instance view raster passed as
+    ``true_instances`` to overlap extraction; the API does not verify this.
+    """
+
+    gt_ids: list[int]
+    gt_areas: dict[int, int]
+
+
+def gt_overlap_prep(true_instances: np.ndarray) -> GtOverlapPrep:
+    gt_ids = instance_ids(true_instances)
+    return GtOverlapPrep(gt_ids=gt_ids, gt_areas=_areas_by_id(true_instances, gt_ids))
+
+
+@dataclass(frozen=True)
 class OverlapStats:
     """Sparse overlap between merged instance views."""
 
@@ -48,12 +65,19 @@ def _sort_co_occurring_pairs(
 
 
 def instance_overlap_stats(
-    true_instances: np.ndarray, pred_instances: np.ndarray
+    true_instances: np.ndarray,
+    pred_instances: np.ndarray,
+    *,
+    gt_prep: GtOverlapPrep | None = None,
 ) -> OverlapStats:
     """Extract co-occurring (gt_id, pred_id) intersections and per-id areas in O(pixels)."""
-    gt_ids = instance_ids(true_instances)
+    if gt_prep is not None:
+        gt_ids = gt_prep.gt_ids
+        gt_areas = gt_prep.gt_areas
+    else:
+        gt_ids = instance_ids(true_instances)
+        gt_areas = _areas_by_id(true_instances, gt_ids)
     pred_ids = instance_ids(pred_instances)
-    gt_areas = _areas_by_id(true_instances, gt_ids)
     pred_areas = _areas_by_id(pred_instances, pred_ids)
 
     overlap_mask = (true_instances != 0) & (pred_instances != 0)

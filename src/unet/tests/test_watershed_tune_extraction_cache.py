@@ -21,6 +21,7 @@ from unet.watershed_tune_grid import (
 )
 from unet.watershed_tune_extraction_cache import (
     WatershedTuneSampleCache,
+    build_gt_overlap_preps,
     build_watershed_tune_sample_caches,
     instance_map_from_tune_cache,
     iter_unique_watershed_base_extraction_keys,
@@ -83,6 +84,7 @@ def test_cached_scoring_matches_brute_force_for_default_grid() -> None:
     semantic = _multi_grain_semantic_with_boundaries()
     grid = load_watershed_tune_grid().grid
     caches = build_watershed_tune_sample_caches([semantic])
+    gt_preps = build_gt_overlap_preps([gt])
 
     reference_rows: list[dict[str, object]] = []
     cached_rows: list[dict[str, object]] = []
@@ -90,7 +92,7 @@ def test_cached_scoring_matches_brute_force_for_default_grid() -> None:
     for params in iter_watershed_tune_param_sets(grid):
         ref_mean, ref_per = mean_train_pq_for_watershed_params([gt], [semantic], params)
         cached_mean, cached_per = mean_train_pq_for_watershed_params_cached(
-            [gt], caches, params
+            [gt], caches, params, gt_overlap_preps=gt_preps
         )
         for key in MERGED_VIEW_PQ_RESULT_KEYS:
             assert cached_mean[key] == pytest.approx(ref_mean[key])
@@ -143,17 +145,83 @@ def test_tune_cache_runs_one_base_extraction_per_unique_key(
     assert base_calls == watershed_base_extraction_key_count(grid)
 
 
+def test_tune_scoring_reuses_prebuilt_gt_overlap_preps_across_grid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import common.instance_overlap as overlap_mod
+
+    gt = _two_grain_gt()
+    semantic = _multi_grain_semantic_with_boundaries()
+    grid = load_watershed_tune_grid().grid
+    caches = build_watershed_tune_sample_caches([semantic])
+    gt_preps = build_gt_overlap_preps([gt])
+
+    gt_prep_calls = 0
+    real_gt_overlap_prep = overlap_mod.gt_overlap_prep
+
+    def counting_gt_overlap_prep(true_instances: np.ndarray):
+        nonlocal gt_prep_calls
+        gt_prep_calls += 1
+        return real_gt_overlap_prep(true_instances)
+
+    monkeypatch.setattr(overlap_mod, "gt_overlap_prep", counting_gt_overlap_prep)
+
+    for params in iter_watershed_tune_param_sets(grid):
+        mean_train_pq_for_watershed_params_cached(
+            [gt],
+            caches,
+            params,
+            gt_overlap_preps=gt_preps,
+        )
+
+    assert gt_prep_calls == 0
+
+
+def test_tune_scoring_runs_overlap_extraction_per_combo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import common.merged_view_pq as pq_mod
+
+    gt = _two_grain_gt()
+    semantic = _multi_grain_semantic_with_boundaries()
+    grid = load_watershed_tune_grid().grid
+    caches = build_watershed_tune_sample_caches([semantic])
+    gt_preps = build_gt_overlap_preps([gt])
+
+    overlap_calls = 0
+    real_overlap_stats = pq_mod.instance_overlap_stats
+
+    def counting_overlap_stats(*args, **kwargs):
+        nonlocal overlap_calls
+        overlap_calls += 1
+        return real_overlap_stats(*args, **kwargs)
+
+    monkeypatch.setattr(pq_mod, "instance_overlap_stats", counting_overlap_stats)
+
+    for params in iter_watershed_tune_param_sets(grid):
+        mean_train_pq_for_watershed_params_cached(
+            [gt],
+            caches,
+            params,
+            gt_overlap_preps=gt_preps,
+        )
+
+    assert overlap_calls == watershed_tune_candidate_count(grid)
+
+
 def test_mean_train_pq_cached_logs_phase_timings(capsys: pytest.CaptureFixture[str]) -> None:
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
     grid = load_watershed_tune_grid().grid
     caches = build_watershed_tune_sample_caches([semantic])
+    gt_preps = build_gt_overlap_preps([gt])
     params = WatershedParamSet(5, 0, 1, 0, False, None)
 
     mean_train_pq_for_watershed_params_cached(
         [gt],
         caches,
         params,
+        gt_overlap_preps=gt_preps,
         sample_ids=["train"],
         log=True,
     )

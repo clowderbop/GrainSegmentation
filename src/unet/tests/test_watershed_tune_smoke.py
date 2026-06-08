@@ -73,10 +73,10 @@ def test_run_watershed_tune_smoke_uses_compute_merged_view_pq_route(
     pq_calls = 0
     real_pq = scoring.compute_merged_view_pq
 
-    def spy_pq(gt, pred):
+    def spy_pq(gt, pred, **kwargs):
         nonlocal pq_calls
         pq_calls += 1
-        return real_pq(gt, pred)
+        return real_pq(gt, pred, **kwargs)
 
     monkeypatch.setattr(scoring, "compute_merged_view_pq", spy_pq)
 

@@ -8,6 +8,7 @@ from typing import Any, TypedDict
 import numpy as np
 
 from common.instance_overlap import (
+    GtOverlapPrep,
     OverlapStats,
     instance_overlap_stats,
     iou_from_intersection,
@@ -228,14 +229,17 @@ def _matched_ious_from_overlap(
 
 
 def compute_merged_view_pq(
-    true_instances: np.ndarray, pred_instances: np.ndarray
+    true_instances: np.ndarray,
+    pred_instances: np.ndarray,
+    *,
+    gt_prep: GtOverlapPrep | None = None,
 ) -> MergedViewPqResult:
     """Tune-path whole-section PQ for merged instance views.
 
     Use this entry point for watershed/YOLO tune scoring. For eval and reporting
     (multi-threshold PR/F1, AJI+), use ``compute_instance_metric_bundle`` instead.
     """
-    stats = instance_overlap_stats(true_instances, pred_instances)
+    stats = instance_overlap_stats(true_instances, pred_instances, gt_prep=gt_prep)
     nt, np_ = len(stats.gt_ids), len(stats.pred_ids)
     gt_instance_count = nt
     pred_instance_count = np_

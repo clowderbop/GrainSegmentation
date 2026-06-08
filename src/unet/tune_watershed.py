@@ -33,6 +33,7 @@ from unet.extraction_tune_scoring import (
     watershed_tune_row,
 )
 from unet.watershed_tune_extraction_cache import (
+    build_gt_overlap_preps,
     build_watershed_tune_sample_caches,
     mean_train_pq_for_watershed_params_cached,
     watershed_base_extraction_key_count,
@@ -197,6 +198,7 @@ def main() -> None:
     grid_size = watershed_tune_candidate_count(tune_grid)
     base_key_count = watershed_base_extraction_key_count(tune_grid)
     sample_caches = build_watershed_tune_sample_caches(pred_semantic)
+    gt_overlap_preps = build_gt_overlap_preps(true_instances)
     _log(f"Grid size: {grid_size} combinations on {len(sample_ids)} sample(s).")
     _log(
         f"Extraction cache: up to {base_key_count} on-demand base maps per sample "
@@ -238,6 +240,7 @@ def main() -> None:
                 true_instances,
                 sample_caches,
                 params,
+                gt_overlap_preps=gt_overlap_preps,
                 sample_ids=sample_ids,
                 log=True,
             )

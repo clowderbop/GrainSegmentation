@@ -55,10 +55,10 @@ def test_watershed_tune_scoring_calls_compute_merged_view_pq_not_eval_bundle(
     pq_calls = 0
     real_pq = scoring.compute_merged_view_pq
 
-    def spy_pq(gt, pred):
+    def spy_pq(gt, pred, **kwargs):
         nonlocal pq_calls
         pq_calls += 1
-        return real_pq(gt, pred)
+        return real_pq(gt, pred, **kwargs)
 
     def forbid_bundle(*_args, **_kwargs):
         raise AssertionError(

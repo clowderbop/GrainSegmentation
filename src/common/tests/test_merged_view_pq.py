@@ -6,7 +6,11 @@ import numpy as np
 import pytest
 
 from common.instance_metric_bundle import compute_instance_metric_bundle
-from common.instance_overlap import instance_overlap_stats, iou_matrix_from_overlap
+from common.instance_overlap import (
+    gt_overlap_prep,
+    instance_overlap_stats,
+    iou_matrix_from_overlap,
+)
 from common.metrics import PQ_MATCH_IOU, greedy_one_to_one_matches
 from common.merged_view_pq import (
     MERGED_VIEW_PQ_COUNT_KEYS,
@@ -79,6 +83,16 @@ def _assert_pq_matches_bundle(gt: np.ndarray, pred: np.ndarray) -> None:
     for key in _BUNDLE_PQ_FIELDS:
         assert result[key] == bundle[key], key
     assert result["pq"] == pytest.approx(result["dq"] * result["sq"])
+
+
+def test_compute_merged_view_pq_with_gt_prep_matches_uncached_path() -> None:
+    gt, pred = BUNDLE_FIXTURE_BUILDERS["split_merge"]()
+    prep = gt_overlap_prep(gt)
+
+    reference = compute_merged_view_pq(gt, pred)
+    cached_gt = compute_merged_view_pq(gt, pred, gt_prep=prep)
+
+    assert cached_gt == reference
 
 
 def test_compute_merged_view_pq_matches_bundle_on_perfect_single_grain() -> None:

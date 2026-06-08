@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from common.instance_overlap import GtOverlapPrep
 from common.merged_view_pq import (
     MERGED_VIEW_PQ_RESULT_KEYS,
     MergedViewPqResult,
@@ -128,6 +129,7 @@ def merged_view_pq_for_sample(
     params: WatershedParamSet,
     *,
     pred_instances: np.ndarray | None = None,
+    gt_prep: GtOverlapPrep | None = None,
     timings: WatershedScoringTimings | None = None,
     log_prefix: str = "",
 ) -> MergedViewPqResult:
@@ -142,7 +144,9 @@ def merged_view_pq_for_sample(
     if timings is not None:
         log_scoring_phase_start("metrics", prefix=log_prefix)
     t0 = time.perf_counter()
-    result = compute_merged_view_pq(true_instances, pred_instances)
+    result = compute_merged_view_pq(
+        true_instances, pred_instances, gt_prep=gt_prep
+    )
     if timings is not None:
         timings.metrics_s = time.perf_counter() - t0
         log_scoring_phase_timing("metrics", timings.metrics_s)
@@ -172,6 +176,7 @@ def mean_train_pq_for_watershed_params(
     params: WatershedParamSet,
     *,
     get_pred_instances: Callable[[int, WatershedParamSet], np.ndarray] | None = None,
+    gt_overlap_preps: Sequence[GtOverlapPrep] | None = None,
     sample_ids: Sequence[str] | None = None,
     log: bool = False,
 ) -> tuple[dict[str, float | int], list[dict[str, float | int]]]:
@@ -179,6 +184,10 @@ def mean_train_pq_for_watershed_params(
         raise ValueError("true and pred lists must have the same length")
     if sample_ids is not None and len(sample_ids) != len(true_instances_per_sample):
         raise ValueError("sample_ids must match the number of samples")
+    if gt_overlap_preps is not None and len(gt_overlap_preps) != len(
+        true_instances_per_sample
+    ):
+        raise ValueError("gt_overlap_preps must match the number of samples")
     per_sample: list[dict[str, float | int]] = []
     n_samples = len(true_instances_per_sample)
     for idx, (true_instances, pred_semantic) in enumerate(
@@ -197,12 +206,16 @@ def mean_train_pq_for_watershed_params(
             if timings is not None:
                 timings.watershed_s = time.perf_counter() - t0
                 log_scoring_phase_timing("watershed", timings.watershed_s)
+        sample_gt_prep = (
+            gt_overlap_preps[idx] if gt_overlap_preps is not None else None
+        )
         result = dict(
             merged_view_pq_for_sample(
                 true_instances,
                 pred_semantic,
                 params,
                 pred_instances=pred_instances,
+                gt_prep=sample_gt_prep,
                 timings=timings,
                 log_prefix=sample_prefix,
             )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -81,6 +82,21 @@ def format_watershed_param_set(params: WatershedParamSet) -> str:
         f"exclude_border={params.exclude_border}, "
         f"ridge={format_watershed_ridge_level(params.ridge_level)}"
     )
+
+
+def watershed_param_set_from_tune_row(row: dict[str, Any]) -> WatershedParamSet:
+    return WatershedParamSet(
+        min_distance=int(row["min_distance"]),
+        boundary_dilate_iter=int(row["boundary_dilate_iter"]),
+        watershed_connectivity=int(row["watershed_connectivity"]),
+        min_area_px=int(row["min_area_px"]),
+        exclude_border=bool(int(row["exclude_border"])),
+        ridge_level=None if row["ridge_level"] == "" else float(row["ridge_level"]),
+    )
+
+
+def sanitize_watershed_tune_csv_sample_id(sample_id: str) -> str:
+    return re.sub(r"[^0-9A-Za-z_]+", "_", sample_id)
 
 
 def _watershed_kwargs(

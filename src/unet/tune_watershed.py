@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import re
 import time
 from pathlib import Path
 from typing import Any
@@ -26,8 +25,10 @@ from unet.extraction_tune_scoring import (
     format_merged_view_pq_audit_line,
     format_watershed_param_set,
     format_watershed_ridge_level,
+    sanitize_watershed_tune_csv_sample_id,
     select_best_watershed_tune_row,
     watershed_best_json_summary,
+    watershed_param_set_from_tune_row,
     watershed_per_sample_columns,
     watershed_tune_fieldnames,
     watershed_tune_row,
@@ -66,10 +67,6 @@ def _mean_audit_line_from_tune_row(row: dict[str, Any]) -> str:
             for key in MERGED_VIEW_PQ_RESULT_KEYS
         }
     )
-
-
-def _sanitize_csv_key(sample_id: str) -> str:
-    return re.sub(r"[^0-9A-Za-z_]+", "_", sample_id)
 
 
 def _load_pred_tiff(path: Path) -> np.ndarray:
@@ -322,7 +319,7 @@ def main() -> None:
     out_path = Path(args.output_csv)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = watershed_tune_fieldnames(
-        sample_ids, sanitize_sample_id=_sanitize_csv_key
+        sample_ids, sanitize_sample_id=sanitize_watershed_tune_csv_sample_id
     )
 
     with out_path.open("w", newline="") as f:
@@ -375,7 +372,7 @@ def main() -> None:
                 per_sample_pq=watershed_per_sample_columns(
                     sample_ids,
                     per_sample_pq,
-                    sanitize_sample_id=_sanitize_csv_key,
+                    sanitize_sample_id=sanitize_watershed_tune_csv_sample_id,
                 ),
             )
             writer.writerow(row)
@@ -388,18 +385,7 @@ def main() -> None:
         return
 
     best_row = select_best_watershed_tune_row(grid_rows)
-    best_params = WatershedParamSet(
-        min_distance=int(best_row["min_distance"]),
-        boundary_dilate_iter=int(best_row["boundary_dilate_iter"]),
-        watershed_connectivity=int(best_row["watershed_connectivity"]),
-        min_area_px=int(best_row["min_area_px"]),
-        exclude_border=bool(int(best_row["exclude_border"])),
-        ridge_level=(
-            None
-            if best_row["ridge_level"] == ""
-            else float(best_row["ridge_level"])
-        ),
-    )
+    best_params = watershed_param_set_from_tune_row(best_row)
     _log("\nBest watershed parameters (max mean train whole-section PQ):")
     _log(f"  min_distance: {best_params.min_distance}")
     _log(f"  boundary_dilate_iter: {best_params.boundary_dilate_iter}")
@@ -414,7 +400,7 @@ def main() -> None:
             best_row,
             best_params,
             sample_ids,
-            sanitize_sample_id=_sanitize_csv_key,
+            sanitize_sample_id=sanitize_watershed_tune_csv_sample_id,
         )
         jp = Path(args.output_json)
         jp.parent.mkdir(parents=True, exist_ok=True)

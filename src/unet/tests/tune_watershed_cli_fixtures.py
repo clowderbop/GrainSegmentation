@@ -9,7 +9,10 @@ import numpy as np
 import tifffile
 import yaml
 
-from unet.extraction_tune_scoring import WatershedParamSet
+from unet.extraction_tune_scoring import (
+    WatershedParamSet,
+    watershed_param_set_from_tune_row,
+)
 from unet.watershed_tune_fixtures import cached_semantic_pred_speckle_prone
 from unet.watershed_tune_grid_shard import WatershedTuneShard
 
@@ -106,20 +109,13 @@ def make_tune_collect_args(
 
 
 def watershed_param_set_from_csv_row(row: dict[str, str]) -> WatershedParamSet:
-    return WatershedParamSet(
-        min_distance=int(row["min_distance"]),
-        boundary_dilate_iter=int(row["boundary_dilate_iter"]),
-        watershed_connectivity=int(row["watershed_connectivity"]),
-        min_area_px=int(row["min_area_px"]),
-        exclude_border=bool(int(row["exclude_border"])),
-        ridge_level=None if row["ridge_level"] == "" else float(row["ridge_level"]),
-    )
+    return watershed_param_set_from_tune_row(row)
 
 
 def watershed_param_sets_from_csv_rows(
     rows: list[dict[str, str]],
 ) -> list[WatershedParamSet]:
-    return [watershed_param_set_from_csv_row(row) for row in rows]
+    return [watershed_param_set_from_tune_row(row) for row in rows]
 
 
 def tune_watershed_argv(

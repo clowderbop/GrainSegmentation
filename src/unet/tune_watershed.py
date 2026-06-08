@@ -15,7 +15,7 @@ from common.geometry import load_image_space_polygons
 from common.ground_truth import polygons_to_instance_map
 from common.reporting import count_instances
 from common.image_io import load_tiff_single_channel_mask, validate_semantic_labels
-from common.manifest_io import collect_manifest_unet_samples, load_dataset_manifest
+from common.manifest_io import collect_manifest_tune_samples, load_dataset_manifest
 from common.arg_errors import raise_cli_argument_error
 from common.merged_view_pq import (
     MERGED_VIEW_PQ_RESULT_KEYS,
@@ -131,14 +131,14 @@ def _validate_tune_args(
 
 def _resolve_watershed_samples(args: argparse.Namespace) -> list[dict]:
     doc = load_dataset_manifest(args.manifest)
-    if args.num_inputs is not None:
-        expected = len(doc.samples[0].images or ())
-        if args.num_inputs != expected:
-            raise_cli_argument_error(
-                f"--num-inputs {args.num_inputs} != manifest ({expected})"
-            )
-    args.num_inputs = len(doc.samples[0].images or ())
-    return collect_manifest_unet_samples(doc)
+    samples = collect_manifest_tune_samples(doc)
+    manifest_channels = samples[0]["num_channels"]
+    if args.num_inputs is not None and args.num_inputs != manifest_channels:
+        raise_cli_argument_error(
+            f"--num-inputs {args.num_inputs} != manifest ({manifest_channels})"
+        )
+    args.num_inputs = manifest_channels
+    return samples
 
 
 def _collect_samples(

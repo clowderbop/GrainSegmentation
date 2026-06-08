@@ -113,8 +113,8 @@ cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."
 uv sync
 
-echo "Staging train whole manifest to $LOCAL_IMAGE_DIR ..."
-stage_manifest_run_in_unet_env "$CANONICAL_MANIFEST" "$LOCAL_IMAGE_DIR"
+echo "Staging train whole manifest metadata to $LOCAL_IMAGE_DIR (no channel copies) ..."
+stage_manifest_metadata_in_unet_env "$CANONICAL_MANIFEST" "$LOCAL_IMAGE_DIR"
 STAGED_MANIFEST="$LOCAL_IMAGE_DIR/manifest.json"
 require_file "$STAGED_MANIFEST" "Staged train manifest missing"
 

@@ -74,6 +74,26 @@ def test_shell_scripts_share_preds_root_with_python_helper() -> None:
     )
 
 
+def test_run_watershed_tuning_stages_manifest_metadata_without_channel_copies() -> (
+    None
+):
+    tune_text = run_watershed_tuning_script_path().read_text(encoding="utf-8")
+    assert "stage_manifest_metadata_in_unet_env" in tune_text
+    assert "stage_manifest_run_in_unet_env" not in tune_text
+    assert "no channel copies" in tune_text
+
+    manifest_shell = (
+        repo_root() / "SLURM" / "utils" / "manifest_shell.sh"
+    ).read_text(encoding="utf-8")
+    assert "stage_manifest_metadata_in_unet_env" in manifest_shell
+    assert "--metadata-only" in manifest_shell
+
+    predict_text = run_watershed_tune_predict_script_path().read_text(
+        encoding="utf-8"
+    )
+    assert "stage_manifest_run_in_unet_env" in predict_text
+
+
 def test_run_watershed_tuning_requires_preds_dir_not_model_path() -> None:
     script = run_watershed_tuning_script_path()
     text = script.read_text(encoding="utf-8")

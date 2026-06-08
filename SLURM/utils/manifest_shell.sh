@@ -28,6 +28,10 @@ stage_manifest_run_in_unet_env() {
     run_common_in_unet_env -m common.stage_manifest run "$@"
 }
 
+stage_manifest_metadata_in_unet_env() {
+    run_common_in_unet_env -m common.stage_manifest run --metadata-only "$@"
+}
+
 stage_manifest_write_eval_in_unet_env() {
     run_common_in_unet_env -m common.stage_manifest write-eval "$@"
 }

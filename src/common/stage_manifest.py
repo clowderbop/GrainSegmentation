@@ -123,6 +123,94 @@ def materialize_eval_row_assets(
     return image_resolved, gt_resolved, gt_txt_resolved
 
 
+def _staged_image_paths(
+    row: ManifestSampleRow,
+    *,
+    flatten_images: bool,
+) -> tuple[str | None, tuple[str, ...] | None]:
+    new_image: str | None = None
+    new_images: tuple[str, ...] | None = None
+    if row.image is not None:
+        new_image = (
+            Path(row.image).name
+            if flatten_images
+            else str(Path(row.image))
+        )
+    if row.images is not None:
+        new_images = tuple(
+            Path(rel).name if flatten_images else rel for rel in row.images
+        )
+    return new_image, new_images
+
+
+def stage_manifest_metadata(
+    manifest: Path | DatasetManifest,
+    work_root: str | Path,
+    *,
+    sample_ids: set[str] | None = None,
+    flatten_images: bool = True,
+) -> DatasetManifest:
+    """Rewrite manifest paths for ``work_root`` without copying raster assets."""
+    doc = manifest if isinstance(manifest, DatasetManifest) else load_dataset_manifest(manifest)
+    work_root = Path(work_root).resolve()
+    work_root.mkdir(parents=True, exist_ok=True)
+
+    rows_to_stage = [
+        row
+        for row in doc.samples
+        if sample_ids is None or row.sample_id in sample_ids
+    ]
+    n_rows = len(rows_to_stage)
+    print(
+        f"Staging manifest metadata for {n_rows} sample(s) to {work_root} "
+        f"(variant={doc.variant}, unit={doc.unit}; no raster copies)..."
+    )
+
+    staged_rows: list[ManifestSampleRow] = []
+    for idx, row in enumerate(rows_to_stage):
+        print(f"  sample {row.sample_id} ({idx + 1}/{n_rows})")
+        new_image, new_images = _staged_image_paths(row, flatten_images=flatten_images)
+        staged_rows.append(
+            ManifestSampleRow(
+                sample_id=row.sample_id,
+                image=new_image,
+                images=new_images,
+                mask=None,
+                gt_gpkg=row.gt_gpkg,
+                gt_origin=row.gt_origin,
+                gt_txt=row.gt_txt,
+                instance_prediction_set=row.instance_prediction_set,
+                semantic=row.semantic,
+            )
+        )
+
+    if not staged_rows:
+        raise ValueError("No manifest samples staged (check sample_ids filter)")
+
+    return DatasetManifest(
+        schema_version=doc.schema_version,
+        variant=doc.variant,
+        unit=doc.unit,
+        grainseg_root=str(work_root),
+        path_base="work_root",
+        samples=tuple(staged_rows),
+        source_path=work_root / "manifest.json",
+    )
+
+
+def stage_manifest_metadata_to_file(
+    manifest_path: Path,
+    work_root: Path,
+    *,
+    sample_ids: set[str] | None = None,
+    output_name: str = "manifest.json",
+) -> Path:
+    staged = stage_manifest_metadata(manifest_path, work_root, sample_ids=sample_ids)
+    out_path = work_root / output_name
+    write_dataset_manifest(out_path, staged)
+    return out_path
+
+
 def stage_manifest(
     manifest: Path | DatasetManifest,
     work_root: str | Path,
@@ -167,25 +255,20 @@ def stage_manifest(
     for idx, row in enumerate(rows_to_stage):
         print(f"Staging sample {row.sample_id} ({idx + 1}/{n_rows})...")
 
-        new_image: str | None = None
-        new_images: tuple[str, ...] | None = None
+        new_image, new_images = _staged_image_paths(row, flatten_images=flatten_images)
 
         if row.image is not None:
             src = resolve_manifest_path(row.image, source_base)
             dest = work_root / Path(row.image).name
             print(f"  copy image: {src.name} -> {dest}")
             _copy_asset(src, dest)
-            new_image = dest.name if flatten_images else str(dest.relative_to(work_root))
 
         if row.images is not None:
-            copied: list[str] = []
             for rel in row.images:
                 src = resolve_manifest_path(rel, source_base)
                 dest = work_root / Path(rel).name
                 print(f"  copy channel: {src.name} -> {dest}")
                 _copy_asset(src, dest)
-                copied.append(dest.name if flatten_images else str(dest.relative_to(work_root)))
-            new_images = tuple(copied)
 
         new_mask: str | None = None
         if copy_masks and row.mask is not None:
@@ -249,6 +332,11 @@ def _build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("manifest", type=Path)
     run_p.add_argument("work_root", type=Path)
     run_p.add_argument("--sample-id", action="append", default=None)
+    run_p.add_argument(
+        "--metadata-only",
+        action="store_true",
+        help="Rewrite manifest for work_root without copying raster assets",
+    )
 
     eval_p = sub.add_parser(
         "write-eval",
@@ -273,11 +361,18 @@ def main(argv: list[str] | None = None) -> int:
             manifest_path = args.manifest.resolve()
             work_root = args.work_root.resolve()
             print(f"Staging manifest {manifest_path} -> {work_root}")
-            out = stage_manifest_to_file(
-                manifest_path,
-                work_root,
-                sample_ids=sample_ids,
-            )
+            if args.metadata_only:
+                out = stage_manifest_metadata_to_file(
+                    manifest_path,
+                    work_root,
+                    sample_ids=sample_ids,
+                )
+            else:
+                out = stage_manifest_to_file(
+                    manifest_path,
+                    work_root,
+                    sample_ids=sample_ids,
+                )
             print(f"Wrote staged manifest to {out}")
             return 0
         if args.command == "write-eval":

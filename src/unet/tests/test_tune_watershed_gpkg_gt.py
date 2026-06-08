@@ -84,6 +84,50 @@ def _make_tune_collect_args(
     )
 
 
+def test_collect_samples_works_with_metadata_only_manifest_without_rgb_files(
+    tmp_path: Path,
+) -> None:
+    """Metadata-only staged manifests supply ids; geometry comes from cached preds."""
+    sample_id = "train"
+    pred_path = tmp_path / "preds" / f"{sample_id}_pred.tif"
+    pred_path.parent.mkdir(parents=True)
+    semantic = np.zeros((_HEIGHT, _WIDTH), dtype=np.uint8)
+    semantic[8:20, 8:24] = 1
+    tifffile.imwrite(pred_path, semantic)
+
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "variant": "PPL",
+                "unit": "whole",
+                "grainseg_root": str(tmp_path),
+                "path_base": "work_root",
+                "samples": [
+                    {
+                        "sample_id": sample_id,
+                        "image": "missing_PPL.tif",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    args = Namespace(
+        manifest=manifest_path,
+        gt_gpkg=_MICRO_GPKG,
+        preds_dir=tmp_path / "preds",
+        max_samples=None,
+        num_inputs=None,
+    )
+    sample_ids, true_instances, pred_semantic = _collect_samples(args)
+    assert sample_ids == [sample_id]
+    assert true_instances[0].shape == (_HEIGHT, _WIDTH)
+    assert pred_semantic[0].shape == (_HEIGHT, _WIDTH)
+
+
 def test_collect_samples_uses_pred_geometry_without_loading_rgb(
     tmp_path: Path,
 ) -> None:

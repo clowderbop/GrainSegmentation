@@ -17,13 +17,19 @@ from common.manifest_io import (
     build_unet_whole_manifest,
     build_yolo_whole_manifest,
     whole_manifest_overlay_anchor,
+    collect_manifest_tune_samples,
     collect_manifest_unet_samples,
     load_dataset_manifest,
     resolve_row_path,
     validate_dataset_manifest,
     write_dataset_manifest,
 )
-from common.stage_manifest import stage_manifest, stage_manifest_to_file
+from common.stage_manifest import (
+    stage_manifest,
+    stage_manifest_metadata,
+    stage_manifest_metadata_to_file,
+    stage_manifest_to_file,
+)
 from common.variants import all_variant_names, get_variant
 
 
@@ -169,6 +175,40 @@ def test_stage_manifest_copies_gt_txt_preserving_tree(tmp_path: Path) -> None:
     assert resolved_txt is not None
     assert resolved_txt.is_file()
     assert resolved_txt == (work / rel_txt).resolve()
+
+
+def test_stage_manifest_metadata_writes_manifest_without_copying_rasters(
+    tmp_path: Path,
+) -> None:
+    grainseg = _synthetic_grainseg(tmp_path)
+    manifest = build_unet_whole_manifest(
+        split="train", variant="PPL+AllPPX", grainseg_root=grainseg
+    )
+    canonical = tmp_path / "canonical.json"
+    write_dataset_manifest(canonical, manifest)
+    work = tmp_path / "work"
+    staged_path = stage_manifest_metadata_to_file(canonical, work)
+    loaded = load_dataset_manifest(staged_path)
+    assert loaded.path_base == "work_root"
+    assert loaded.samples[0].images is not None
+    assert len(loaded.samples[0].images) == 7
+    assert list(work.glob("*.tif")) == []
+    tune_samples = collect_manifest_tune_samples(loaded)
+    assert tune_samples[0]["id"] == loaded.samples[0].sample_id
+    assert tune_samples[0]["num_channels"] == 7
+
+
+def test_stage_manifest_metadata_matches_full_staging_path_metadata(tmp_path: Path) -> None:
+    grainseg = _synthetic_grainseg(tmp_path)
+    manifest = build_unet_whole_manifest(
+        split="train", variant="PPL+AllPPX", grainseg_root=grainseg
+    )
+    work_meta = tmp_path / "meta"
+    work_full = tmp_path / "full"
+    metadata = stage_manifest_metadata(manifest, work_meta)
+    full = stage_manifest(manifest, work_full)
+    assert metadata.samples[0].images == full.samples[0].images
+    assert metadata.samples[0].sample_id == full.samples[0].sample_id
 
 
 def test_stage_manifest_copies_channel_files(tmp_path: Path) -> None:

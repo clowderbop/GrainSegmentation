@@ -222,6 +222,19 @@ def collect_manifest_image_paths(
     return samples
 
 
+def _manifest_row_image_paths(
+    row: ManifestSampleRow,
+    spec: VariantSpec,
+) -> tuple[str, ...]:
+    if row.images is not None:
+        return row.images
+    if row.image is not None and spec.unet.num_inputs == 1:
+        return (row.image,)
+    raise ValueError(
+        f"U-Net manifest row {row.sample_id!r} requires multi-input images"
+    )
+
+
 def collect_manifest_unet_samples(
     manifest: Path | DatasetManifest,
     *,
@@ -238,14 +251,7 @@ def collect_manifest_unet_samples(
     spec = get_variant(doc.variant)
     samples: list[dict[str, Any]] = []
     for row in doc.samples:
-        if row.images is not None:
-            rel_paths = row.images
-        elif row.image is not None and spec.unet.num_inputs == 1:
-            rel_paths = (row.image,)
-        else:
-            raise ValueError(
-                f"U-Net manifest row {row.sample_id!r} requires multi-input images"
-            )
+        rel_paths = _manifest_row_image_paths(row, spec)
         image_paths = []
         for rel in rel_paths:
             path = resolve_manifest_path(rel, base)
@@ -276,6 +282,23 @@ def collect_manifest_unet_samples(
             sample["mask"] = str(found)
 
         samples.append(sample)
+    return samples
+
+
+def collect_manifest_tune_samples(
+    manifest: Path | DatasetManifest,
+) -> list[dict[str, Any]]:
+    """Sample dicts for preds-only watershed tuning (``id`` only; geometry from preds)."""
+    doc = manifest if isinstance(manifest, DatasetManifest) else load_dataset_manifest(manifest)
+    spec = get_variant(doc.variant)
+    samples: list[dict[str, Any]] = []
+    for row in doc.samples:
+        rel_paths = _manifest_row_image_paths(row, spec)
+        samples.append(
+            {"id": row.sample_id, "num_channels": len(rel_paths)}
+        )
+    if not samples:
+        raise ValueError("Manifest contains no samples")
     return samples
 
 

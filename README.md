@@ -35,7 +35,7 @@ Two **producer** families: **U-Net** (semantic classes → instance extraction) 
 
 After all YOLO weights exist, run **profile selection** on the train whole section, then **profile promotion** into `config/test_inference.yaml` before held-out YOLO test eval. Details: [`docs/runbooks/yolo.md`](docs/runbooks/yolo.md).
 
-Metrics and thesis ranking policy: [`docs/metrics.md`](docs/metrics.md) and [`CONTEXT.md`](CONTEXT.md).
+Metrics and thesis ranking policy: [`docs/metrics.md`](docs/metrics.md) and [`docs/adr/0003-test-evaluation-policy.md`](docs/adr/0003-test-evaluation-policy.md).
 
 ## Documentation
 
@@ -43,7 +43,7 @@ Metrics and thesis ranking policy: [`docs/metrics.md`](docs/metrics.md) and [`CO
 |------|--------|
 | **Doc map** | [`docs/README.md`](docs/README.md) |
 | **Cluster runbooks** | [`docs/runbooks/`](docs/runbooks/) (preprocessing, YOLO, U-Net, analysis) |
-| **Glossary & policy** | [`CONTEXT.md`](CONTEXT.md) |
+| **Glossary** | [`CONTEXT.md`](CONTEXT.md) |
 | **ADRs** | [`docs/adr/README.md`](docs/adr/README.md) |
 | **Dataset background** | [`docs/dataset.md`](docs/dataset.md) |
 | **Staging on nodes** | [`docs/reference/staging.md`](docs/reference/staging.md) |

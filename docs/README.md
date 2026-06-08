@@ -2,13 +2,13 @@
 
 | Layer | Location | Purpose |
 |-------|----------|---------|
-| Glossary | [`CONTEXT.md`](../CONTEXT.md) | Domain terms, test policy, profile selection vocabulary |
+| Glossary | [`CONTEXT.md`](../CONTEXT.md) | Domain vocabulary and naming discipline (terms and `_Avoid_` synonyms only) |
 | Decisions | [`docs/adr/README.md`](adr/README.md) | Current ADR index |
 | Runbooks | [`docs/runbooks/`](runbooks/) | How to run cluster workflows (canonical ops docs) |
 | Contracts | [`docs/manifests.md`](manifests.md) | Dataset manifest schema and paths |
 | Reference | [`docs/reference/`](reference/) | Scratch layout, staging on compute nodes |
 | Background | [`docs/dataset.md`](dataset.md) | Microscopy data, QGIS labels, overlap splitting, patches |
-| Metrics | [`docs/metrics.md`](metrics.md) | **Instance metric bundle**, headline PQ policy; terms link to `CONTEXT.md` and [ADR 0003](adr/0003-test-evaluation-policy.md) |
+| Metrics | [`docs/metrics.md`](metrics.md) | Metric definitions, field lists, headline vs supporting policy; [ADR 0003](adr/0003-test-evaluation-policy.md) |
 | Agents | [`docs/agents/`](agents/) | Issue tracker, triage, domain doc conventions |
 
 ## Runbooks

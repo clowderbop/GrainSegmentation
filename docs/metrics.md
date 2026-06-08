@@ -1,6 +1,6 @@
 # Metrics
 
-Definitions for evaluation numbers produced by SLURM eval jobs and **post-eval reporting**. For the authoritative thesis ordering and YOLO vs U-Net comparison policy, see [`CONTEXT.md`](../CONTEXT.md) and [ADR 0003](adr/0003-test-evaluation-policy.md).
+Definitions for evaluation numbers produced by SLURM eval jobs and **post-eval reporting**. For thesis ordering and YOLO vs U-Net comparison policy, see [ADR 0003](adr/0003-test-evaluation-policy.md). Domain vocabulary: [`CONTEXT.md`](../CONTEXT.md).
 
 ## Instance metrics (all producers)
 

@@ -27,7 +27,7 @@ from common.test_inference import (
     load_test_inference_recipe,
     profile_tune_candidate_from_conf,
     profile_tune_fixed_mask_threshold,
-    rewrite_yolo_conf_in_recipe_text,
+    rewrite_yolo_profile_in_recipe_text,
 )
 from common.variants import repo_root
 
@@ -122,34 +122,12 @@ def iter_detector_jobs(
             yield variant, conf
 
 
-def detector_job_at_index(
-    spec: TuneGridSpec, variants: tuple[str, ...], array_index: int
-) -> tuple[str, float]:
-    """Resolve a flat detector grid index (tests, legacy callers)."""
-    if array_index < 1:
-        raise ValueError(f"array index must be >= 1, got {array_index}")
-    jobs = list(iter_detector_jobs(spec, variants))
-    if array_index > len(jobs):
-        raise ValueError(
-            f"array index {array_index} out of range for {len(jobs)} detector jobs"
-        )
-    return jobs[array_index - 1]
-
-
 def iter_grid_candidates(spec: TuneGridSpec) -> Iterable[YoloInferenceProfileCandidate]:
     for conf in spec.grid.conf:
         yield profile_tune_candidate_from_conf(conf)
 
 
 PROFILE_SELECTION_OBJECTIVE = "pq"
-
-
-def variant_metric_column(metric_key: str, variant: str) -> str:
-    return merged_view_pq_column_name(metric_key, variant)
-
-
-def extract_mean_pq_from_report(report: dict[str, Any]) -> float:
-    return extract_metric_from_report(report, PROFILE_SELECTION_OBJECTIVE)
 
 
 def mean_pq_across_variants(variant_pq: dict[str, float]) -> float:
@@ -183,7 +161,7 @@ def grid_results_fieldnames(variant_names: tuple[str, ...]) -> list[str]:
     ]
     mean_columns = [f"mean_{key}" for key in MERGED_VIEW_PQ_RESULT_KEYS]
     per_variant_columns = [
-        variant_metric_column(key, variant)
+        merged_view_pq_column_name(key, variant)
         for variant in variant_names
         for key in MERGED_VIEW_PQ_RESULT_KEYS
     ]
@@ -286,7 +264,6 @@ def write_grid_winner_json(
         "selection_objective": PROFILE_SELECTION_OBJECTIVE,
         "mean_pq": mean_pq,
         "conf": candidate.conf,
-        "mask_threshold": fixed_mask,
         "profile_selection_axes": ["conf"],
         "fixed_mask_threshold": fixed_mask,
         "removed_grid_axes": list(_REMOVED_GRID_AXES),
@@ -296,13 +273,8 @@ def write_grid_winner_json(
 
 
 def candidate_from_winner_json(payload: dict[str, Any]) -> YoloInferenceProfileCandidate:
-    if "conf" in payload:
-        return profile_tune_candidate_from_conf(
-            yv.require_float(payload.get("conf"), context="conf")
-        )
-    profile = yv.require_mapping(payload.get("profile"), context="profile")
     return profile_tune_candidate_from_conf(
-        yv.require_float(profile.get("conf"), context="profile.conf")
+        yv.require_float(payload.get("conf"), context="conf")
     )
 
 
@@ -347,7 +319,7 @@ def rows_to_grid_results(
             csv_row[f"mean_{key}"] = row[f"mean_{key}"]
         for variant in variant_names:
             for key in MERGED_VIEW_PQ_RESULT_KEYS:
-                column = variant_metric_column(key, variant)
+                column = merged_view_pq_column_name(key, variant)
                 csv_row[column] = row[column]
         normalized.append(csv_row)
     return normalized
@@ -387,8 +359,10 @@ def promote_profile_to_recipe(
     original_text = recipe_path.read_text(encoding="utf-8")
     fixed_mask = profile_tune_fixed_mask_threshold()
     recipe_path.write_text(
-        rewrite_yolo_conf_in_recipe_text(
-            original_text, conf=profile.conf, mask_threshold=fixed_mask
+        rewrite_yolo_profile_in_recipe_text(
+            original_text,
+            YoloInferenceProfileCandidate(conf=profile.conf, mask_threshold=fixed_mask),
+            keys=("conf", "mask_threshold"),
         ),
         encoding="utf-8",
     )

@@ -50,6 +50,68 @@ def dense_build_instance_iou_matrix(
     return mat, true_ids, pred_ids
 
 
+def dense_compute_aji(
+    true_instances: np.ndarray, pred_instances: np.ndarray
+) -> float:
+    """Legacy AJI reference for PQ-vs-AJI selection regression tests."""
+    true_id_list = instance_ids(true_instances)
+    pred_id_list = instance_ids(pred_instances)
+    if not true_id_list and not pred_id_list:
+        return 1.0
+    if not true_id_list or not pred_id_list:
+        return 0.0
+
+    max_true = int(true_instances.max())
+    max_pred = int(pred_instances.max())
+    intersection_matrix = np.histogram2d(
+        true_instances.flatten(),
+        pred_instances.flatten(),
+        bins=(max_true + 1, max_pred + 1),
+        range=((0, max_true + 1), (0, max_pred + 1)),
+    )[0]
+
+    true_areas = intersection_matrix.sum(axis=1)
+    pred_areas = intersection_matrix.sum(axis=0)
+
+    overall_intersection = 0.0
+    overall_union = 0.0
+    unassigned_pred_ids = set(pred_id_list)
+
+    for true_id in true_id_list:
+        candidate_pred_ids = sorted(unassigned_pred_ids)
+        if not candidate_pred_ids:
+            overall_union += true_areas[true_id]
+            continue
+
+        intersections = np.array(
+            [intersection_matrix[true_id, pred_id] for pred_id in candidate_pred_ids]
+        )
+        if intersections.sum() == 0:
+            overall_union += true_areas[true_id]
+            continue
+
+        pred_areas_subset = np.array(
+            [pred_areas[pred_id] for pred_id in candidate_pred_ids]
+        )
+        unions = true_areas[true_id] + pred_areas_subset - intersections
+
+        ious = intersections / np.maximum(unions, 1)
+        best_idx = int(np.argmax(ious))
+        best_pred_id = candidate_pred_ids[best_idx]
+
+        if ious[best_idx] > 0:
+            overall_intersection += intersections[best_idx]
+            overall_union += unions[best_idx]
+            unassigned_pred_ids.remove(best_pred_id)
+        else:
+            overall_union += true_areas[true_id]
+
+    for pred_id in unassigned_pred_ids:
+        overall_union += pred_areas[pred_id]
+
+    return float(overall_intersection / overall_union)
+
+
 def dense_compute_aji_plus(
     true_instances: np.ndarray, pred_instances: np.ndarray
 ) -> float:

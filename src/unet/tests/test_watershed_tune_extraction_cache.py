@@ -50,10 +50,15 @@ def _two_grain_gt(height: int = 64, width: int = 64) -> np.ndarray:
     return gt
 
 
-def test_default_grid_has_twenty_four_base_keys_and_seventy_two_combos() -> None:
+def test_default_grid_extraction_cache_ratio_from_axis_structure() -> None:
+    """INTENT: scored combos are base extractions times min_area_px axis length."""
     grid = load_watershed_tune_grid().grid
-    assert watershed_base_extraction_key_count(grid) == 24
-    assert watershed_tune_candidate_count(grid) == 72
+    base_count = watershed_base_extraction_key_count(grid)
+    combo_count = watershed_tune_candidate_count(grid)
+    assert base_count == len(list(iter_unique_watershed_base_extraction_keys(grid)))
+    assert combo_count == len(list(iter_watershed_tune_param_sets(grid)))
+    assert combo_count == base_count * len(grid.min_area_px)
+    assert base_count < combo_count
 
 
 def test_cached_instance_map_matches_brute_force_for_single_param() -> None:

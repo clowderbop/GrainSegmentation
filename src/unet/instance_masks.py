@@ -9,8 +9,15 @@ import numpy as np
 from scipy.ndimage import binary_dilation, distance_transform_edt, generate_binary_structure
 
 from common.labeled_components import drop_small_components
+from common.semantic_instance import (
+    SEMANTIC_BOUNDARY_CLASS,
+    SEMANTIC_INTERIOR_CLASS,
+)
 
 WatershedConnectivity = Literal[1, 2]
+
+RIDGE_LEVEL_OFFSET = 1.0
+BOUNDARY_DILATION_CONNECTIVITY: WatershedConnectivity = 2
 
 __all__ = [
     "WatershedConnectivity",
@@ -40,14 +47,14 @@ def _compute_auto_ridge_level(distance_transform: np.ndarray, interior: np.ndarr
         return 0.0
     dt = distance_transform
     neg_dt = -dt[interior]
-    return float(-neg_dt.min() + dt.max() + 1.0)
+    return float(-neg_dt.min() + dt.max() + RIDGE_LEVEL_OFFSET)
 
 
 def build_watershed_semantic_prep(
     semantic: np.ndarray,
     *,
-    interior_class: int = 1,
-    boundary_class: int = 2,
+    interior_class: int = SEMANTIC_INTERIOR_CLASS,
+    boundary_class: int = SEMANTIC_BOUNDARY_CLASS,
 ) -> WatershedSemanticPrep:
     if semantic.ndim != 2:
         raise ValueError(f"semantic must be 2D, got shape {semantic.shape}")
@@ -88,7 +95,7 @@ def watershed_base_extraction(
 
     bd = prep.boundary
     if boundary_dilate_iter > 0:
-        struct = _binary_structure(interior.ndim, 2)
+        struct = _binary_structure(interior.ndim, BOUNDARY_DILATION_CONNECTIVITY)
         bd = binary_dilation(
             prep.boundary, structure=struct, iterations=boundary_dilate_iter
         )

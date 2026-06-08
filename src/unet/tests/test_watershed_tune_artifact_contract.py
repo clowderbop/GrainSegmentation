@@ -14,7 +14,7 @@ from unet.extraction_tune_scoring import (
     watershed_tune_fieldnames,
     watershed_tune_row,
 )
-from unet.tests.watershed_tune_fixtures import (
+from unet.watershed_tune_fixtures import (
     cached_semantic_pred_speckle_prone,
     cached_semantic_pred_two_grain,
     two_grain_merged_instance_view,

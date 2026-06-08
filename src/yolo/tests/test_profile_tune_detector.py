@@ -11,7 +11,7 @@ import pytest
 
 from common.test_inference import load_test_inference_recipe
 from yolo.profile_tune_detector import write_detector_proposal_cache
-from yolo.tests.profile_tune_fixtures import disjoint_tile_local_proposals
+from common.tests.profile_tune_fixtures import disjoint_tile_local_proposals
 from yolo.tiled_proposal_cache import (
     detector_cache_expected_record,
     load_tiled_proposals,
@@ -73,12 +73,10 @@ def test_write_detector_proposal_cache_does_not_create_staged_manifest_tree(
             variant=layout["variant"],
             conf=0.25,
             mask_threshold=0.5,
-            output_dir=layout["output_dir"],
             grainseg_root=layout["grainseg_root"],
             run_root=layout["run_root"],
             work_root=layout["work_root"],
             device="0",
-            repo=layout["repo"],
             train_image_staging_dir=staging_dir,
         )
 
@@ -121,12 +119,10 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
         variant=layout["variant"],
         conf=conf,
         mask_threshold=fixed_mask,
-        output_dir=layout["output_dir"],
         grainseg_root=layout["grainseg_root"],
         run_root=layout["run_root"],
         work_root=layout["work_root"],
         device="0",
-        repo=layout["repo"],
     )
 
     with (
@@ -166,12 +162,10 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
         variant=layout["variant"],
         conf=conf,
         mask_threshold=fixed_mask,
-        output_dir=layout["output_dir"],
         grainseg_root=layout["grainseg_root"],
         run_root=layout["run_root"],
         work_root=layout["work_root"],
         device="0",
-        repo=layout["repo"],
     )
     with (
         patch(
@@ -327,7 +321,6 @@ def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
             run_root=layout["run_root"],
             work_root=layout["work_root"],
             device="0",
-            repo=layout["repo"],
             local_train_image=layout["train_mosaic"],
         )
 

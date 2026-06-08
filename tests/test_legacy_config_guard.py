@@ -70,6 +70,7 @@ def iter_repo_text_files() -> list[Path]:
 
 
 def test_guard_detects_retired_default_path_reference() -> None:
+    """INTENT: helper flags retired configs/ default paths in arbitrary text."""
     hits = find_retired_default_path_hits(
         "Load defaults from configs/test_inference.yaml before promotion."
     )
@@ -109,6 +110,8 @@ def test_retired_config_defaults_not_tracked_in_git() -> None:
 def test_no_committed_references_to_retired_config_defaults() -> None:
     offenders: list[str] = []
     for path in iter_repo_text_files():
+        if not path.is_file():
+            continue
         rel = path.relative_to(REPO_ROOT).as_posix()
         if rel == Path(__file__).relative_to(REPO_ROOT).as_posix():
             continue

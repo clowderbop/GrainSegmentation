@@ -10,18 +10,16 @@ import numpy as np
 import pytest
 
 from common.test_inference import load_test_inference_recipe
-from yolo.tests.profile_tune_fixtures import (
-    disjoint_sahi_proposals,
-    write_on_disk_v1_proposal_cache,
-)
 from common.tests.profile_tune_fixtures import (
     FakeBbox,
     FakeCategory,
     FakeMask,
     FakeSahiPrediction,
     FakeScore,
+    disjoint_sahi_proposals,
+    disjoint_tile_local_proposals,
 )
-from yolo.tests.profile_tune_fixtures import disjoint_tile_local_proposals
+from yolo.tests.profile_tune_fixtures import write_on_disk_v1_proposal_cache
 from yolo.tiled_proposal_cache import (
     TILED_PROPOSAL_CACHE_SCHEMA_VERSION,
     collect_tiled_detector_proposals,
@@ -84,7 +82,7 @@ def test_load_tiled_proposals_rejects_on_disk_v1_sahi_pickle_cache(
     """v1 layout on disk (dense SAHI pickle + schema_version 1 meta) must not load."""
     recipe = load_test_inference_recipe()
     height, width = 32, 32
-    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.25, mask_threshold=0.5)
+    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.25)
     v1_meta = proposal_cache_record(
         variant="PPL",
         weights_sha256="a",
@@ -157,7 +155,7 @@ def test_write_and_load_tiled_proposals_round_trip(tmp_path: Path) -> None:
         height=height,
         width=width,
     )
-    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2, mask_threshold=0.45)
+    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2)
     mask = np.zeros((height, width), dtype=bool)
     mask[4:10, 4:10] = True
     proposals = [
@@ -200,7 +198,7 @@ def test_load_or_write_tiled_proposals_reuses_valid_cache_without_compute(
         height=16,
         width=16,
     )
-    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2, mask_threshold=0.45)
+    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2)
     mask = np.zeros((16, 16), dtype=bool)
     mask[2:6, 2:6] = True
     cached = [tiled_proposal_record_from_binary_mask(mask, score=0.9)]
@@ -233,7 +231,7 @@ def test_load_or_write_tiled_proposals_computes_when_cache_missing(
         height=16,
         width=16,
     )
-    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2, mask_threshold=0.45)
+    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2)
     mask = np.zeros((16, 16), dtype=bool)
     mask[8:12, 8:12] = True
     fresh = [tiled_proposal_record_from_binary_mask(mask, score=0.7)]
@@ -263,7 +261,7 @@ def test_load_or_write_tiled_proposals_recomputes_on_fingerprint_mismatch(
         height=16,
         width=16,
     )
-    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2, mask_threshold=0.45)
+    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2)
     stale = dict(record)
     stale["conf"] = 0.99
     mask = np.zeros((16, 16), dtype=bool)
@@ -397,7 +395,7 @@ def test_load_tiled_proposals_rejects_v2_records_without_tile_bounds(
         height=height,
         width=width,
     )
-    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2, mask_threshold=0.45)
+    cache_dir = proposal_cache_dir(tmp_path / "PPL", conf=0.2)
     mask = np.zeros((height, width), dtype=bool)
     mask[4:10, 4:10] = True
     stale_v2 = {

@@ -192,7 +192,7 @@ The canonical train ground-truth **merged instance view** for a tune run, built 
 _Avoid:_ per-variant GT caches when label geometry is shared, using semantic TIFFs as GT for profile selection
 
 **Profile promotion**:
-Installing the **profile selection** winner’s train-selected **`conf`** and the fixed **`mask_threshold`** into the **test inference recipe** for git commit and held-out test (`rewrite_yolo_conf_in_recipe_text`; other recipe YOLO keys unchanged). ADR 0005.
+Installing the **profile selection** winner’s train-selected **`conf`** and the fixed **`mask_threshold`** into the **test inference recipe** for git commit and held-out test (`rewrite_yolo_profile_in_recipe_text`; other recipe YOLO keys unchanged). ADR 0005.
 _Avoid:_ partial promotion (only `conf` without the paired fixed `mask_threshold`), promoting legacy five-knob or SAHI-merge-grid winners
 
 ### Post-eval reporting

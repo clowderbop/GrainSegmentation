@@ -11,6 +11,9 @@ from common.labeled_components import drop_small_components
 
 Connectivity = Literal[1, 2]
 
+SEMANTIC_INTERIOR_CLASS = 1
+SEMANTIC_BOUNDARY_CLASS = 2
+
 
 def _structure_for_connectivity(ndim: int, connectivity: Connectivity) -> np.ndarray:
     if connectivity not in (1, 2):
@@ -21,7 +24,7 @@ def _structure_for_connectivity(ndim: int, connectivity: Connectivity) -> np.nda
 def semantic_to_instance_label_map(
     semantic: np.ndarray,
     *,
-    interior_class: int = 1,
+    interior_class: int = SEMANTIC_INTERIOR_CLASS,
     connectivity: Connectivity = 1,
     min_area_px: int = 0,
 ) -> np.ndarray:

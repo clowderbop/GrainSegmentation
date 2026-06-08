@@ -272,11 +272,11 @@ def score_profile_selection_candidate(
             _log(
                 f"Resume: skipping score — row exists with matching fingerprint → {row_path}"
             )
-            from yolo.inference_profile_tune import variant_metric_column
+            from common.merged_view_pq import merged_view_pq_column_name
 
             _log(
                 f"  stored mean_pq={float(stored['mean_pq']):.6f} "
-                f"({', '.join(f'{v}={float(stored[variant_metric_column(PROFILE_SELECTION_OBJECTIVE, v)]):.4f}' for v in variants)})"
+                f"({', '.join(f'{v}={float(stored[merged_view_pq_column_name(PROFILE_SELECTION_OBJECTIVE, v)]):.4f}' for v in variants)})"
             )
             return row_path
         _log(

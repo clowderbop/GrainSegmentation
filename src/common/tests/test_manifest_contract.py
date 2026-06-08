@@ -18,33 +18,6 @@ def test_manifest_sample_requires_image_xor_images() -> None:
         )
 
 
-def test_manifest_sample_accepts_single_image() -> None:
-    row = ManifestSampleRow(
-        sample_id="test",
-        image="dataset/test/test_PPL.tif",
-    )
-    assert row.image is not None
-    assert row.images is None
-
-
-def test_dataset_manifest_shape() -> None:
-    manifest = DatasetManifest(
-        schema_version=1,
-        variant="PPL",
-        unit="whole",
-        grainseg_root="/scratch/user/GrainSeg",
-        path_base="grainseg_root",
-        samples=(
-            ManifestSampleRow(
-                sample_id="train",
-                images=("dataset/train/train_PPL.tif",),
-            ),
-        ),
-    )
-    assert manifest.path_base == "grainseg_root"
-    assert len(manifest.samples) == 1
-
-
 def test_load_dataset_manifest_round_trip(tmp_path: Path) -> None:
     from common.manifest_io import load_dataset_manifest, write_dataset_manifest
 

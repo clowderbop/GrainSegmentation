@@ -115,10 +115,8 @@ def prepare_detector_variant(
     )
 
 
-def detector_cache_dir(
-    work_root: Path, variant: str, *, conf: float, mask_threshold: float
-) -> Path:
-    return proposal_cache_dir(work_root / variant, conf=conf, mask_threshold=mask_threshold)
+def detector_cache_dir(work_root: Path, variant: str, *, conf: float) -> Path:
+    return proposal_cache_dir(work_root / variant, conf=conf)
 
 
 def expected_detector_cache(
@@ -210,9 +208,7 @@ def write_detector_key_proposals(
     detection_model: Any | None = None,
 ) -> tuple[Path, Any]:
     """Write one (conf, mask_threshold) proposal cache; reuse detection_model when provided."""
-    cache_dir = detector_cache_dir(
-        work_root, variant, conf=conf, mask_threshold=mask_threshold
-    )
+    cache_dir = detector_cache_dir(work_root, variant, conf=conf)
     expected = expected_detector_cache(
         prepared, variant=variant, conf=conf, mask_threshold=mask_threshold
     )
@@ -255,9 +251,7 @@ def write_detector_key_proposals_if_needed(
     log_skip: bool,
 ) -> tuple[Path, Any | None, bool]:
     """Return (cache_dir, detection_model, wrote). Model is set only when inference ran."""
-    cache_dir = detector_cache_dir(
-        work_root, variant, conf=conf, mask_threshold=mask_threshold
-    )
+    cache_dir = detector_cache_dir(work_root, variant, conf=conf)
     expected = expected_detector_cache(
         prepared, variant=variant, conf=conf, mask_threshold=mask_threshold
     )

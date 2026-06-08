@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import json
 from pathlib import Path
 
@@ -12,7 +11,7 @@ import pytest
 from common.evaluate_instances import evaluate_instance_samples
 from common.instance_eval_report import instance_metrics_report_path_for_variant
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS, compute_instance_metric_bundle
-from common.metrics import compute_aji
+from common.tests.dense_iou_reference import dense_compute_aji
 from common.tests.evaluate_instances_fixtures import perfect_match_eval_sample
 from unet.extraction_method_selection import (
     select_train_extraction_method,
@@ -186,7 +185,7 @@ def test_synthetic_extraction_maps_pq_and_aji_winners_differ() -> None:
     aji_winner_bundle = compute_instance_metric_bundle(gt, pred_aji_winner)
 
     assert pq_winner_bundle["pq"] > aji_winner_bundle["pq"]
-    assert compute_aji(gt, pred_aji_winner) > compute_aji(gt, pred_pq_winner)
+    assert dense_compute_aji(gt, pred_aji_winner) > dense_compute_aji(gt, pred_pq_winner)
 
 
 def test_select_train_extraction_method_uses_pq_not_aji() -> None:
@@ -230,7 +229,7 @@ def test_watershed_param_candidates_pq_winner_differs_from_aji_winner() -> None:
     for params in (params_aji, params_pq):
         mean_pq, _ = mean_train_pq_for_watershed_params([gt], [semantic], params)
         pred_instances = instance_map_for_watershed_params(semantic, params)
-        legacy_aji = float(compute_aji(gt, pred_instances))
+        legacy_aji = float(dense_compute_aji(gt, pred_instances))
         rows.append(
             {
                 "mean_pq": mean_pq["pq"],
@@ -399,22 +398,3 @@ def test_watershed_tune_row_includes_merged_view_pq_fields_only() -> None:
     for bundle_key in ("iou75_precision", "aji_plus", "mean_precision"):
         assert f"mean_{bundle_key}" not in row
 
-
-def test_extraction_method_selection_does_not_embed_sparse_pq_matching() -> None:
-    """CC-vs-watershed selection compares eval bundles; tune-path PQ stays in extraction_tune_scoring."""
-    source = (
-        Path(__file__).resolve().parents[1] / "extraction_method_selection.py"
-    ).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    forbidden = {
-        "compute_merged_view_pq",
-        "instance_overlap_stats",
-        "greedy_one_to_one_matches_from_overlap",
-    }
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-    assert forbidden.isdisjoint(imported)

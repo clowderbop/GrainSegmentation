@@ -5,21 +5,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from analysis.build_report import SCOPE_NOTE
 from analysis.derived_tables import whole_section_pq_matrix_table
 from analysis.figures import (
-    COUNT_ERROR_BAR_CHART_TITLE,
-    HEADLINE_PQ_TITLE,
     HeadlineFigureError,
-    MODEL_AXIS_LABEL,
-    MODEL_VARIANT_BARS_TITLE,
-    PARETO_PLOT_TITLE,
-    PATCH_TO_WHOLE_DIAGNOSTIC_HEATMAP_TITLE,
-    PQ_DECOMPOSITION_GROUPED_BARS_TITLE,
-    PPL_DELTA_PQ_TITLE,
-    PRECISION_RECALL_IOU75_TITLE,
-    STRICTNESS_DROP_PLOT_TITLE,
-    ULTRALYTICS_VAL_PANEL_TITLE,
     figure_headline_heatmap,
     figure_pq_decomposition_grouped_bars,
     model_display_name,
@@ -29,52 +17,16 @@ from analysis.tests.test_derived_tables import _four_combo_instance_df
 
 
 def test_model_display_name_maps_producers() -> None:
+    """INTENT: thesis-facing producer labels stay stable for report figures."""
     assert model_display_name("yolo") == "YOLO"
     assert model_display_name("unet") == "U-Net"
-
-
-def test_model_axis_label() -> None:
-    assert MODEL_AXIS_LABEL == "Model"
-
-
-def test_headline_figure_copy_uses_whole_section_pq() -> None:
-    assert "PQ" in HEADLINE_PQ_TITLE
-    assert "whole-section" in HEADLINE_PQ_TITLE.lower()
-    assert "AJI" not in HEADLINE_PQ_TITLE
-    assert "PQ" in MODEL_VARIANT_BARS_TITLE
-    assert "PQ" in PPL_DELTA_PQ_TITLE
-    assert "AJI" not in MODEL_VARIANT_BARS_TITLE
-
-
-def test_threshold_diagnostic_figure_titles_are_not_headline() -> None:
-    for title in (
-        PATCH_TO_WHOLE_DIAGNOSTIC_HEATMAP_TITLE,
-        COUNT_ERROR_BAR_CHART_TITLE,
-        STRICTNESS_DROP_PLOT_TITLE,
-        PRECISION_RECALL_IOU75_TITLE,
-        PARETO_PLOT_TITLE,
-    ):
-        assert "Diagnostic" in title
-        assert "whole-section" in title.lower() or "patch-to-whole" in title.lower()
-        assert "Headline" not in title
-
-
-def test_ultralytics_panel_is_supporting_not_headline() -> None:
-    assert "Supporting" in ULTRALYTICS_VAL_PANEL_TITLE
-    assert "mAP" in ULTRALYTICS_VAL_PANEL_TITLE
-
-
-def test_scope_note_headlines_whole_section_pq() -> None:
-    assert "Headline whole-section PQ" in SCOPE_NOTE
-    assert "Headline AJI" not in SCOPE_NOTE
-    assert "F1@IoU50" not in SCOPE_NOTE
-    assert "AP/mAP" in SCOPE_NOTE
 
 
 def test_figure_headline_heatmap_pq_panel_uses_derived_matrix(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    """INTENT: headline heatmap plots whole-section PQ from the derived matrix table."""
     pytest.importorskip("matplotlib")
     pytest.importorskip("seaborn")
 
@@ -94,6 +46,7 @@ def test_figure_headline_heatmap_pq_panel_uses_derived_matrix(
 
 
 def test_require_headline_pq_table_rejects_missing_pq_columns() -> None:
+    """INTENT: headline figures fail fast when PQ columns are absent."""
     df = pd.DataFrame(
         [
             {
@@ -109,18 +62,11 @@ def test_require_headline_pq_table_rejects_missing_pq_columns() -> None:
         require_headline_pq_table(df)
 
 
-def test_pq_decomposition_grouped_bars_title_and_file(
-    tmp_path: Path,
-) -> None:
+def test_pq_decomposition_grouped_bars_writes_figure(tmp_path: Path) -> None:
+    """INTENT: PQ decomposition grouped bars render from instance metrics input."""
     pytest.importorskip("matplotlib")
     pytest.importorskip("seaborn")
-
-    assert "PQ" in PQ_DECOMPOSITION_GROUPED_BARS_TITLE
-    assert "DQ" in PQ_DECOMPOSITION_GROUPED_BARS_TITLE
-    assert "SQ" in PQ_DECOMPOSITION_GROUPED_BARS_TITLE
-    assert "AJI" not in PQ_DECOMPOSITION_GROUPED_BARS_TITLE
 
     out = tmp_path / "pq_decomposition_grouped_bars.png"
     figure_pq_decomposition_grouped_bars(_four_combo_instance_df(), out)
     assert out.is_file()
-

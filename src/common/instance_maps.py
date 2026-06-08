@@ -3,35 +3,8 @@ from __future__ import annotations
 from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
-from pycocotools import mask as mask_utils
 
-
-def segmentation_to_binary_mask(
-    segmentation: list | dict, height: int, width: int
-) -> np.ndarray:
-    if isinstance(segmentation, dict):
-        return mask_utils.decode(segmentation).astype(bool)
-    rles = mask_utils.frPyObjects(segmentation, height, width)
-    if isinstance(rles, list):
-        rle = mask_utils.merge(rles) if len(rles) > 1 else rles[0]
-    else:
-        rle = rles
-    return mask_utils.decode(rle).astype(bool)
-
-
-def gt_annotations_to_instance_map(
-    gt_annotations: list[dict[str, Any]], height: int, width: int
-) -> np.ndarray:
-    out = np.zeros((height, width), dtype=np.int32)
-    sorted_anns = sorted(gt_annotations, key=lambda a: int(a["id"]))
-    for ann in sorted_anns:
-        lid = int(ann["id"])
-        seg = ann["segmentation"]
-        if seg is None or seg == [] or seg == {}:
-            continue
-        m = segmentation_to_binary_mask(seg, height, width)
-        out[m] = lid
-    return out
+MASK_BINARIZE_THRESHOLD = 0.5
 
 
 def binary_masks_to_instance_map_by_score(
@@ -47,7 +20,11 @@ def binary_masks_to_instance_map_by_score(
     out = np.zeros((h, w), dtype=np.int32)
     for idx in order:
         raw = masks_hw[idx]
-        m = raw > 0.5 if raw.dtype in (np.float32, np.float64) else raw.astype(bool)
+        m = (
+            raw > MASK_BINARIZE_THRESHOLD
+            if raw.dtype in (np.float32, np.float64)
+            else raw.astype(bool)
+        )
         out[m] = int(idx) + 1
     return out
 

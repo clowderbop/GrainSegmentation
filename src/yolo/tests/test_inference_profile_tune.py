@@ -18,16 +18,15 @@ from common.test_inference import (
 )
 from common.variants import repo_root
 
-from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
+from common.instance_eval_report import extract_metric_from_report
+from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS, merged_view_pq_column_name
 from yolo.inference_profile_tune import (
     PROFILE_SELECTION_OBJECTIVE,
     append_grid_result_row,
     count_detector_jobs,
     detector_keys_per_variant,
     count_grid_candidates,
-    detector_job_at_index,
     variant_at_detector_array_index,
-    extract_mean_pq_from_report,
     grid_result_row_from_candidate_scoring,
     grid_results_fieldnames,
     iter_detector_jobs,
@@ -39,7 +38,6 @@ from yolo.inference_profile_tune import (
     promote_profile_to_recipe,
     select_best_candidate,
     tune_grid_path,
-    variant_metric_column,
     write_grid_winner_json,
 )
 from yolo.tests.profile_tune_fixtures import (
@@ -119,25 +117,6 @@ def test_variant_at_detector_array_index_selects_variant(tmp_path: Path) -> None
     assert variant_at_detector_array_index(variants, 2) == "PPL+AllPPX"
 
 
-def test_detector_job_at_index_matches_iter_detector_jobs_order(tmp_path: Path) -> None:
-    _write_grid(tmp_path / "grid.yaml")
-    spec = load_tune_grid(tmp_path / "grid.yaml")
-    variants = ("PPL", "PPL+AllPPX")
-    jobs = list(iter_detector_jobs(spec, variants))
-    assert detector_job_at_index(spec, variants, 1) == jobs[0]
-    assert detector_job_at_index(spec, variants, len(jobs)) == jobs[-1]
-
-
-def test_detector_job_at_index_rejects_out_of_range(tmp_path: Path) -> None:
-    _write_grid(tmp_path / "grid.yaml")
-    spec = load_tune_grid(tmp_path / "grid.yaml")
-    variants = ("PPL",)
-    with pytest.raises(ValueError, match="must be >= 1"):
-        detector_job_at_index(spec, variants, 0)
-    with pytest.raises(ValueError, match="out of range"):
-        detector_job_at_index(spec, variants, 999)
-
-
 def test_iter_grid_candidates_one_per_conf(tmp_path: Path) -> None:
     _write_grid(tmp_path / "grid.yaml", conf=[0.2, 0.3])
     spec = load_tune_grid(tmp_path / "grid.yaml")
@@ -161,12 +140,14 @@ def test_grid_results_fieldnames_use_merged_view_pq_only() -> None:
     assert "mF1_iou50_95__PPL" not in fieldnames
     for key in MERGED_VIEW_PQ_RESULT_KEYS:
         assert f"mean_{key}" in fieldnames
-        assert variant_metric_column(key, "PPL") in fieldnames
+        assert merged_view_pq_column_name(key, "PPL") in fieldnames
 
 
 def test_extract_mean_pq_from_single_sample_report() -> None:
     report = instance_metrics_report_for_pq(0.42)
-    assert extract_mean_pq_from_report(report) == pytest.approx(0.42)
+    assert extract_metric_from_report(report, PROFILE_SELECTION_OBJECTIVE) == pytest.approx(
+        0.42
+    )
 
 
 def test_extract_mean_pq_prefers_report_mean_when_present() -> None:
@@ -177,7 +158,9 @@ def test_extract_mean_pq_prefers_report_mean_when_present() -> None:
         ],
         "mean": constant_metric_bundle(0.5),
     }
-    assert extract_mean_pq_from_report(report) == pytest.approx(0.5)
+    assert extract_metric_from_report(report, PROFILE_SELECTION_OBJECTIVE) == pytest.approx(
+        0.5
+    )
 
 
 def test_extract_mean_pq_averages_samples_when_mean_absent() -> None:
@@ -187,7 +170,9 @@ def test_extract_mean_pq_averages_samples_when_mean_absent() -> None:
             {"sample_id": "b", **constant_metric_bundle(0.8)},
         ],
     }
-    assert extract_mean_pq_from_report(report) == pytest.approx(0.5)
+    assert extract_metric_from_report(report, PROFILE_SELECTION_OBJECTIVE) == pytest.approx(
+        0.5
+    )
 
 
 def test_select_best_candidate_maximizes_mean_train_pq() -> None:
@@ -400,6 +385,19 @@ def test_write_grid_winner_json_persists_per_variant_merged_view_pq_results(
             assert stored[key] == expected[key]
 
 
+def test_load_grid_winner_rejects_nested_profile_without_top_level_conf(
+    tmp_path: Path,
+) -> None:
+    """INTENT: winner.json must use flat conf; nested profile-only payloads are invalid."""
+    winner_path = tmp_path / "winner.json"
+    winner_path.write_text(
+        json.dumps({"profile": {"conf": 0.25}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="conf"):
+        load_grid_winner(winner_path)
+
+
 def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:
     profile = profile_tune_candidate_from_conf(0.25)
     winner_path = tmp_path / "grid" / "winner.json"
@@ -481,7 +479,9 @@ def test_extract_mean_pq_from_evaluate_instances_report_shape() -> None:
             }
         ],
     )
-    assert extract_mean_pq_from_report(report) == pytest.approx(0.42)
+    assert extract_metric_from_report(report, PROFILE_SELECTION_OBJECTIVE) == pytest.approx(
+        0.42
+    )
 
 
 def test_append_grid_result_row_writes_incrementally(tmp_path: Path) -> None:
@@ -501,7 +501,7 @@ def test_append_grid_result_row_writes_incrementally(tmp_path: Path) -> None:
         **row_a,
         "candidate_id": "b",
         "mean_pq": 0.8,
-        variant_metric_column("pq", "PPL"): 0.8,
+        merged_view_pq_column_name("pq", "PPL"): 0.8,
     }
     append_grid_result_row(csv_path, row_b, variant_names=("PPL",))
     assert len(load_grid_results_csv(csv_path)) == 2
@@ -623,8 +623,8 @@ def test_in_process_score_from_tiled_cache_matches_evaluate_instances(
         write_gt_instance_map_cache,
     )
     from yolo.profile_tune_candidate import score_variant_train_metrics_from_cache
+    from common.tests.profile_tune_fixtures import tiny_train_gt_map
     from yolo.tests.profile_tune_fixtures import (
-        tiny_train_gt_map,
         tiled_proposal_records_disjoint_via_collector,
     )
     from yolo.tests.test_profile_tune_scoring import _train_pq_via_evaluate_instances

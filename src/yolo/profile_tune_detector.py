@@ -8,7 +8,6 @@ from pathlib import Path
 
 from common.profile_tune_paths import profile_tune_cache_root
 from common.test_inference import load_test_inference_recipe, profile_tune_fixed_mask_threshold
-from common.variants import repo_root
 from yolo.inference_profile_tune import (
     TuneGridSpec,
     detector_keys_per_variant,
@@ -98,16 +97,13 @@ def write_detector_proposal_cache(
     variant: str,
     conf: float,
     mask_threshold: float,
-    output_dir: Path,
     grainseg_root: Path,
     run_root: Path,
     work_root: Path,
     device: str,
-    repo: Path,
     local_train_image: Path | None = None,
     train_image_staging_dir: Path | None = None,
 ) -> Path:
-    del output_dir, repo  # retained for CLI compatibility
     prepared, staging_note = prepare_detector_variant(
         variant=variant,
         grainseg_root=grainseg_root,
@@ -138,13 +134,11 @@ def run_detector_variant_bundle(
     run_root: Path,
     work_root: Path,
     device: str,
-    repo: Path,
     local_train_image: Path | None = None,
     train_image_staging_dir: Path | None = None,
     detector_keys: Iterable[float] | None = None,
 ) -> None:
     """Stage train image once, load YOLO once, write all conf-key caches for a variant."""
-    del repo
     scratch_cache = profile_tune_cache_root(output_dir)
     prepared, staging_note = prepare_detector_variant(
         variant=variant,
@@ -222,12 +216,10 @@ def main(argv: list[str] | None = None) -> None:
             variant=variant,
             conf=args.conf,
             mask_threshold=fixed_mask,
-            output_dir=args.output_dir,
             grainseg_root=grainseg_root,
             run_root=run_root,
             work_root=work_root,
             device=args.device,
-            repo=repo_root(),
             local_train_image=args.local_train_image,
             train_image_staging_dir=args.train_image_staging_dir,
         )
@@ -243,7 +235,6 @@ def main(argv: list[str] | None = None) -> None:
         run_root=run_root,
         work_root=work_root,
         device=args.device,
-        repo=repo_root(),
         local_train_image=args.local_train_image,
         train_image_staging_dir=args.train_image_staging_dir,
     )

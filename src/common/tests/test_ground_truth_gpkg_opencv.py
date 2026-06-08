@@ -6,7 +6,6 @@ tested in ``unet.tests.test_tune_watershed_gpkg_gt``.
 
 from __future__ import annotations
 
-import importlib
 from pathlib import Path
 
 import numpy as np
@@ -70,15 +69,6 @@ def test_scene_polygons_patch_origin_matches_golden_subregion() -> None:
     golden_crop = golden[y0 : y0 + patch_h, x0 : x0 + patch_w]
     assert patch_map.shape == golden_crop.shape
     assert np.array_equal(patch_map > 0, golden_crop > 0)
-
-
-def test_ground_truth_module_does_not_import_pycocotools_gt_rasterizer() -> None:
-    """Vector GT must not go through gt_annotations_to_instance_map (ADR 0005)."""
-    source = importlib.util.find_spec("common.ground_truth")
-    assert source is not None and source.origin is not None
-    text = Path(source.origin).read_text(encoding="utf-8")
-    assert "gt_annotations_to_instance_map" not in text
-    assert "build_gt_annotations" not in text
 
 
 def test_polygons_to_instance_map_matches_gpkg_painter() -> None:

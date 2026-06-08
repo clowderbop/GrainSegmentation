@@ -9,7 +9,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
+from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS, merged_view_pq_column_name
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     profile_tune_candidate_from_conf,
@@ -18,7 +18,6 @@ from yolo.inference_profile_tune import (
     load_profile_selection_row,
     profile_selection_row_path,
     tune_grid_fingerprint,
-    variant_metric_column,
 )
 from yolo.profile_tune_candidate import (
     build_profile_selection_row,
@@ -39,14 +38,14 @@ def test_build_profile_selection_row_includes_per_variant_pq_results() -> None:
         fingerprint={"candidate_id": candidate.candidate_id()},
     )
     assert row["mean_pq"] == pytest.approx(0.7)
-    assert row[variant_metric_column("pq", "PPL")] == pytest.approx(0.8)
-    assert row[variant_metric_column("dq", "PPL+AllPPX")] == pytest.approx(0.6)
+    assert row[merged_view_pq_column_name("pq", "PPL")] == pytest.approx(0.8)
+    assert row[merged_view_pq_column_name("dq", "PPL+AllPPX")] == pytest.approx(0.6)
     assert row["candidate_id"] == candidate.candidate_id()
     assert "aji_plus__PPL" not in row
     assert "f1_iou75__PPL" not in row
     for key in MERGED_VIEW_PQ_RESULT_KEYS:
         assert f"mean_{key}" in row
-        assert variant_metric_column(key, "PPL") in row
+        assert merged_view_pq_column_name(key, "PPL") in row
 
 
 def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> None:
@@ -86,7 +85,7 @@ def test_score_profile_selection_candidate_writes_row_json(tmp_path: Path) -> No
     assert row_path == profile_selection_row_path(output_dir / "grid", candidate.candidate_id())
     row = load_profile_selection_row(row_path)
     assert row["mean_pq"] == pytest.approx(0.7)
-    assert row[variant_metric_column("pq", "PPL")] == pytest.approx(0.9)
+    assert row[merged_view_pq_column_name("pq", "PPL")] == pytest.approx(0.9)
 
 
 def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
@@ -104,7 +103,7 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
                 "candidate_id": candidate.candidate_id(),
                 **candidate.to_dict(),
                 "mean_pq": 0.99,
-                variant_metric_column("pq", "PPL"): 0.99,
+                merged_view_pq_column_name("pq", "PPL"): 0.99,
                 "fingerprint": fingerprint,
             }
         ),
@@ -262,7 +261,7 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
                 "candidate_id": candidate.candidate_id(),
                 **candidate.to_dict(),
                 "mean_pq": 0.99,
-                variant_metric_column("pq", "PPL"): 0.99,
+                merged_view_pq_column_name("pq", "PPL"): 0.99,
                 "fingerprint": legacy_fingerprint,
             }
         ),

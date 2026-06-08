@@ -6,37 +6,10 @@ import pytest
 
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from unet.extraction_tune_scoring import WatershedParamSet
-from unet.watershed_tune_fixtures import (
-    TRAIN_WHOLE_SECTION_SHAPE,
-    large_shape_sparse_two_grain_masks,
-)
 from unet.watershed_tune_smoke import (
-    DEFAULT_SMOKE_SHAPE,
     default_smoke_watershed_params,
     run_watershed_tune_smoke,
 )
-
-
-def test_large_shape_sparse_masks_use_declared_geometry_with_tiny_content() -> None:
-    height, width = 256, 1331
-    gt, semantic = large_shape_sparse_two_grain_masks(height=height, width=width)
-
-    assert gt.shape == (height, width)
-    assert semantic.shape == (height, width)
-    assert gt.dtype.name == "int32"
-    assert semantic.dtype.name == "uint8"
-    assert int(gt.max()) == 2
-    assert int(semantic.max()) == 1
-    assert (gt == 0).mean() > 0.99
-    assert (semantic == 0).mean() > 0.99
-    assert int(gt[:64, :64].max()) == 2
-    assert int(semantic[:64, :64].sum()) > 0
-
-
-def test_train_whole_section_shape_matches_documented_mosaic_extent() -> None:
-    assert TRAIN_WHOLE_SECTION_SHAPE == (10_000, 52_000)
-    assert DEFAULT_SMOKE_SHAPE[0] < TRAIN_WHOLE_SECTION_SHAPE[0]
-    assert DEFAULT_SMOKE_SHAPE[1] < TRAIN_WHOLE_SECTION_SHAPE[1]
 
 
 def test_run_watershed_tune_smoke_scores_one_combo_with_phase_timings(

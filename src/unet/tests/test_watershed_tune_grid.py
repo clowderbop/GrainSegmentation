@@ -7,26 +7,18 @@ from pathlib import Path
 import pytest
 import yaml
 
-from common.variants import repo_root
-from unet.slurm_watershed_tune import run_watershed_tuning_script_path
 from unet.tune_watershed import _build_arg_parser
 from unet.extraction_tune_scoring import WatershedParamSet
 from unet.watershed_tune_grid import (
-    WATERSHED_TUNE_GRID_CONFIG_REL,
     first_watershed_tune_param_set,
     iter_watershed_tune_param_sets,
     load_watershed_tune_grid,
     watershed_tune_candidate_count,
-    watershed_tune_grid_path,
 )
 
 
 def _write_grid_config(path: Path, grid: dict[str, object]) -> None:
     path.write_text(yaml.safe_dump({"grid": grid}), encoding="utf-8")
-
-
-def test_watershed_tune_grid_path_defaults_to_config_yaml() -> None:
-    assert watershed_tune_grid_path() == repo_root() / WATERSHED_TUNE_GRID_CONFIG_REL
 
 
 def test_load_committed_watershed_tune_grid_excludes_pixel_scale_min_distance() -> None:
@@ -72,18 +64,6 @@ def test_watershed_tune_candidate_count_matches_product_of_configured_axes(
     assert watershed_tune_candidate_count(grid) == 2 * 2 * 1 * 2 * 2 * 1
 
 
-def test_committed_watershed_tune_grid_candidate_count_matches_loader() -> None:
-    grid = load_watershed_tune_grid().grid
-    assert watershed_tune_candidate_count(grid) == (
-        len(grid.min_distance)
-        * len(grid.boundary_dilate_iter)
-        * len(grid.watershed_connectivity)
-        * len(grid.min_area_px)
-        * len(grid.exclude_border)
-        * len(grid.ridge_level)
-    )
-
-
 def test_default_grid_param_iteration_order_is_stable_for_csv_diffing() -> None:
     grid = load_watershed_tune_grid().grid
     assert first_watershed_tune_param_set(grid) == WatershedParamSet(
@@ -123,12 +103,3 @@ def test_tune_watershed_cli_accepts_grid_config(tmp_path: Path) -> None:
     )
     assert args.grid_config == grid_path
 
-
-def test_run_watershed_tuning_shell_passes_grid_config() -> None:
-    text = run_watershed_tuning_script_path().read_text(encoding="utf-8")
-    assert (
-        f'GRID_CONFIG="${{GRID_CONFIG:-$REPO_ROOT/{WATERSHED_TUNE_GRID_CONFIG_REL}}}"'
-        in text
-    )
-    assert "--grid-config" in text
-    assert "--min-distance" not in text

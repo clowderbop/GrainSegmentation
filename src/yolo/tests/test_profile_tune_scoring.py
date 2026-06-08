@@ -13,10 +13,10 @@ from common.test_inference import YoloInferenceProfileCandidate
 from common.variants import all_variant_names
 from common.instance_eval_report import extract_instance_metric_bundle_from_report
 from yolo.tiled_proposal_cache import TiledProposalRecord
+from common.tests.profile_tune_fixtures import tiny_train_gt_map
 from yolo.tests.profile_tune_fixtures import (
     candidate_for_variant,
     constant_merged_view_pq_result,
-    tiny_train_gt_map,
     tiled_proposal_records_disjoint_via_collector,
     tiled_proposal_records_from_overlapping_masks,
 )
@@ -129,9 +129,7 @@ def _write_ppl_train_proposal_cache(
     work_root = tmp_path / ".cache"
     recipe = load_test_inference_recipe()
     write_tiled_proposals(
-        proposal_cache_dir(
-            work_root / "PPL", conf=candidate.conf, mask_threshold=candidate.mask_threshold
-        ),
+        proposal_cache_dir(work_root / "PPL", conf=candidate.conf),
         records,
         proposal_cache_record(
             variant="PPL",

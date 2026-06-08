@@ -30,9 +30,7 @@ def _write_proposal_cache(
     conf: float,
     mask_threshold: float,
 ) -> None:
-    cache_dir = proposal_cache_dir(
-        scratch_cache / variant, conf=conf, mask_threshold=mask_threshold
-    )
+    cache_dir = proposal_cache_dir(scratch_cache / variant, conf=conf)
     write_tiled_proposals(
         cache_dir,
         [],
@@ -114,21 +112,13 @@ def test_stage_candidate_work_copies_only_candidate_proposal_subtrees(
         variants=("PPL", "PPLPPXblend"),
     )
 
-    wanted = proposal_cache_dir(
-        Path("PPL"), conf=candidate.conf, mask_threshold=candidate.mask_threshold
-    )
+    wanted = proposal_cache_dir(Path("PPL"), conf=candidate.conf)
     assert (work_root / wanted / "proposals.pkl").is_file()
     assert not (
         work_root
-        / proposal_cache_dir(
-            Path("PPL"), conf=other.conf, mask_threshold=other.mask_threshold
-        )
+        / proposal_cache_dir(Path("PPL"), conf=other.conf)
     ).exists()
-    blend_wanted = proposal_cache_dir(
-        Path("PPLPPXblend"),
-        conf=candidate.conf,
-        mask_threshold=candidate.mask_threshold,
-    )
+    blend_wanted = proposal_cache_dir(Path("PPLPPXblend"), conf=candidate.conf)
     assert (work_root / blend_wanted / "proposals.pkl").is_file()
 
 

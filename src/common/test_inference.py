@@ -136,7 +136,7 @@ def _yaml_scalar(value: float | str) -> str:
 def profile_tune_fixed_mask_threshold(
     recipe: TestInferenceRecipe | None = None,
 ) -> float:
-    """Compatibility mask threshold for profile selection (not a grid axis)."""
+    """Fixed mask threshold from the test inference recipe (not a grid axis)."""
     resolved = recipe or load_test_inference_recipe()
     return resolved.yolo.profile.mask_threshold
 
@@ -150,17 +150,6 @@ def profile_tune_candidate_from_conf(
     return YoloInferenceProfileCandidate(
         conf=conf,
         mask_threshold=resolved.yolo.profile.mask_threshold,
-    )
-
-
-def rewrite_yolo_conf_in_recipe_text(
-    text: str, *, conf: float, mask_threshold: float
-) -> str:
-    """Update train-selected conf and fixed mask threshold without touching other yolo keys."""
-    return rewrite_yolo_profile_in_recipe_text(
-        text,
-        YoloInferenceProfileCandidate(conf=conf, mask_threshold=mask_threshold),
-        keys=("conf", "mask_threshold"),
     )
 
 

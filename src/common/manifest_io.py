@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
 from common.variants import VariantSpec, get_variant
 
@@ -126,12 +126,6 @@ def require_eval_local_path(path: Path | str, *allowed_roots: Path) -> Path:
     raise ValueError(
         f"Ground-truth path must be under staged work directory ({roots}): {resolved}"
     )
-
-
-def load_manifest_json(path: Path) -> list[dict[str, Any]]:
-    """Load raw sample dicts from ``{"samples": [...]}`` (legacy helper)."""
-    manifest = load_dataset_manifest(path)
-    return [sample_row_to_dict(row) for row in manifest.samples]
 
 
 def load_dataset_manifest(path: Path) -> DatasetManifest:
@@ -300,26 +294,6 @@ def collect_manifest_tune_samples(
     if not samples:
         raise ValueError("Manifest contains no samples")
     return samples
-
-
-def iter_manifest_asset_paths(manifest: DatasetManifest) -> Iterable[tuple[str, str]]:
-    """Yield ``(relative_path, field_name)`` for each file referenced in samples."""
-    for row in manifest.samples:
-        if row.image is not None:
-            yield row.image, "image"
-        if row.images is not None:
-            for index, path in enumerate(row.images):
-                yield path, f"images[{index}]"
-        if row.mask is not None:
-            yield row.mask, "mask"
-        if row.gt_gpkg is not None:
-            yield row.gt_gpkg, "gt_gpkg"
-        if row.gt_txt is not None:
-            yield row.gt_txt, "gt_txt"
-        if row.instance_prediction_set is not None:
-            yield row.instance_prediction_set, "instance_prediction_set"
-        if row.semantic is not None:
-            yield row.semantic, "semantic"
 
 
 def build_eval_manifest(

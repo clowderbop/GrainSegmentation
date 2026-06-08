@@ -1,4 +1,4 @@
-"""YOLO profile-tune test helpers (re-export neutral fixtures from common)."""
+"""YOLO profile-tune test helpers."""
 
 from __future__ import annotations
 
@@ -42,15 +42,6 @@ def constant_merged_view_pq_result(value: float) -> dict[str, float | int]:
 
 def instance_metrics_report_for_pq(pq: float) -> dict[str, object]:
     return {"samples": [{"sample_id": "train", **constant_metric_bundle(pq)}]}
-from common.tests.profile_tune_fixtures import (  # noqa: F401
-    FakeBbox,
-    FakeSahiPrediction,
-    V1SahiPickleStub,
-    disjoint_sahi_proposals,
-    disjoint_tile_local_proposals,
-    overlapping_sahi_proposals,
-    tiny_train_gt_map,
-)
 
 
 def candidate_for_variant(variant: str) -> YoloInferenceProfileCandidate:
@@ -104,6 +95,7 @@ def collect_tiled_records_with_mocked_slices(
 
 def tiled_proposal_records_from_overlapping_masks(height: int, width: int) -> list:
     """v3 tiled proposal records with overlapping masks on one tile."""
+    from common.tests.profile_tune_fixtures import overlapping_sahi_proposals
     from yolo.tiled_proposal_cache import tiled_proposal_record_from_binary_mask
 
     return [
@@ -123,6 +115,8 @@ def tiled_proposal_records_disjoint_via_collector(
     height: int, width: int, *, mask_threshold: float
 ) -> list:
     """Build v3 records via collector encode on tile-local fixture masks."""
+    from common.tests.profile_tune_fixtures import disjoint_tile_local_proposals
+
     preds = disjoint_tile_local_proposals(height, width)
     return collect_tiled_records_with_mocked_slices(
         height,
@@ -140,6 +134,8 @@ def write_on_disk_v1_proposal_cache(
     """Write a schema v1 cache layout (dense SAHI pickle + v1 meta sidecar)."""
     import json
     import pickle
+
+    from common.tests.profile_tune_fixtures import V1SahiPickleStub
 
     height = int(meta["height"])
     width = int(meta["width"])

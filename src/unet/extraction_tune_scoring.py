@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 from common.instance_overlap import GtOverlapPrep
+from common.semantic_instance import SEMANTIC_BOUNDARY_CLASS, SEMANTIC_INTERIOR_CLASS
 from common.merged_view_pq import (
     MERGED_VIEW_PQ_RESULT_KEYS,
     MergedViewPqResult,
@@ -85,8 +86,8 @@ def format_watershed_param_set(params: WatershedParamSet) -> str:
 def _watershed_kwargs(
     params: WatershedParamSet,
     *,
-    interior_class: int = 1,
-    boundary_class: int = 2,
+    interior_class: int = SEMANTIC_INTERIOR_CLASS,
+    boundary_class: int = SEMANTIC_BOUNDARY_CLASS,
 ) -> dict[str, Any]:
     kw: dict[str, Any] = dict(
         interior_class=interior_class,

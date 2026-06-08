@@ -189,7 +189,7 @@ def mean_train_pq_for_watershed_params_cached(
 
     return mean_train_pq_for_watershed_params(
         true_instances_per_sample,
-        [cache.semantic for cache in sample_caches],
+        None,
         params,
         get_pred_instances=get_pred_instances,
         gt_overlap_preps=gt_overlap_preps,

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import csv
 import json
+import sys
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -10,8 +12,14 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 import tifffile
+import yaml
 
+from unet import tune_watershed
 from unet.tune_watershed import _collect_samples
+from unet.watershed_tune_extraction_cache import (
+    build_watershed_tune_sample_caches,
+    mean_train_pq_for_watershed_params_cached,
+)
 
 _REPO_SRC = Path(__file__).resolve().parents[2]
 _MICRO_GPKG = (
@@ -172,3 +180,79 @@ def test_collect_samples_gpkg_gt_matches_golden(tmp_path: Path) -> None:
     assert sample_ids == ["train"]
     assert len(true_instances) == 1
     assert np.array_equal(true_instances[0], _golden_map())
+
+
+def test_tune_watershed_main_uses_extraction_cache_for_cached_preds_workflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Preds loaded from scratch preds_dir (--use-cached-preds path) still use tune cache."""
+    grid_path = tmp_path / "mini_grid.yaml"
+    grid_path.write_text(
+        yaml.safe_dump(
+            {
+                "grid": {
+                    "min_distance": [5, 9],
+                    "boundary_dilate_iter": [0],
+                    "watershed_connectivity": [1],
+                    "min_area_px": [0, 64],
+                    "exclude_border": [0],
+                    "ridge_level": [None],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    args = _make_tune_collect_args(tmp_path, paint_semantic_region=True)
+    out_csv = tmp_path / "grid.csv"
+    out_json = tmp_path / "best.json"
+
+    cache_builds = 0
+    real_build = build_watershed_tune_sample_caches
+
+    def spy_build(pred_semantic: list[np.ndarray]) -> list[object]:
+        nonlocal cache_builds
+        cache_builds += 1
+        return real_build(pred_semantic)
+
+    cached_scoring_calls = 0
+    real_cached = mean_train_pq_for_watershed_params_cached
+
+    def spy_cached(*a: object, **kw: object) -> tuple[dict[str, float | int], list[dict]]:
+        nonlocal cached_scoring_calls
+        cached_scoring_calls += 1
+        return real_cached(*a, **kw)
+
+    monkeypatch.setattr(
+        tune_watershed, "build_watershed_tune_sample_caches", spy_build
+    )
+    monkeypatch.setattr(
+        tune_watershed,
+        "mean_train_pq_for_watershed_params_cached",
+        spy_cached,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "tune_watershed",
+            "--preds-dir",
+            str(args.preds_dir),
+            "--manifest",
+            str(args.manifest),
+            "--gt-gpkg",
+            str(args.gt_gpkg),
+            "--output-csv",
+            str(out_csv),
+            "--output-json",
+            str(out_json),
+            "--grid-config",
+            str(grid_path),
+        ],
+    )
+    tune_watershed.main()
+
+    assert cache_builds == 1
+    assert cached_scoring_calls == 4
+    assert out_csv.is_file()
+    with out_csv.open(encoding="utf-8") as handle:
+        assert len(list(csv.DictReader(handle))) == 4

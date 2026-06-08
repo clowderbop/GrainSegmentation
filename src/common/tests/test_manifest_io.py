@@ -198,6 +198,22 @@ def test_stage_manifest_metadata_writes_manifest_without_copying_rasters(
     assert tune_samples[0]["num_channels"] == 7
 
 
+def test_stage_manifest_metadata_preserves_gt_paths_without_copying(
+    tmp_path: Path,
+) -> None:
+    """Metadata-only staging is not GT-self-contained; GT is supplied via --gt-gpkg (ADR 0002)."""
+    grainseg = _synthetic_grainseg(tmp_path)
+    manifest = build_unet_whole_manifest(
+        split="train", variant="PPL+AllPPX", grainseg_root=grainseg
+    )
+    canonical_gt = manifest.samples[0].gt_gpkg
+    assert canonical_gt is not None
+    work = tmp_path / "work"
+    metadata = stage_manifest_metadata(manifest, work)
+    assert metadata.samples[0].gt_gpkg == canonical_gt
+    assert not (work / canonical_gt).is_file()
+
+
 def test_stage_manifest_metadata_matches_full_staging_path_metadata(tmp_path: Path) -> None:
     grainseg = _synthetic_grainseg(tmp_path)
     manifest = build_unet_whole_manifest(

@@ -79,6 +79,23 @@ def test_cached_instance_maps_match_brute_force_for_default_grid() -> None:
         np.testing.assert_array_equal(actual, expected)
 
 
+def test_mean_train_pq_cached_does_not_require_pred_semantic_arrays() -> None:
+    gt = _two_grain_gt()
+    semantic = _multi_grain_semantic_with_boundaries()
+    params = WatershedParamSet(5, 0, 1, 0, False, None)
+    caches = build_watershed_tune_sample_caches([semantic])
+    gt_preps = build_gt_overlap_preps([gt])
+
+    ref_mean, ref_per = mean_train_pq_for_watershed_params([gt], [semantic], params)
+    cached_mean, cached_per = mean_train_pq_for_watershed_params_cached(
+        [gt], caches, params, gt_overlap_preps=gt_preps
+    )
+
+    for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        assert cached_mean[key] == pytest.approx(ref_mean[key])
+        assert cached_per[0][key] == pytest.approx(ref_per[0][key])
+
+
 def test_cached_scoring_matches_brute_force_for_default_grid() -> None:
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()

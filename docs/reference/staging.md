@@ -1,6 +1,8 @@
 # Staging on cluster nodes
 
-**Staging** copies every file a dataset manifest references into a local work directory and rewrites the manifest so paths are local (`path_base: "work_root"`). Downstream jobs must not depend on scratch or ephemeral paths once staged. See ADR [0002-self-contained-manifest-staging](../adr/0002-self-contained-manifest-staging.md) and **Staging** in [`CONTEXT.md`](../../CONTEXT.md).
+**Full staging** copies every file a dataset manifest references into a local work directory and rewrites the manifest so paths are local (`path_base: "work_root"`). Downstream jobs must not depend on scratch or ephemeral paths once staged. See ADR [0002-self-contained-manifest-staging](../adr/0002-self-contained-manifest-staging.md) and **Staging** in [`CONTEXT.md`](../../CONTEXT.md).
+
+**Metadata-only staging** (`stage_manifest run --metadata-only`) rewrites manifest paths without copying rasters or GT. Use only for preds-only U-Net watershed tune jobs that read semantic preds from scratch and pass `--gt-gpkg` explicitly (see ADR 0002).
 
 ## Basic pattern
 

@@ -125,7 +125,7 @@ def instance_map_for_watershed_params(
 
 def merged_view_pq_for_sample(
     true_instances: np.ndarray,
-    pred_semantic: np.ndarray,
+    pred_semantic: np.ndarray | None,
     params: WatershedParamSet,
     *,
     pred_instances: np.ndarray | None = None,
@@ -134,6 +134,10 @@ def merged_view_pq_for_sample(
     log_prefix: str = "",
 ) -> MergedViewPqResult:
     if pred_instances is None:
+        if pred_semantic is None:
+            raise ValueError(
+                "pred_semantic is required when pred_instances is not provided"
+            )
         if timings is not None:
             log_scoring_phase_start("watershed", prefix=log_prefix)
         t0 = time.perf_counter()
@@ -172,7 +176,7 @@ def watershed_tune_sample_prefix(
 
 def mean_train_pq_for_watershed_params(
     true_instances_per_sample: Sequence[np.ndarray],
-    pred_semantic_per_sample: Sequence[np.ndarray],
+    pred_semantic_per_sample: Sequence[np.ndarray] | None,
     params: WatershedParamSet,
     *,
     get_pred_instances: Callable[[int, WatershedParamSet], np.ndarray] | None = None,
@@ -180,7 +184,14 @@ def mean_train_pq_for_watershed_params(
     sample_ids: Sequence[str] | None = None,
     log: bool = False,
 ) -> tuple[dict[str, float | int], list[dict[str, float | int]]]:
-    if len(true_instances_per_sample) != len(pred_semantic_per_sample):
+    if get_pred_instances is None and pred_semantic_per_sample is None:
+        raise ValueError(
+            "pred_semantic_per_sample is required when get_pred_instances is not set"
+        )
+    if (
+        pred_semantic_per_sample is not None
+        and len(true_instances_per_sample) != len(pred_semantic_per_sample)
+    ):
         raise ValueError("true and pred lists must have the same length")
     if sample_ids is not None and len(sample_ids) != len(true_instances_per_sample):
         raise ValueError("sample_ids must match the number of samples")
@@ -190,9 +201,13 @@ def mean_train_pq_for_watershed_params(
         raise ValueError("gt_overlap_preps must match the number of samples")
     per_sample: list[dict[str, float | int]] = []
     n_samples = len(true_instances_per_sample)
-    for idx, (true_instances, pred_semantic) in enumerate(
-        zip(true_instances_per_sample, pred_semantic_per_sample, strict=True)
-    ):
+    for idx in range(n_samples):
+        true_instances = true_instances_per_sample[idx]
+        pred_semantic = (
+            pred_semantic_per_sample[idx]
+            if pred_semantic_per_sample is not None
+            else None
+        )
         timings = WatershedScoringTimings() if log else None
         sample_prefix = watershed_tune_sample_prefix(
             idx, n_samples, sample_ids, log=log

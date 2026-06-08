@@ -13,7 +13,7 @@ This repo is EARLY WIP. Long term maintainability is a core priority: proposing 
 - Apply breaking changes freely (there's no out-of-repo consumers); migrate all caller in the same change
 - Forbidden: Compat branches/fallbacks/shims; pass-through wrappers; unused parameters like `del x`; dead code; duplicate code; bare domain literals
 - Test through the public interface; assert behavior, not internals
-- Don't write tests for documentation
+- Don't test documentation content
 - Skip trivial tests. Before writing test, write their intent in a docstring starting with "INTENT:"
 - Tests should not read source, shell, or markdown files to assert substrings or structure
 

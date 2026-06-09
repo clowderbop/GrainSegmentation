@@ -7,6 +7,7 @@ import json
 import sys
 from argparse import Namespace
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -23,6 +24,7 @@ from unet.tests.tune_watershed_cli_fixtures import (
     write_mini_tune_grid,
 )
 from unet.watershed_tune_extraction_cache import (
+    WatershedTuneSampleCache,
     build_watershed_tune_sample_caches,
     mean_train_pq_for_watershed_params_cached,
 )
@@ -140,7 +142,7 @@ def test_tune_watershed_main_uses_extraction_cache_for_cached_preds_workflow(
     cache_builds = 0
     real_build = build_watershed_tune_sample_caches
 
-    def spy_build(pred_semantic: list[np.ndarray]) -> list[object]:
+    def spy_build(pred_semantic: list[np.ndarray]) -> list[WatershedTuneSampleCache]:
         nonlocal cache_builds
         cache_builds += 1
         return real_build(pred_semantic)
@@ -149,8 +151,8 @@ def test_tune_watershed_main_uses_extraction_cache_for_cached_preds_workflow(
     real_cached = mean_train_pq_for_watershed_params_cached
 
     def spy_cached(
-        *a: object, **kw: object
-    ) -> tuple[dict[str, float | int], list[dict]]:
+        *a: Any, **kw: Any
+    ) -> tuple[dict[str, float | int], list[dict[str, float | int]]]:
         nonlocal cached_scoring_calls
         cached_scoring_calls += 1
         return real_cached(*a, **kw)

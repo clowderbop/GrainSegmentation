@@ -61,6 +61,7 @@ def _resolve_training_samples(
     row = doc.samples[0]
     if row.images is None:
         raise_cli_argument_error("Training manifest requires images rows")
+    assert row.images is not None
     num_inputs = len(row.images)
     samples = collect_manifest_unet_samples(
         doc,

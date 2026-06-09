@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import pandas as pd
 
@@ -371,14 +372,13 @@ def _patch_and_whole_eval_tree(root: Path) -> None:
                 ],
             },
         )
+        patch_extras = {**cast(dict[str, Any], PATCH_WITH_MEAN["extras"])}
+        patch_extras["mean_pq_weighted"] = 0.40 if variant == "PPL" else 0.45
         patch_payload = {
             **PATCH_WITH_MEAN,
             "schema_version": 2,
             "variant": variant,
-            "extras": {
-                **PATCH_WITH_MEAN["extras"],
-                "mean_pq_weighted": 0.40 if variant == "PPL" else 0.45,
-            },
+            "extras": patch_extras,
         }
         _write_json(
             root / f"eval/yolo_patches/{variant}/100/instance_metrics.json",

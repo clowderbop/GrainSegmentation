@@ -39,7 +39,10 @@ def resolve_train_whole_image_path(
     row = manifest.samples[0]
     if row.image is None:
         raise ValueError(f"YOLO whole train manifest row has no image for {variant}")
-    return resolve_row_path(manifest, row.image), row.sample_id
+    image_path = resolve_row_path(manifest, row.image)
+    if image_path is None:
+        raise ValueError(f"Could not resolve train image path for {variant}")
+    return image_path, row.sample_id
 
 
 def stage_detector_train_image(

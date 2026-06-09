@@ -128,7 +128,9 @@ def save_visualization(
     ax.imshow(preview, cmap=cmap)
     ax.axis("off")
 
-    for class_id, points in polygons:
+    for row in polygons:
+        class_id = row.class_id
+        points = row.points
         color = tuple(channel / 255 for channel in colors(class_id, False))
         polygon = patches.Polygon(
             points, closed=True, fill=False, edgecolor=color, linewidth=2

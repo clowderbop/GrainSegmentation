@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -13,7 +13,11 @@ from common.instance_metric_bundle import (
     INSTANCE_METRIC_BUNDLE_INT_KEYS,
     INSTANCE_METRIC_BUNDLE_KEYS,
 )
-from common.merged_view_pq import MERGED_VIEW_PQ_COUNT_KEYS, MERGED_VIEW_PQ_RESULT_KEYS
+from common.merged_view_pq import (
+    MERGED_VIEW_PQ_COUNT_KEYS,
+    MERGED_VIEW_PQ_RESULT_KEYS,
+    MergedViewPqResult,
+)
 from common.test_inference import (
     YoloInferenceProfileCandidate,
     profile_tune_fixed_mask_threshold,
@@ -30,14 +34,14 @@ def constant_metric_bundle(value: float) -> dict[str, float | int]:
     return out
 
 
-def constant_merged_view_pq_result(value: float) -> dict[str, float | int]:
+def constant_merged_view_pq_result(value: float) -> MergedViewPqResult:
     result: dict[str, float | int] = {}
     for key in MERGED_VIEW_PQ_RESULT_KEYS:
         if key in MERGED_VIEW_PQ_COUNT_KEYS:
             result[key] = int(round(value))
         else:
             result[key] = float(value)
-    return result
+    return cast(MergedViewPqResult, result)
 
 
 def instance_metrics_report_for_pq(pq: float) -> dict[str, object]:
@@ -141,8 +145,8 @@ def write_on_disk_v1_proposal_cache(
 
     from common.tests.profile_tune_fixtures import V1SahiPickleStub
 
-    height = int(meta["height"])
-    width = int(meta["width"])
+    height = int(cast(Any, meta["height"]))
+    width = int(cast(Any, meta["width"]))
     dense = np.zeros((height, width), dtype=bool)
     dense[0:4, 0:4] = True
     cache_dir = Path(cache_dir)

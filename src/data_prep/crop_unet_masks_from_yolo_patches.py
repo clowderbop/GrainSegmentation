@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import shutil
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import tifffile
 
 from common.image_io import load_tiff_channel_first
 from common.manifest_io import (
+    ManifestSplit,
     load_dataset_manifest,
     manifest_path_base_dir,
     resolve_manifest_path,
@@ -232,7 +234,7 @@ def crop_from_yolo_manifest(
     if write_manifest:
         write_unet_patch_manifest(
             variant=variant,
-            split=dataset_split,  # type: ignore[arg-type]
+            split=cast(ManifestSplit, dataset_split),
             grainseg_root=grainseg_root,
             yolo_manifest=doc,
         )

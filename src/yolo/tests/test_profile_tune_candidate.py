@@ -9,7 +9,11 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS, merged_view_pq_column_name
+from common.merged_view_pq import (
+    MERGED_VIEW_PQ_RESULT_KEYS,
+    MergedViewPqResult,
+    merged_view_pq_column_name,
+)
 from common.test_inference import (
     profile_tune_candidate_from_conf,
 )
@@ -117,7 +121,7 @@ def test_score_profile_selection_candidate_skips_when_fingerprint_matches(
     )
     calls: list[str] = []
 
-    def _fake_score(**kwargs) -> dict[str, float | int]:
+    def _fake_score(**kwargs) -> MergedViewPqResult:
         calls.append(kwargs["variant"])
         return constant_merged_view_pq_result(0.1)
 
@@ -238,7 +242,7 @@ def test_stale_pre_adr0006_row_fingerprint_triggers_rescore(tmp_path: Path) -> N
     )
     score_calls: list[str] = []
 
-    def _fake_score(**kwargs: object) -> dict[str, float | int]:
+    def _fake_score(**kwargs: object) -> MergedViewPqResult:
         score_calls.append(str(kwargs["variant"]))
         return constant_merged_view_pq_result(0.42)
 

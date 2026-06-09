@@ -46,7 +46,7 @@ def test_shard_mode_scores_only_shard_subset_on_fixtures(
     out_csv = tmp_path / "shard_grid.csv"
 
     grid = load_watershed_tune_grid(grid_path).grid
-    shard = next(iter_watershed_tune_shards(grid))
+    shard = next(iter(iter_watershed_tune_shards(grid)))
     expected_params = list(iter_watershed_tune_param_sets_for_shard(grid, shard))
 
     monkeypatch.setattr(
@@ -79,7 +79,7 @@ def test_shard_mode_writes_shard_csv_and_skips_best_json(
     out_json = tmp_path / "watershed_best_12345.json"
 
     grid = load_watershed_tune_grid(grid_path).grid
-    shard = next(iter_watershed_tune_shards(grid))
+    shard = next(iter(iter_watershed_tune_shards(grid)))
 
     monkeypatch.setattr(
         sys,
@@ -110,7 +110,7 @@ def test_shard_mode_logs_per_combo_timing_lines(
     out_csv = tmp_path / "shard_grid.csv"
 
     grid = load_watershed_tune_grid(grid_path).grid
-    shard = next(iter_watershed_tune_shards(grid))
+    shard = next(iter(iter_watershed_tune_shards(grid)))
     shard_size = watershed_tune_shard_combo_count(grid, shard)
 
     monkeypatch.setattr(
@@ -146,7 +146,7 @@ def test_shard_mode_csv_rows_retain_merged_view_pq_fields(
     out_csv = tmp_path / "shard_grid.csv"
 
     grid = load_watershed_tune_grid(grid_path).grid
-    shard = next(iter_watershed_tune_shards(grid))
+    shard = next(iter(iter_watershed_tune_shards(grid)))
 
     monkeypatch.setattr(
         sys,
@@ -197,7 +197,7 @@ def test_shard_mode_surfaces_catastrophic_over_segmentation_in_csv(
     out_csv = tmp_path / "shard_grid.csv"
 
     grid = load_watershed_tune_grid(grid_path).grid
-    shard = next(iter_watershed_tune_shards(grid))
+    shard = next(iter(iter_watershed_tune_shards(grid)))
 
     monkeypatch.setattr(
         sys,

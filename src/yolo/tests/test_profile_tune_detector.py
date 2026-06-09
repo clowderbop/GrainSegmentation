@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pickle
 from pathlib import Path
+from typing import TypedDict
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -24,8 +25,19 @@ from yolo.tiled_proposal_cache import (
 )
 
 
+class DetectorTuneLayout(TypedDict):
+    output_dir: Path
+    grainseg_root: Path
+    run_root: Path
+    work_root: Path
+    repo: Path
+    variant: str
+    weights: Path
+    train_mosaic: Path
+
+
 @pytest.fixture
-def detector_tune_layout(tmp_path: Path) -> dict[str, Path]:
+def detector_tune_layout(tmp_path: Path) -> DetectorTuneLayout:
     grainseg = tmp_path / "GrainSeg"
     run_root = tmp_path / "runs" / "yolo26-seg"
     variant = "PPL"
@@ -52,7 +64,7 @@ def detector_tune_layout(tmp_path: Path) -> dict[str, Path]:
 
 
 def test_write_detector_proposal_cache_does_not_create_staged_manifest_tree(
-    detector_tune_layout: dict[str, Path],
+    detector_tune_layout: DetectorTuneLayout,
 ) -> None:
     """INTENT: write_detector_proposal_cache stages train TIFF locally without a persistent manifest tree."""
     layout = detector_tune_layout
@@ -89,7 +101,7 @@ def test_write_detector_proposal_cache_does_not_create_staged_manifest_tree(
 
 
 def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
-    detector_tune_layout: dict[str, Path],
+    detector_tune_layout: DetectorTuneLayout,
 ) -> None:
     """INTENT: write_detector_proposal_cache reuses a valid on-disk proposal cache without running detection."""
     layout = detector_tune_layout
@@ -101,7 +113,7 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
     mask = np.zeros((height, width), dtype=bool)
     mask[2:6, 2:6] = True
     record = proposal_cache_record(
-        variant=layout["variant"],
+        variant=str(layout["variant"]),
         weights_sha256=weights_sha256(layout["weights"]),
         recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
         conf=conf,
@@ -120,16 +132,6 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
         detect_calls.append(1)
         return [{"computed": True}]
 
-    common_kwargs = dict(
-        variant=layout["variant"],
-        conf=conf,
-        mask_threshold=fixed_mask,
-        grainseg_root=layout["grainseg_root"],
-        run_root=layout["run_root"],
-        work_root=layout["work_root"],
-        device="0",
-    )
-
     with (
         patch(
             "yolo.profile_tune_detector_cache.collect_tiled_detector_proposals",
@@ -141,7 +143,13 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
         ),
     ):
         write_detector_proposal_cache(
-            **common_kwargs,
+            variant=layout["variant"],
+            conf=conf,
+            mask_threshold=fixed_mask,
+            grainseg_root=layout["grainseg_root"],
+            run_root=layout["run_root"],
+            work_root=layout["work_root"],
+            device="0",
             local_train_image=layout["train_mosaic"],
         )
 
@@ -149,7 +157,7 @@ def test_write_detector_proposal_cache_skips_sliced_detection_when_cache_valid(
 
 
 def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
-    detector_tune_layout: dict[str, Path],
+    detector_tune_layout: DetectorTuneLayout,
 ) -> None:
     """INTENT: write_detector_proposal_cache persists crop-local RLE proposals, not full-section dense masks."""
     layout = detector_tune_layout
@@ -163,15 +171,6 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
         assert full_shape is None
         yield 0, 0, width, height, tile_preds
 
-    common_kwargs = dict(
-        variant=layout["variant"],
-        conf=conf,
-        mask_threshold=fixed_mask,
-        grainseg_root=layout["grainseg_root"],
-        run_root=layout["run_root"],
-        work_root=layout["work_root"],
-        device="0",
-    )
     with (
         patch(
             "yolo.profile_tune_detector_cache.load_image_for_yolo",
@@ -187,12 +186,18 @@ def test_write_detector_proposal_cache_persists_crop_local_masks_on_disk(
         ),
     ):
         cache_dir = write_detector_proposal_cache(
-            **common_kwargs,
+            variant=layout["variant"],
+            conf=conf,
+            mask_threshold=fixed_mask,
+            grainseg_root=layout["grainseg_root"],
+            run_root=layout["run_root"],
+            work_root=layout["work_root"],
+            device="0",
             local_train_image=layout["train_mosaic"],
         )
 
     expected = detector_cache_expected_record(
-        variant=layout["variant"],
+        variant=str(layout["variant"]),
         weights_path=layout["weights"],
         conf=conf,
         mask_threshold=fixed_mask,
@@ -257,7 +262,7 @@ def test_profile_tune_detector_main_runs_variant_bundle_for_array_index(
 
 
 def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
-    detector_tune_layout: dict[str, Path],
+    detector_tune_layout: DetectorTuneLayout,
 ) -> None:
     """INTENT: run_detector_variant_bundle skips conf values with valid caches and computes only missing ones."""
     from yolo.inference_profile_tune import load_tune_grid
@@ -277,7 +282,7 @@ def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
     recipe = load_test_inference_recipe()
     height, width = 8, 8
     record = proposal_cache_record(
-        variant=layout["variant"],
+        variant=str(layout["variant"]),
         weights_sha256=weights_sha256(layout["weights"]),
         recipe_window_fingerprint=recipe_whole_window_fingerprint(recipe),
         conf=conf,
@@ -294,16 +299,25 @@ def test_run_detector_variant_bundle_skips_valid_caches_and_fail_fast(
         confidence_threshold: float = 0.0
         mask_threshold: float = 0.0
 
-    def fake_from_pretrained(**kwargs: object) -> _FakeDetectionModel:
+    def fake_from_pretrained(
+        *,
+        confidence_threshold: float,
+        mask_threshold: float,
+        **_kwargs: object,
+    ) -> _FakeDetectionModel:
         model = _FakeDetectionModel()
-        model.confidence_threshold = float(kwargs["confidence_threshold"])
-        model.mask_threshold = float(kwargs["mask_threshold"])
+        model.confidence_threshold = confidence_threshold
+        model.mask_threshold = mask_threshold
         return model
 
-    def fake_collect(_image, model: _FakeDetectionModel, **kwargs: object) -> list:
-        compute_calls.append(
-            (float(model.confidence_threshold), float(kwargs["mask_threshold"]))
-        )
+    def fake_collect(
+        _image,
+        model: _FakeDetectionModel,
+        *,
+        mask_threshold: float,
+        **_kwargs: object,
+    ) -> list:
+        compute_calls.append((model.confidence_threshold, mask_threshold))
         return []
 
     with (

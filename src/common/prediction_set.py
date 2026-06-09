@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable, Mapping
-from typing import Any, Literal, overload
+from typing import Any, Literal, cast, overload
 
 import numpy as np
 from pycocotools import mask as mask_utils
@@ -55,7 +55,7 @@ def binary_mask_to_segmentation(
     return {"size": [int(height), int(width)], "counts": counts}
 
 
-def segmentation_to_binary_mask(segmentation: dict[str, Any]) -> np.ndarray:
+def segmentation_to_binary_mask(segmentation: Mapping[str, Any]) -> np.ndarray:
     decoded = mask_utils.decode(segmentation)
     return decoded.astype(bool)
 
@@ -133,9 +133,10 @@ def validate_prediction_set(payload: dict[str, Any]) -> PredictionSet:
         raise ValueError('"detections" must be a list')
 
     detections: list[dict[str, Any]] = []
-    for index, raw in enumerate(raw_detections):
-        if not isinstance(raw, dict):
+    for index, raw_obj in enumerate(raw_detections):
+        if not isinstance(raw_obj, dict):
             raise ValueError(f"detections[{index}] must be an object")
+        raw = cast(dict[str, Any], raw_obj)
         seg = raw.get("segmentation")
         if not isinstance(seg, dict) or "size" not in seg or "counts" not in seg:
             raise ValueError(f"detections[{index}] requires COCO RLE segmentation")
@@ -175,7 +176,7 @@ def validate_prediction_set(payload: dict[str, Any]) -> PredictionSet:
         schema_version=schema_version,
         height=height,
         width=width,
-        producer=producer,  # type: ignore[arg-type]
+        producer=cast(Producer, producer),
         detections=tuple(detections),
     )
 

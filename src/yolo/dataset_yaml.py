@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 
@@ -21,8 +21,8 @@ def load_yaml_dataset_config(data_yaml: Path) -> tuple[Path, dict[str, Any]]:
 def label_map_from_yaml_names(config: dict[str, Any]) -> dict[int, str]:
     names = config.get("names", {})
     if isinstance(names, list):
-        return {index: name for index, name in enumerate(names)}
-    return {int(k): str(v) for k, v in names.items()}
+        return {index: str(name) for index, name in enumerate(names)}
+    return {int(k): str(v) for k, v in cast(dict[Any, Any], names).items()}
 
 
 def resolve_split_dir(dataset_root: Path, split_path: str | Path) -> Path:

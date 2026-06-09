@@ -3,12 +3,14 @@ import argparse
 import numpy as np
 import cv2
 import sys
-from typing import List, Dict, Any
+from typing import Any, Callable, Dict, List
 
 try:
-    from tqdm import tqdm
+    from tqdm import tqdm as _tqdm
 except Exception:
-    tqdm = None
+    tqdm: Callable[..., Any] | None = None
+else:
+    tqdm = _tqdm
 
 
 def decode_rle(rle_dict: Dict[str, Any]) -> np.ndarray:

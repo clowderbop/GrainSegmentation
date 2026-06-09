@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pandas as pd
 import pytest
 
@@ -27,10 +29,10 @@ from analysis.tests.test_load_metrics import PQ_SAMPLE_ROW
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
 
 
-def _metric_bundle(**overrides: float) -> dict[str, float]:
+def _metric_bundle(**overrides: float) -> dict[str, float | int]:
     base = {key: PQ_SAMPLE_ROW[key] for key in INSTANCE_METRIC_BUNDLE_KEYS}
     base.update(overrides)
-    return base
+    return cast(dict[str, float | int], base)
 
 
 def _whole_row(

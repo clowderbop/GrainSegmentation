@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import Any, cast
 
 import pandas as pd
 
@@ -195,10 +196,12 @@ def patch_instance_rows(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _finite_value(value: object) -> bool:
-    if value is None or pd.isna(value):
+    if value is None:
+        return False
+    if pd.isna(value):
         return False
     try:
-        return math.isfinite(float(value))
+        return math.isfinite(float(cast(Any, value)))
     except (TypeError, ValueError):
         return False
 
@@ -288,16 +291,18 @@ def patch_to_whole_gap_table(df: pd.DataFrame) -> pd.DataFrame:
             )
     if not rows:
         return pd.DataFrame(
-            columns=[
-                SCOPE_COL,
-                MODEL_COL,
-                INPUT_CONFIGURATION_COL,
-                METRIC_COL,
-                WHOLE_VALUE_COL,
-                PATCH_AGGREGATE_COL,
-                ABSOLUTE_GAP_COL,
-                RELATIVE_GAP_COL,
-            ]
+            columns=pd.Index(
+                [
+                    SCOPE_COL,
+                    MODEL_COL,
+                    INPUT_CONFIGURATION_COL,
+                    METRIC_COL,
+                    WHOLE_VALUE_COL,
+                    PATCH_AGGREGATE_COL,
+                    ABSOLUTE_GAP_COL,
+                    RELATIVE_GAP_COL,
+                ]
+            )
         )
     result = pd.DataFrame(rows)
     model_order = [m for m in MODEL_LEGEND_ORDER if m in set(result[MODEL_COL])]
@@ -382,7 +387,7 @@ def precision_recall_iou75_points(df: pd.DataFrame) -> pd.DataFrame:
         "precision_iou75",
         "recall_iou75",
     } <= set(whole.columns):
-        return pd.DataFrame(columns=columns)
+        return pd.DataFrame(columns=pd.Index(columns))
     whole = whole.copy()
     whole[MODEL_COL] = whole["producer"].map(model_display_name)
     whole[INPUT_CONFIGURATION_COL] = whole["display_name"]
@@ -466,13 +471,15 @@ def count_error_bar_points(df: pd.DataFrame) -> pd.DataFrame:
         )
     if not rows:
         return pd.DataFrame(
-            columns=[
-                MODEL_COL,
-                INPUT_CONFIGURATION_COL,
-                INPUT_IMAGE_COUNT_COL,
-                PRED_GT_RATIO_COL,
-                SIGNED_COUNT_BIAS_COL,
-            ]
+            columns=pd.Index(
+                [
+                    MODEL_COL,
+                    INPUT_CONFIGURATION_COL,
+                    INPUT_IMAGE_COUNT_COL,
+                    PRED_GT_RATIO_COL,
+                    SIGNED_COUNT_BIAS_COL,
+                ]
+            )
         )
     result = pd.DataFrame(rows)
     model_order = [m for m in MODEL_LEGEND_ORDER if m in set(result[MODEL_COL])]
@@ -554,16 +561,18 @@ def pareto_frontier_table(df: pd.DataFrame) -> pd.DataFrame:
         )
     if not rows:
         return pd.DataFrame(
-            columns=[
-                SCOPE_COL,
-                MODEL_COL,
-                INPUT_CONFIGURATION_COL,
-                INPUT_IMAGE_COUNT_COL,
-                WHOLE_SECTION_PQ_LABEL,
-                PRED_GT_RATIO_COL,
-                SIGNED_COUNT_BIAS_COL,
-                ON_PARETO_FRONTIER_COL,
-            ]
+            columns=pd.Index(
+                [
+                    SCOPE_COL,
+                    MODEL_COL,
+                    INPUT_CONFIGURATION_COL,
+                    INPUT_IMAGE_COUNT_COL,
+                    WHOLE_SECTION_PQ_LABEL,
+                    PRED_GT_RATIO_COL,
+                    SIGNED_COUNT_BIAS_COL,
+                    ON_PARETO_FRONTIER_COL,
+                ]
+            )
         )
     result = pd.DataFrame(rows)
     costs_pqs = list(

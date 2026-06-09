@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
@@ -94,8 +96,10 @@ def test_watershed_tune_best_selection_uses_mean_pq_only() -> None:
 
     best = select_best_watershed_tune_row([row_bad, row_good])
 
-    assert float(best["mean_pq"]) == pytest.approx(float(row_good["mean_pq"]))
-    assert float(best["mean_pq"]) > float(row_bad["mean_pq"])
+    assert float(best["mean_pq"]) == pytest.approx(
+        float(cast(Any, row_good["mean_pq"]))
+    )
+    assert float(best["mean_pq"]) > float(cast(Any, row_bad["mean_pq"]))
     assert int(best["min_distance"]) == 5
 
 
@@ -114,14 +118,18 @@ def test_watershed_tune_grid_csv_includes_merged_view_pq_mean_and_per_sample_fie
         assert f"{key}__{_SAMPLE_ID}" in row
         assert row[f"mean_{key}"] == row[f"{key}__{_SAMPLE_ID}"]
 
-    assert int(row["mean_gt_instance_count"]) == int(mean_pq["gt_instance_count"])
-    assert int(row["mean_pred_instance_count"]) == int(mean_pq["pred_instance_count"])
-    assert float(row["mean_dq"]) == pytest.approx(float(mean_pq["dq"]))
-    assert float(row["mean_sq"]) == pytest.approx(float(mean_pq["sq"]))
-    assert int(row[f"gt_instance_count__{_SAMPLE_ID}"]) == int(
+    assert int(cast(Any, row["mean_gt_instance_count"])) == int(
+        mean_pq["gt_instance_count"]
+    )
+    assert int(cast(Any, row["mean_pred_instance_count"])) == int(
+        mean_pq["pred_instance_count"]
+    )
+    assert float(cast(Any, row["mean_dq"])) == pytest.approx(float(mean_pq["dq"]))
+    assert float(cast(Any, row["mean_sq"])) == pytest.approx(float(mean_pq["sq"]))
+    assert int(cast(Any, row[f"gt_instance_count__{_SAMPLE_ID}"])) == int(
         per_sample[0]["gt_instance_count"]
     )
-    assert int(row[f"pred_instance_count__{_SAMPLE_ID}"]) == int(
+    assert int(cast(Any, row[f"pred_instance_count__{_SAMPLE_ID}"])) == int(
         per_sample[0]["pred_instance_count"]
     )
 
@@ -166,7 +174,9 @@ def test_watershed_tune_diagnostics_surface_catastrophic_over_segmentation() -> 
     assert int(mean_pq["gt_instance_count"]) == 2
     assert int(mean_pq["pred_instance_count"]) > int(mean_pq["gt_instance_count"])
     assert float(mean_pq["pq"]) < 0.05
-    assert int(row["mean_pred_instance_count"]) > int(row["mean_gt_instance_count"])
+    assert int(cast(Any, row["mean_pred_instance_count"])) > int(
+        cast(Any, row["mean_gt_instance_count"])
+    )
     assert row["mean_pq"] == "0.00000000"
     assert int(per_sample[0]["pred_instance_count"]) > 2
     assert summary["best_mean_pq"] == pytest.approx(0.0)

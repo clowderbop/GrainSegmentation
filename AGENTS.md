@@ -1,6 +1,6 @@
 Codebase for thesis with RQ: how do multi-modal microscopy input configurations affect instance grain segmentation accuracy in sandstone thin-section images, comparing U-Net (semantic segmentation + instance extraction) vs YOLO (direct instance segmentation)?
 
-**Environment:** SLURM login node — lightweight commands only; `srun`/`sbatch` for real work. Use `uv`, conventional commits.
+**Environment:** SLURM login node — lightweight commands only; `srun`/`sbatch` for real work. Use `uv`, `ruff`, `ty`, conventional commits.
 
 This repo is EARLY WIP. Long term maintainability is a core priority: proposing sweeping changes that improve it is encouraged. If you add new functionality, first check if there is shared logic that can be extracted to a separate module. Duplicate logic across multiple files is a code smell and should be avoided. Don't be afraid to change existing code. Don't take shortcuts by just adding local logic to solve a problem.
 

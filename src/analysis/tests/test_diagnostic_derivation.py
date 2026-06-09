@@ -35,7 +35,7 @@ def _patch_row(
     weighted_overrides: dict[str, float],
 ) -> dict[str, object]:
     base = {key: 0.0 for key in INSTANCE_METRIC_BUNDLE_KEYS}
-    extras = {
+    extras: dict[str, int | float] = {
         "n_patches": 2,
         "n_empty_gt": 0,
     }

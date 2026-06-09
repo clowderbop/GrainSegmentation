@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 
@@ -14,6 +15,7 @@ from unet.extraction_tune_scoring import (
     mean_train_pq_for_watershed_params,
 )
 from unet.instance_masks import (
+    WatershedConnectivity,
     WatershedSemanticPrep,
     build_watershed_semantic_prep,
     watershed_area_filter,
@@ -111,7 +113,9 @@ class WatershedTuneSampleCache:
             min_distance=key.min_distance,
             exclude_border=key.exclude_border,
             boundary_dilate_iter=key.boundary_dilate_iter,
-            watershed_connectivity=key.watershed_connectivity,
+            watershed_connectivity=cast(
+                WatershedConnectivity, key.watershed_connectivity
+            ),
             ridge_level=key.ridge_level,
         )
         self._base_maps[key] = base

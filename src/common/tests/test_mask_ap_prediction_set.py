@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import numpy as np
 import pytest
 from pycocotools import mask as mask_utils
@@ -63,7 +65,9 @@ def test_yolo_prediction_set_to_coco_dt_from_rle_fixture(tmp_path) -> None:
 
     assert len(from_ps) == len(expected) == 1
     assert from_ps[0]["category_id"] == expected[0]["category_id"]
-    assert float(from_ps[0]["score"]) == pytest.approx(float(expected[0]["score"]))
+    assert float(cast(Any, from_ps[0]["score"])) == pytest.approx(
+        float(cast(Any, expected[0]["score"]))
+    )
     assert from_ps[0]["segmentation"] == expected[0]["segmentation"]
     assert from_ps[0]["bbox"] == pytest.approx(expected[0]["bbox"], rel=1e-6)
 
@@ -109,4 +113,4 @@ def test_yolo_mask_ap_uses_score_merged_canonical_detection() -> None:
 
     assert len(from_proposals) == 2
     assert len(from_canonical) == 1
-    assert float(from_canonical[0]["score"]) == pytest.approx(0.9)
+    assert float(cast(Any, from_canonical[0]["score"])) == pytest.approx(0.9)

@@ -216,7 +216,9 @@ def anomaly_report_table(df: pd.DataFrame) -> pd.DataFrame:
     """Suspicious whole-section and patch-vs-whole patterns for manual review."""
     if df.empty:
         return pd.DataFrame(
-            columns=[MODEL_COL, INPUT_CONFIGURATION_COL, ANOMALY_COL, DETAIL_COL]
+            columns=pd.Index(
+                [MODEL_COL, INPUT_CONFIGURATION_COL, ANOMALY_COL, DETAIL_COL]
+            )
         )
     rows: list[dict[str, object]] = []
     if "dq" in df.columns and "sq" in df.columns:
@@ -225,7 +227,9 @@ def anomaly_report_table(df: pd.DataFrame) -> pd.DataFrame:
     rows.extend(_strong_count_bias_anomalies(df))
     if not rows:
         return pd.DataFrame(
-            columns=[MODEL_COL, INPUT_CONFIGURATION_COL, ANOMALY_COL, DETAIL_COL]
+            columns=pd.Index(
+                [MODEL_COL, INPUT_CONFIGURATION_COL, ANOMALY_COL, DETAIL_COL]
+            )
         )
     return pd.DataFrame(rows)
 

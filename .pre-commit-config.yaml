@@ -8,9 +8,16 @@ repos:
 
   - repo: local
     hooks:
+      - id: ty
+        name: ty
+        entry: uv run ty check
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: pytest
         name: pytest
-        entry: uv run pytest -q --tb=short
+        entry: uv run pytest -q --tb=short -n 4
         language: system
         pass_filenames: false
         always_run: true

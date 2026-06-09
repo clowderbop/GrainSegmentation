@@ -212,10 +212,14 @@ def test_select_train_extraction_method_uses_pq_not_aji() -> None:
     )
 
     assert selection.selected_method == "cc"
-    assert selection.objective_pq == pytest.approx(cc_bundle["pq"])
-    assert selection.cc.bundle["pq"] == pytest.approx(cc_bundle["pq"])
+    from common.instance_metric_bundle import metric_bundle_value
+
+    assert selection.objective_pq == pytest.approx(metric_bundle_value(cc_bundle, "pq"))
+    assert selection.cc.bundle["pq"] == pytest.approx(
+        metric_bundle_value(cc_bundle, "pq")
+    )
     assert selection.watershed.bundle["aji_plus"] == pytest.approx(
-        watershed_bundle["aji_plus"]
+        metric_bundle_value(watershed_bundle, "aji_plus")
     )
     assert selection.watershed.bundle["pq"] < selection.cc.bundle["pq"]
     assert selection.watershed.bundle["aji_plus"] > selection.cc.bundle["aji_plus"]

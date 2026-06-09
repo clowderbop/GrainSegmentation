@@ -226,8 +226,10 @@ def build_profile_selection_row(
     per_variant_pq_results: dict[str, MergedViewPqResult],
     fingerprint: dict[str, Any],
 ) -> dict[str, Any]:
+    from common.merged_view_pq import _merged_view_pq_value
+
     per_variant_pq = {
-        variant: float(result[PROFILE_SELECTION_OBJECTIVE])
+        variant: float(_merged_view_pq_value(result, PROFILE_SELECTION_OBJECTIVE))
         for variant, result in per_variant_pq_results.items()
     }
     mean_pq_fields = mean_merged_view_pq_results(list(per_variant_pq_results.values()))

@@ -6,7 +6,7 @@ import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -51,13 +51,21 @@ def log_scoring_phase_start(phase: str, *, prefix: str = "") -> None:
         print(f"    {line}", flush=True)
 
 
-def format_merged_view_pq_audit_line(result: dict[str, float | int]) -> str:
+def format_merged_view_pq_audit_line(
+    result: MergedViewPqResult | dict[str, float | int],
+) -> str:
+    from common.merged_view_pq import _merged_view_pq_value
+
     return (
-        f"PQ={float(result['pq']):.6f} DQ={float(result['dq']):.6f} "
-        f"SQ={float(result['sq']):.6f} tp={int(result['tp'])} fp={int(result['fp'])} "
-        f"fn={int(result['fn'])} pred={int(result['pred_instance_count'])} "
-        f"gt={int(result['gt_instance_count'])} "
-        f"ratio={float(result['pred_gt_instance_ratio']):.3f}"
+        f"PQ={float(_merged_view_pq_value(result, 'pq')):.6f} "
+        f"DQ={float(_merged_view_pq_value(result, 'dq')):.6f} "
+        f"SQ={float(_merged_view_pq_value(result, 'sq')):.6f} "
+        f"tp={int(_merged_view_pq_value(result, 'tp'))} "
+        f"fp={int(_merged_view_pq_value(result, 'fp'))} "
+        f"fn={int(_merged_view_pq_value(result, 'fn'))} "
+        f"pred={int(_merged_view_pq_value(result, 'pred_instance_count'))} "
+        f"gt={int(_merged_view_pq_value(result, 'gt_instance_count'))} "
+        f"ratio={float(_merged_view_pq_value(result, 'pred_gt_instance_ratio')):.3f}"
     )
 
 
@@ -232,18 +240,16 @@ def mean_train_pq_for_watershed_params(
                 timings.watershed_s = time.perf_counter() - t0
                 log_scoring_phase_timing("watershed", timings.watershed_s)
         sample_gt_prep = gt_overlap_preps[idx] if gt_overlap_preps is not None else None
-        result = dict(
-            merged_view_pq_for_sample(
-                true_instances,
-                pred_semantic,
-                params,
-                pred_instances=pred_instances,
-                gt_prep=sample_gt_prep,
-                timings=timings,
-                log_prefix=sample_prefix,
-            )
+        result = merged_view_pq_for_sample(
+            true_instances,
+            pred_semantic,
+            params,
+            pred_instances=pred_instances,
+            gt_prep=sample_gt_prep,
+            timings=timings,
+            log_prefix=sample_prefix,
         )
-        per_sample.append(result)
+        per_sample.append(cast(dict[str, float | int], dict(result)))
         if log and timings is not None:
             print(
                 f"  {sample_prefix}{format_merged_view_pq_audit_line(result)} "

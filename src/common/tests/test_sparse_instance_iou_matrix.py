@@ -7,6 +7,7 @@ import pytest
 
 from common.instance_metric_bundle import (
     INSTANCE_METRIC_BUNDLE_KEYS,
+    metric_bundle_value,
     compute_instance_metric_bundle,
 )
 from common.metrics import build_instance_iou_matrix
@@ -36,7 +37,9 @@ def _assert_bundle_matches_dense_reference(gt: np.ndarray, pred: np.ndarray) -> 
     reference = compute_instance_metric_bundle_dense_reference(gt, pred)
     assert tuple(bundle.keys()) == INSTANCE_METRIC_BUNDLE_KEYS
     for key in INSTANCE_METRIC_BUNDLE_KEYS:
-        assert bundle[key] == pytest.approx(reference[key]), key
+        assert metric_bundle_value(bundle, key) == pytest.approx(
+            metric_bundle_value(reference, key)
+        ), key
 
 
 def test_sparse_iou_matrix_empty_maps() -> None:

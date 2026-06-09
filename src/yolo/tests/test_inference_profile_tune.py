@@ -371,8 +371,12 @@ def test_write_grid_winner_json_persists_per_variant_merged_view_pq_results(
     ):
         stored = payload["per_variant_pq_results"][variant]
         assert tuple(stored.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
+        from common.merged_view_pq import _merged_view_pq_value
+
         for key in MERGED_VIEW_PQ_RESULT_KEYS:
-            assert stored[key] == expected[key]
+            assert _merged_view_pq_value(stored, key) == _merged_view_pq_value(
+                expected, key
+            )
 
 
 def test_load_grid_winner_rejects_nested_profile_without_top_level_conf(

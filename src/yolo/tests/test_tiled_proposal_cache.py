@@ -20,6 +20,7 @@ from common.tests.profile_tune_fixtures import (
 from yolo.tests.profile_tune_fixtures import write_on_disk_v1_proposal_cache
 from yolo.tiled_proposal_cache import (
     TILED_PROPOSAL_CACHE_SCHEMA_VERSION,
+    TiledProposalRecord,
     collect_tiled_detector_proposals,
     load_or_write_tiled_proposals,
     load_tiled_proposals,
@@ -154,9 +155,9 @@ def test_load_or_write_tiled_proposals_reuses_valid_cache_without_compute(
     write_tiled_proposals(cache_dir, cached, record)
     compute_calls: list[int] = []
 
-    def compute() -> list[dict]:
+    def compute() -> list[TiledProposalRecord]:
         compute_calls.append(1)
-        return [{"id": 99}]
+        return cached
 
     loaded, from_cache = load_or_write_tiled_proposals(
         cache_dir, expected=record, compute_fn=compute

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
@@ -252,18 +254,21 @@ def compute_instance_metric_bundle_dense_reference(
         pq, dq, sq = pq_from_match_counts(tp, fp, fn, matched_ious)
         aji_plus = float(dense_compute_aji_plus(true_instances, pred_instances))
 
-    bundle: InstanceMetricBundle = {
-        "pq": float(pq),
-        "dq": float(dq),
-        "sq": float(sq),
-        "tp": tp,
-        "fp": fp,
-        "fn": fn,
-        **prf,
-        "gt_instance_count": gt_instance_count,
-        "pred_instance_count": pred_instance_count,
-        "pred_gt_instance_ratio": float(pred_gt_instance_ratio),
-        "aji_plus": float(aji_plus),
-    }
+    bundle = cast(
+        InstanceMetricBundle,
+        {
+            "pq": float(pq),
+            "dq": float(dq),
+            "sq": float(sq),
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            **prf,
+            "gt_instance_count": gt_instance_count,
+            "pred_instance_count": pred_instance_count,
+            "pred_gt_instance_ratio": float(pred_gt_instance_ratio),
+            "aji_plus": float(aji_plus),
+        },
+    )
     assert tuple(bundle.keys()) == INSTANCE_METRIC_BUNDLE_KEYS
     return bundle

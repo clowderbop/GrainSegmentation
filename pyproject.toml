@@ -14,15 +14,31 @@ dev = [
     "pre-commit==4.2.0",
     "ruff==0.15.13",
     "pytest==9.0.3",
+    "pytest-xdist==3.8.0",
     "pyyaml==6.0.3",
     "grainsegmentation-common",
-    "grainsegmentation-analysis",
+    "grainsegmentation-analysis[analysis]",
     "unet-pipeline",
     "yolo",
+    "ty==0.0.46",
 ]
 analysis = [
     "grainsegmentation-analysis[analysis]",
 ]
+
+[tool.ty.environment]
+python = ".venv"
+python-version = "3.12"
+
+[[tool.ty.overrides]]
+include = ["src/data_prep/**", "src/common/patching.py"]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
+
+[[tool.ty.overrides]]
+include = ["src/unet/**"]
+[tool.ty.overrides.rules]
+unresolved-import = "ignore"
 
 [tool.uv.sources]
 grainsegmentation-common = { path = "src/common", editable = true }
@@ -31,6 +47,7 @@ unet-pipeline = { path = "src/unet", editable = true }
 yolo = { path = "src/yolo", editable = true }
 
 [tool.pytest.ini_options]
+addopts = "-n 4"
 testpaths = [
     "tests",
     "src/common/tests",

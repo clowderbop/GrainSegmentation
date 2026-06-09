@@ -59,6 +59,7 @@ def _resolve_predict_samples(args: argparse.Namespace) -> list[dict[str, Any]]:
     first_images = doc.samples[0].images
     if first_images is None:
         raise_cli_argument_error("U-Net predict requires manifest rows with images")
+    assert first_images is not None
     num_inputs = len(first_images)
     if args.num_inputs is not None and args.num_inputs != num_inputs:
         raise_cli_argument_error(

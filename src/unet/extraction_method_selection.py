@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from collections.abc import Mapping
+from typing import Any, Literal, Sequence, cast
 
 from common.instance_eval_report import (
     extract_instance_metric_bundle_from_report,
@@ -14,7 +15,11 @@ from common.instance_eval_report import (
     mean_bundle_across_variants,
     validate_train_whole_section_report,
 )
-from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.instance_metric_bundle import (
+    INSTANCE_METRIC_BUNDLE_KEYS,
+    InstanceMetricBundle,
+    metric_bundle_value,
+)
 
 ExtractionMethod = Literal["cc", "watershed"]
 
@@ -36,13 +41,15 @@ class ExtractionMethodSelection:
 
 def select_train_extraction_method(
     *,
-    cc_bundle: dict[str, float],
-    watershed_bundle: dict[str, float],
-    cc_per_variant: dict[str, dict[str, float]] | None = None,
-    watershed_per_variant: dict[str, dict[str, float]] | None = None,
+    cc_bundle: InstanceMetricBundle | Mapping[str, float | int],
+    watershed_bundle: InstanceMetricBundle | Mapping[str, float | int],
+    cc_per_variant: Mapping[str, Mapping[str, float | int]] | None = None,
+    watershed_per_variant: Mapping[str, Mapping[str, float | int]] | None = None,
 ) -> ExtractionMethodSelection:
-    cc_pq = float(cc_bundle["pq"])
-    watershed_pq = float(watershed_bundle["pq"])
+    from common.instance_metric_bundle import metric_bundle_value
+
+    cc_pq = float(metric_bundle_value(cc_bundle, "pq"))
+    watershed_pq = float(metric_bundle_value(watershed_bundle, "pq"))
     if watershed_pq > cc_pq:
         selected: ExtractionMethod = "watershed"
         objective_pq = watershed_pq
@@ -57,13 +64,17 @@ def select_train_extraction_method(
         objective_pq=objective_pq,
         cc=ExtractionMethodAudit(
             method="cc",
-            bundle=dict(cc_bundle),
-            per_variant_bundles=dict(cc_per_variant or {}),
+            bundle=cast(dict[str, float], dict(cc_bundle)),
+            per_variant_bundles=cast(
+                dict[str, dict[str, float]], dict(cc_per_variant or {})
+            ),
         ),
         watershed=ExtractionMethodAudit(
             method="watershed",
-            bundle=dict(watershed_bundle),
-            per_variant_bundles=dict(watershed_per_variant or {}),
+            bundle=cast(dict[str, float], dict(watershed_bundle)),
+            per_variant_bundles=cast(
+                dict[str, dict[str, float]], dict(watershed_per_variant or {})
+            ),
         ),
     )
 
@@ -74,11 +85,12 @@ def extraction_method_selection_to_json(
     def _method_payload(audit: ExtractionMethodAudit) -> dict[str, Any]:
         payload: dict[str, Any] = {"method": audit.method}
         for key in INSTANCE_METRIC_BUNDLE_KEYS:
-            payload[key] = float(audit.bundle[key])
+            payload[key] = float(metric_bundle_value(audit.bundle, key))
         if audit.per_variant_bundles:
             payload["per_variant"] = {
                 variant: {
-                    key: float(bundle[key]) for key in INSTANCE_METRIC_BUNDLE_KEYS
+                    key: float(metric_bundle_value(bundle, key))
+                    for key in INSTANCE_METRIC_BUNDLE_KEYS
                 }
                 for variant, bundle in audit.per_variant_bundles.items()
             }

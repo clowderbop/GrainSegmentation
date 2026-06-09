@@ -32,8 +32,11 @@ def test_whole_requires_manifest(tmp_path: Path) -> None:
         gt_origin = None
         sample_id = None
 
+    import argparse
+    from typing import cast
+
     with pytest.raises(ValueError, match="Provide --manifest"):
-        _resolve_eval_samples(Args())  # type: ignore[arg-type]
+        _resolve_eval_samples(cast(argparse.Namespace, Args()))
 
 
 def test_whole_accepts_manifest(tmp_path: Path) -> None:
@@ -86,7 +89,10 @@ def test_whole_accepts_manifest(tmp_path: Path) -> None:
         gt_origin = None
         sample_id = None
 
-    samples = _resolve_eval_samples(Args())  # type: ignore[arg-type]
+    import argparse
+    from typing import cast
+
+    samples = _resolve_eval_samples(cast(argparse.Namespace, Args()))
     assert len(samples) == 1
     assert samples[0].sample_id == "train"
 

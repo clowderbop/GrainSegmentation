@@ -51,7 +51,10 @@ def summarize_training_sources(samples):
             )
 
         if "region" in sample:
-            grouped_sources[source_index[source_key]]["region_count"] += 1
+            entry = grouped_sources[source_index[source_key]]
+            region_count = entry["region_count"]
+            assert isinstance(region_count, int)
+            entry["region_count"] = region_count + 1
 
     return grouped_sources
 

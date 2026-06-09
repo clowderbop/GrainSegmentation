@@ -235,7 +235,15 @@ def _assign_halves(
     exclusive_a,
     exclusive_b,
     centerline: Optional[LineString],
-) -> Optional[Tuple[List[Polygon], List[Polygon], List[Point], List[LineString]]]:
+) -> Optional[
+    Tuple[
+        List[Polygon],
+        List[Polygon],
+        List[Polygon],
+        List[Point],
+        List[LineString],
+    ]
+]:
 
     if centerline is None or centerline.is_empty or len(pieces_list) < 2:
         return None
@@ -1004,7 +1012,8 @@ def main() -> None:
     out_gdf = gdf.copy()
     out_gdf.geometry = geoms
 
-    out_gdf = out_gdf[out_gdf.geometry.notnull() & ~out_gdf.geometry.is_empty]
+    geometry = out_gdf.geometry
+    out_gdf = out_gdf[geometry.notnull() & ~geometry.is_empty]  # ty: ignore[unresolved-attribute]
 
     out_gdf = out_gdf.explode(index_parts=False, ignore_index=True)
 

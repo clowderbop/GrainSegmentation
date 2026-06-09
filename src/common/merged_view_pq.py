@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 import numpy as np
 
@@ -93,6 +93,12 @@ def merged_view_pq_column_name(key: str, suffix: str) -> str:
     return f"{key}__{suffix}"
 
 
+def _merged_view_pq_value(
+    row: MergedViewPqResult | Mapping[str, float | int], key: str
+) -> float | int:
+    return cast(Mapping[str, float | int], row)[key]
+
+
 def mean_merged_view_pq_results(
     results: Sequence[MergedViewPqResult | Mapping[str, float | int]],
 ) -> dict[str, float | int]:
@@ -100,10 +106,17 @@ def mean_merged_view_pq_results(
         raise ValueError("results must not be empty")
     out: dict[str, float | int] = {}
     for key in MERGED_VIEW_PQ_RESULT_KEYS:
+        rows = [cast(Mapping[str, float | int], row) for row in results]
         if key in MERGED_VIEW_PQ_COUNT_KEYS:
-            out[key] = int(round(float(np.mean([r[key] for r in results]))))
+            out[key] = int(
+                round(
+                    float(np.mean([float(_merged_view_pq_value(r, key)) for r in rows]))
+                )
+            )
         else:
-            out[key] = float(np.mean([float(r[key]) for r in results]))
+            out[key] = float(
+                np.mean([float(_merged_view_pq_value(r, key)) for r in rows])
+            )
     return out
 
 
@@ -118,7 +131,7 @@ def merged_view_pq_result_from_prefixed_columns(
         if column not in row:
             raise KeyError(f"Missing {column!r} in row")
         result[key] = coerce_merged_view_pq_value(key, row[column])
-    return result  # type: ignore[return-value]
+    return cast(MergedViewPqResult, result)
 
 
 def flatten_merged_view_pq_results_by_suffix(
@@ -126,8 +139,11 @@ def flatten_merged_view_pq_results_by_suffix(
 ) -> dict[str, float | int]:
     flat: dict[str, float | int] = {}
     for suffix, result in per_suffix_results.items():
+        result_map = cast(Mapping[str, float | int], result)
         for key in MERGED_VIEW_PQ_RESULT_KEYS:
-            flat[merged_view_pq_column_name(key, suffix)] = result[key]
+            flat[merged_view_pq_column_name(key, suffix)] = _merged_view_pq_value(
+                result_map, key
+            )
     return flat
 
 

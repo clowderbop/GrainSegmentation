@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import pytest
 
@@ -125,7 +127,9 @@ def _phased_instance_map(semantic: np.ndarray, params: WatershedParamSet) -> np.
         min_distance=params.min_distance,
         exclude_border=params.exclude_border,
         boundary_dilate_iter=params.boundary_dilate_iter,
-        watershed_connectivity=params.watershed_connectivity,
+        watershed_connectivity=cast(
+            WatershedConnectivity, params.watershed_connectivity
+        ),
         ridge_level=params.ridge_level,
     )
     return watershed_area_filter(base, params.min_area_px)
@@ -219,7 +223,9 @@ def test_phased_extraction_matches_monolithic_for_representative_params(
         semantic,
         min_distance=params.min_distance,
         boundary_dilate_iter=params.boundary_dilate_iter,
-        watershed_connectivity=params.watershed_connectivity,
+        watershed_connectivity=cast(
+            WatershedConnectivity, params.watershed_connectivity
+        ),
         min_area_px=params.min_area_px,
         exclude_border=params.exclude_border,
         ridge_level=params.ridge_level,
@@ -237,7 +243,9 @@ def test_phased_extraction_matches_monolithic_for_default_grid() -> None:
             semantic,
             min_distance=params.min_distance,
             boundary_dilate_iter=params.boundary_dilate_iter,
-            watershed_connectivity=params.watershed_connectivity,
+            watershed_connectivity=cast(
+                WatershedConnectivity, params.watershed_connectivity
+            ),
             min_area_px=params.min_area_px,
             exclude_border=params.exclude_border,
             ridge_level=params.ridge_level,

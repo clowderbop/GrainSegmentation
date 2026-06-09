@@ -139,4 +139,4 @@ def iter_watershed_tune_param_sets(
 
 
 def first_watershed_tune_param_set(grid: WatershedTuneGrid) -> WatershedParamSet:
-    return next(iter_watershed_tune_param_sets(grid))
+    return next(iter(iter_watershed_tune_param_sets(grid)))

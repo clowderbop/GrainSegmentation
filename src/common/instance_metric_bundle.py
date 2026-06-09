@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
+from collections.abc import Mapping
+from typing import TypedDict, cast
 
 import numpy as np
 
@@ -53,6 +54,18 @@ INSTANCE_METRIC_BUNDLE_KEYS: tuple[str, ...] = (
 )
 
 
+class ThresholdedPrfBundle(TypedDict):
+    precision_iou50: float
+    recall_iou50: float
+    f1_iou50: float
+    precision_iou75: float
+    recall_iou75: float
+    f1_iou75: float
+    mP_iou50_95: float
+    mR_iou50_95: float
+    mF1_iou50_95: float
+
+
 class InstanceMetricBundle(TypedDict):
     pq: float
     dq: float
@@ -75,9 +88,15 @@ class InstanceMetricBundle(TypedDict):
     aji_plus: float
 
 
+def metric_bundle_value(
+    bundle: InstanceMetricBundle | Mapping[str, float | int], key: str
+) -> float | int:
+    return cast(Mapping[str, float | int], bundle)[key]
+
+
 def _thresholded_prf_bundle(
     iou_matrix: np.ndarray, nt: int, np_: int
-) -> dict[str, float]:
+) -> ThresholdedPrfBundle:
     if nt == 0 and np_ == 0:
         one = 1.0
         return {
@@ -162,18 +181,21 @@ def compute_instance_metric_bundle(
             compute_aji_plus(true_instances, pred_instances, overlap_stats=overlap)
         )
 
-    bundle: InstanceMetricBundle = {
-        "pq": float(pq),
-        "dq": float(dq),
-        "sq": float(sq),
-        "tp": tp,
-        "fp": fp,
-        "fn": fn,
-        **prf,
-        "gt_instance_count": gt_instance_count,
-        "pred_instance_count": pred_instance_count,
-        "pred_gt_instance_ratio": float(pred_gt_instance_ratio),
-        "aji_plus": float(aji_plus),
-    }
+    bundle = cast(
+        InstanceMetricBundle,
+        {
+            "pq": float(pq),
+            "dq": float(dq),
+            "sq": float(sq),
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            **prf,
+            "gt_instance_count": gt_instance_count,
+            "pred_instance_count": pred_instance_count,
+            "pred_gt_instance_ratio": float(pred_gt_instance_ratio),
+            "aji_plus": float(aji_plus),
+        },
+    )
     assert tuple(bundle.keys()) == INSTANCE_METRIC_BUNDLE_KEYS
     return bundle

@@ -113,5 +113,5 @@ def evaluate_mask_ap(
         float(stats[6]),
         float(stats[7]),
         float(stats[8]),
-        stats,
+        np.asarray(stats, dtype=np.float64),
     )

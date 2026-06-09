@@ -135,7 +135,7 @@ def collect_manifest_samples(
             raise ValueError(
                 f"Invalid gt_origin {gt_origin_raw!r} in manifest row {idx}"
             )
-        gt_origin = cast(GtOriginMode, gt_origin_raw)
+        gt_origin = gt_origin_raw
 
         samples.append(
             InstanceEvalSample(
@@ -290,9 +290,10 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _resolve_eval_samples(args: argparse.Namespace) -> list[InstanceEvalSample]:
-    default_gt_origin: GtOriginMode = args.gt_origin or (
-        "patch_stem" if args.unit == "patch" else "whole_image"
-    )
+    if args.gt_origin is not None:
+        default_gt_origin = cast(GtOriginMode, args.gt_origin)
+    else:
+        default_gt_origin = "patch_stem" if args.unit == "patch" else "whole_image"
 
     if args.manifest is not None:
         return collect_whole_samples_from_manifest(

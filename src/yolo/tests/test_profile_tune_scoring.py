@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,6 +10,7 @@ import numpy as np
 import pytest
 
 from common.instance_metric_bundle import INSTANCE_METRIC_BUNDLE_KEYS
+from common.merged_view_pq import MergedViewPqResult
 from common.test_inference import YoloInferenceProfileCandidate
 from common.variants import all_variant_names
 from common.instance_eval_report import extract_instance_metric_bundle_from_report
@@ -99,10 +101,15 @@ _PROFILE_SELECTION_PQ_PARITY_KEYS = (
 
 
 def _assert_pq_result_matches_bundle_subset(
-    result: dict[str, float | int], bundle: dict[str, float | int]
+    result: Mapping[str, float | int] | MergedViewPqResult,
+    bundle: Mapping[str, float | int] | MergedViewPqResult,
 ) -> None:
+    from common.merged_view_pq import _merged_view_pq_value
+
     for key in _PROFILE_SELECTION_PQ_PARITY_KEYS:
-        assert result[key] == pytest.approx(bundle[key], rel=0.0, abs=1e-9), key
+        assert _merged_view_pq_value(result, key) == pytest.approx(
+            _merged_view_pq_value(bundle, key), rel=0.0, abs=1e-9
+        ), key
 
 
 def _write_ppl_train_proposal_cache(
@@ -228,8 +235,12 @@ def test_tiled_proposal_cache_scoring_uses_cross_tile_postprocess(
     assert tuple(result.keys()) == MERGED_VIEW_PQ_RESULT_KEYS
     assert "aji_plus" not in result
     assert "f1_iou75" not in result
+    from common.merged_view_pq import _merged_view_pq_value
+
     for key in MERGED_VIEW_PQ_RESULT_KEYS:
-        assert result[key] == pytest.approx(expected[key], rel=0.0, abs=1e-9), key
+        assert _merged_view_pq_value(result, key) == pytest.approx(
+            _merged_view_pq_value(expected, key), rel=0.0, abs=1e-9
+        ), key
 
 
 @pytest.mark.parametrize("variant", all_variant_names())

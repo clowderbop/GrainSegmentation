@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -9,6 +10,8 @@ import numpy as np
 from common.instance_metric_bundle import (
     INSTANCE_METRIC_BUNDLE_INT_KEYS,
     INSTANCE_METRIC_BUNDLE_KEYS,
+    InstanceMetricBundle,
+    metric_bundle_value,
 )
 
 INSTANCE_METRIC_KEYS: tuple[str, ...] = INSTANCE_METRIC_BUNDLE_KEYS
@@ -41,7 +44,7 @@ def count_instances(instance_map: np.ndarray) -> int:
 def build_sample_row(
     sample_id: str,
     *,
-    metrics: dict[str, float | int],
+    metrics: InstanceMetricBundle | Mapping[str, float | int],
     empty_gt: bool,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -50,7 +53,7 @@ def build_sample_row(
         "empty_gt": bool(empty_gt),
     }
     for key in INSTANCE_METRIC_KEYS:
-        value = metrics[key]
+        value = metric_bundle_value(metrics, key)
         row[key] = (
             int(value) if key in INSTANCE_METRIC_BUNDLE_INT_KEYS else float(value)
         )

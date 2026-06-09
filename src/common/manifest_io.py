@@ -6,7 +6,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from common.variants import VariantSpec, get_variant
 
@@ -424,6 +424,7 @@ def _parse_dataset_manifest(
 
     if path_base not in ("grainseg_root", "work_root"):
         raise ValueError(f"Invalid path_base: {path_base!r}")
+    path_base_literal = cast(PathBase, path_base)
 
     raw_samples = payload.get("samples")
     if not isinstance(raw_samples, list):
@@ -437,7 +438,7 @@ def _parse_dataset_manifest(
         variant=variant,
         unit=unit,
         grainseg_root=grainseg_root,
-        path_base=path_base,  # type: ignore[arg-type]
+        path_base=path_base_literal,
         samples=samples,
         source_path=source_path,
     )

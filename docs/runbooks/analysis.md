@@ -28,6 +28,8 @@ flowchart LR
 
 ## Build report
 
+Scripts under `SLURM/analysis/`. **`submit_*.sh` files are login-node launchers** — run them with `bash` from the repo root; they call `sbatch` on the `run_*.sh` job scripts internally. Do not `sbatch` a `submit_*.sh` script.
+
 **Submit:** `bash SLURM/analysis/submit_build_report.sh`
 
 **Run:** `sbatch SLURM/analysis/run_build_report.sh`

@@ -33,7 +33,7 @@ Patch training and eval require patch manifests under `dataset/{train,test}/patc
 After manifests exist and U-Net models are trained, compare connected components vs watershed on the train section:
 
 ```bash
-sbatch SLURM/unet/submit_cc_vs_watershed_train_eval.sh
+bash SLURM/unet/submit_cc_vs_watershed_train_eval.sh
 ```
 
 Both jobs evaluate all four variants via staged whole manifests. Outputs: `eval/instance_val_cc/` and `eval/instance_val_watershed/`.

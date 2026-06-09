@@ -1,6 +1,6 @@
 # SLURM submit scripts
 
-Run all `submit_*.sh` scripts from the **repo root**. Operational steps live in [`docs/runbooks/`](../docs/runbooks/), not in this tree.
+Run all `submit_*.sh` scripts from the **repo root** with **`bash`** (login-node launchers — they call `sbatch` on `run_*.sh` internally; do not `sbatch` a `submit_*.sh` script). Operational steps live in [`docs/runbooks/`](../docs/runbooks/), not in this tree.
 
 | Area | Scripts | Runbook |
 |------|---------|---------|

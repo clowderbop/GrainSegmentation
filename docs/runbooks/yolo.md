@@ -23,7 +23,7 @@ flowchart TD
 | Profile selection | `submit_inference_profile_tune.sh` | detector → GT cache → venv → candidates → finalize |
 | Test eval | `submit_test_evaluations.sh` | `run_patch_test_eval.sh`, `run_sahi_test_eval.sh` |
 
-Scripts under `SLURM/yolo/`.
+Scripts under `SLURM/yolo/`. **`submit_*.sh` files are login-node launchers** — run them with `bash` from the repo root; they call `sbatch` on the `run_*.sh` job scripts internally. Do not `sbatch` a `submit_*.sh` script.
 
 ## Tune and train variants
 

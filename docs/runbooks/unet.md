@@ -32,7 +32,7 @@ flowchart TD
 | Test whole | `submit_whole_test_eval.sh` | `run_whole_test_eval.sh` |
 | Test patches | `submit_patch_test_eval.sh` | `run_patch_test_eval.sh` |
 
-Scripts under `SLURM/unet/`.
+Scripts under `SLURM/unet/`. **`submit_*.sh` files are login-node launchers** — run them with `bash` from the repo root; they call `sbatch` on the `run_*.sh` job scripts internally. Do not `sbatch` a `submit_*.sh` script.
 
 ## Config files
 
@@ -43,7 +43,7 @@ Scripts under `SLURM/unet/`.
 
 ## Tune and train variants
 
-**Submit:** `sbatch SLURM/unet/submit_tune_and_train_variants.sh`
+**Submit:** `bash SLURM/unet/submit_tune_and_train_variants.sh`
 
 **Options:** `--ppl`, `--ppl-ppx-composite`, `--ppl-plus-ppx-composite`, `--all-ppx`, `--all`; `--resume`, `--skip-tuning`, `--verbose`
 
@@ -55,7 +55,7 @@ Bayesian search (optional) + final training per variant. Requires `train_labels.
 | Tuning logs | `tuning_logs/{run_name}/` |
 
 ```bash
-sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
+bash SLURM/unet/submit_tune_and_train_variants.sh --all
 ```
 
 ## Watershed tuning
@@ -131,7 +131,7 @@ Focused tests: `uv run pytest src/unet/tests/test_watershed_tune_smoke.py -q`
 
 ## CC vs watershed (train section)
 
-**Submit:** `sbatch SLURM/unet/submit_cc_vs_watershed_train_eval.sh`
+**Submit:** `bash SLURM/unet/submit_cc_vs_watershed_train_eval.sh`
 
 Two jobs compare connected components vs tuned watershed on **train** using `whole_eval_models.tsv`, `--manifest-split train`, `train_labels.gpkg`.
 
@@ -172,9 +172,9 @@ Pipeline: `unet.predict` → `semantic/`; `unet.extract_instances` → `predicti
 ## Example commands
 
 ```bash
-sbatch SLURM/unet/submit_tune_and_train_variants.sh --all
+bash SLURM/unet/submit_tune_and_train_variants.sh --all
 bash SLURM/unet/submit_watershed_tuning.sh
-sbatch SLURM/unet/submit_cc_vs_watershed_train_eval.sh
+bash SLURM/unet/submit_cc_vs_watershed_train_eval.sh
 bash SLURM/unet/submit_whole_test_eval.sh
 bash SLURM/unet/submit_patch_test_eval.sh
 ```

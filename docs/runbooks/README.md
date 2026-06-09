@@ -2,6 +2,8 @@
 
 Cluster procedures for the GrainSegmentation research pipeline. Run all submit scripts from the **repo root** (`GrainSegmentation/`).
 
+**Submit scripts:** all `SLURM/<area>/submit_*.sh` files are **login-node launchers** — run them with `bash` from the repo root; they call `sbatch` on the corresponding `run_*.sh` job scripts internally. Do not `sbatch` a `submit_*.sh` script.
+
 **Scratch root:** `$SCRATCH/GrainSeg` by default ([`docs/reference/scratch-layout.md`](../reference/scratch-layout.md)). **Manifests:** [`docs/manifests.md`](../manifests.md). **Staging:** [`docs/reference/staging.md`](../reference/staging.md).
 
 ## Runbook template

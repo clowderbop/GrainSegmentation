@@ -14,8 +14,6 @@ source "$SLURM_ROOT/utils/variants.sh"
 source "$SLURM_ROOT/utils/assertions.sh"
 mkdir -p "$REPO_ROOT/logs"
 
-: "${RUN_TAG:?RUN_TAG must be set by submit script}"
-
 GRAINSEG_ROOT="$(grainseg_root)"
 DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
 OUTPUT_DIR="$GRAINSEG_ROOT/runs/watershed_tune"
@@ -62,6 +60,8 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+: "${RUN_TAG:?RUN_TAG required (--run-tag or RUN_TAG env)}"
 
 CANONICAL_MANIFEST="$GRAINSEG_ROOT/dataset/train/manifests/${VARIANT}.whole.json"
 require_file "$CANONICAL_MANIFEST" "Train whole manifest missing for $VARIANT"

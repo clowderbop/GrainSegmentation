@@ -17,7 +17,6 @@ source "$SLURM_ROOT/utils/assertions.sh"
 mkdir -p "$REPO_ROOT/logs"
 
 : "${SLURM_ARRAY_TASK_ID:?SLURM_ARRAY_TASK_ID must be set (watershed tune shard array)}"
-: "${RUN_TAG:?RUN_TAG must be set by submit script}"
 
 GRAINSEG_ROOT="$(grainseg_root)"
 DATASET_DIR="${DATASET_DIR:-$GRAINSEG_ROOT/dataset/train}"
@@ -84,6 +83,8 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+: "${RUN_TAG:?RUN_TAG required (--run-tag or RUN_TAG env)}"
 
 unet_patch_config_for_variant "$VARIANT"
 

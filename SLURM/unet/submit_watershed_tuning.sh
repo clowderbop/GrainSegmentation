@@ -8,6 +8,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/repo_root.sh"
 source "$SLURM_ROOT/utils/variants.sh"
 # shellcheck source=SLURM/utils/assertions.sh
 source "$SLURM_ROOT/utils/assertions.sh"
+# shellcheck source=SLURM/utils/slurm_export.sh
+source "$SLURM_ROOT/utils/slurm_export.sh"
 
 GRAINSEG_ROOT="$(grainseg_root)"
 TRAIN_DIR="$GRAINSEG_ROOT/dataset/train"
@@ -112,7 +114,7 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
     else
         unet_patch_config_for_variant "$variant"
         model_path="$MODELS_DIR/$DEFAULT_MODEL_BASENAME"
-        predict_export="ALL,VARIANT=${variant},PREDS_ROOT=${PREDS_ROOT}"
+        predict_export="$(slurm_export_line "$(slurm_export_assign VARIANT "$variant")" "$(slurm_export_assign PREDS_ROOT "$PREDS_ROOT")")"
         predict_cmd=(
             sbatch
             "--job-name=PredWatershed_${slug}"
@@ -139,7 +141,10 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
     fi
 
     if [ "$SINGLE_JOB" = true ]; then
-        tune_export="ALL,VARIANT=${variant},PREDS_DIR=${preds_dir},GRID_CONFIG=${GRID_CONFIG}"
+        tune_export="$(slurm_export_line \
+            "$(slurm_export_assign VARIANT "$variant")" \
+            "$(slurm_export_assign PREDS_DIR "$preds_dir")" \
+            "$(slurm_export_assign GRID_CONFIG "$GRID_CONFIG")")"
         tune_cmd=(
             sbatch
             "--job-name=TuneWatershed_${slug}"
@@ -168,7 +173,11 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
         continue
     fi
 
-    shard_export="ALL,VARIANT=${variant},PREDS_DIR=${preds_dir},RUN_TAG=${run_tag},GRID_CONFIG=${GRID_CONFIG}"
+    shard_export="$(slurm_export_line \
+        "$(slurm_export_assign VARIANT "$variant")" \
+        "$(slurm_export_assign PREDS_DIR "$preds_dir")" \
+        "$(slurm_export_assign RUN_TAG "$run_tag")" \
+        "$(slurm_export_assign GRID_CONFIG "$GRID_CONFIG")")"
     shard_cmd=(
         sbatch
         "--job-name=TuneWatershedShard_${slug}"
@@ -202,7 +211,10 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
         fi
     fi
 
-    merge_export="ALL,VARIANT=${variant},RUN_TAG=${run_tag},GRID_CONFIG=${GRID_CONFIG}"
+    merge_export="$(slurm_export_line \
+        "$(slurm_export_assign VARIANT "$variant")" \
+        "$(slurm_export_assign RUN_TAG "$run_tag")" \
+        "$(slurm_export_assign GRID_CONFIG "$GRID_CONFIG")")"
     merge_cmd=(
         sbatch
         "--job-name=TuneWatershedMerge_${slug}"

@@ -67,12 +67,9 @@ CANONICAL_MANIFEST="$GRAINSEG_ROOT/dataset/train/manifests/${VARIANT}.whole.json
 require_file "$CANONICAL_MANIFEST" "Train whole manifest missing for $VARIANT"
 require_file "$GRID_CONFIG" "Watershed tune grid config not found: $GRID_CONFIG"
 
-if [ ! -f "$SLURM_ROOT/prepare_env.sh" ]; then
-    echo "prepare_env.sh not found at: $SLURM_ROOT/prepare_env.sh" >&2
-    exit 1
-fi
-source "$SLURM_ROOT/prepare_env.sh"
-
+# Resolve variant subdir before prepare_env: variants.sh uses the repo workspace
+# venv when UV_PROJECT_ENVIRONMENT is unset; after prepare_env it points at an
+# empty job venv that has not been uv sync'd yet.
 WATERSHED_SUBDIR="$(watershed_tune_subdir_for_variant "$VARIANT")"
 VARIANT_OUTPUT_DIR="$OUTPUT_DIR/$WATERSHED_SUBDIR"
 require_dir "$VARIANT_OUTPUT_DIR" "Watershed tune output dir not found: $VARIANT_OUTPUT_DIR"
@@ -81,6 +78,12 @@ MERGE_JOB_TAG="${SLURM_JOB_ID:-manual}"
 OUT_CSV="$VARIANT_OUTPUT_DIR/watershed_grid_${RUN_TAG}.csv"
 OUT_JSON="$VARIANT_OUTPUT_DIR/watershed_best_${MERGE_JOB_TAG}.json"
 SHARD_GLOB="$VARIANT_OUTPUT_DIR/watershed_grid_${RUN_TAG}_shard_*.csv"
+
+if [ ! -f "$SLURM_ROOT/prepare_env.sh" ]; then
+    echo "prepare_env.sh not found at: $SLURM_ROOT/prepare_env.sh" >&2
+    exit 1
+fi
+source "$SLURM_ROOT/prepare_env.sh"
 
 cd "$REPO_ROOT/src/unet"
 echo "Syncing U-Net environment..."

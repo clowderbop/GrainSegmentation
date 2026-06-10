@@ -113,6 +113,22 @@ def _append_yolo_detection(
     )
 
 
+def _optional_mask_offsets(
+    raw: Mapping[str, Any],
+    *,
+    detection_index: int,
+    producer: Producer,
+) -> dict[str, int]:
+    if "offset_y" not in raw and "offset_x" not in raw:
+        return {}
+    if "offset_y" not in raw or "offset_x" not in raw:
+        raise ValueError(
+            f"{producer} detections[{detection_index}] "
+            "offset_y and offset_x must both be set"
+        )
+    return {"offset_y": int(raw["offset_y"]), "offset_x": int(raw["offset_x"])}
+
+
 def validate_prediction_set(payload: dict[str, Any]) -> PredictionSet:
     try:
         schema_version = int(payload["schema_version"])
@@ -153,14 +169,8 @@ def validate_prediction_set(payload: dict[str, Any]) -> PredictionSet:
                 "segmentation": seg,
                 "score": float(raw["score"]),
                 "category_id": GRAIN_CLASS_ID,
+                **_optional_mask_offsets(raw, detection_index=index, producer="yolo"),
             }
-            if "offset_y" in raw or "offset_x" in raw:
-                if "offset_y" not in raw or "offset_x" not in raw:
-                    raise ValueError(
-                        f"yolo detections[{index}] offset_y and offset_x must both be set"
-                    )
-                det["offset_y"] = int(raw["offset_y"])
-                det["offset_x"] = int(raw["offset_x"])
             detections.append(det)
         else:
             if has_score:
@@ -169,6 +179,9 @@ def validate_prediction_set(payload: dict[str, Any]) -> PredictionSet:
                 {
                     "segmentation": seg,
                     "category_id": GRAIN_CLASS_ID,
+                    **_optional_mask_offsets(
+                        raw, detection_index=index, producer="unet"
+                    ),
                 }
             )
 
@@ -289,6 +302,61 @@ def _prediction_set_from_instance_map(
 ) -> PredictionSet: ...
 
 
+def _encode_instance_map_detections(
+    instance_map: np.ndarray,
+    *,
+    include_score: bool,
+    score_for_label: Callable[[int], float] | None = None,
+) -> list[dict[str, Any]]:
+    """Yield detection dicts from a disjoint label map via per-label bbox crops (O(pixels))."""
+    arr = np.asarray(instance_map)
+    height, width = int(arr.shape[0]), int(arr.shape[1])
+    rows, cols = np.nonzero(arr)
+    if rows.size == 0:
+        return []
+
+    labels = arr[rows, cols]
+    order = np.argsort(labels, kind="stable")
+    rows = rows[order]
+    cols = cols[order]
+    labels = labels[order]
+
+    detections: list[dict[str, Any]] = []
+    index = 0
+    while index < labels.size:
+        label_id = int(labels[index])
+        end = index + 1
+        while end < labels.size and labels[end] == label_id:
+            end += 1
+
+        label_rows = rows[index:end]
+        label_cols = cols[index:end]
+        offset_y = int(label_rows.min())
+        offset_x = int(label_cols.min())
+        crop_h = int(label_rows.max()) - offset_y + 1
+        crop_w = int(label_cols.max()) - offset_x + 1
+
+        local = np.zeros((crop_h, crop_w), dtype=bool)
+        local[label_rows - offset_y, label_cols - offset_x] = True
+
+        det: dict[str, Any] = {
+            "segmentation": binary_mask_to_segmentation(
+                local, height=crop_h, width=crop_w
+            ),
+            "category_id": GRAIN_CLASS_ID,
+        }
+        if offset_y != 0 or offset_x != 0 or crop_h != height or crop_w != width:
+            det["offset_y"] = offset_y
+            det["offset_x"] = offset_x
+        if include_score:
+            if score_for_label is None:
+                raise ValueError("score_for_label is required for YOLO prediction sets")
+            det["score"] = float(score_for_label(label_id))
+        detections.append(det)
+        index = end
+    return detections
+
+
 def _prediction_set_from_instance_map(
     instance_map: np.ndarray,
     *,
@@ -300,22 +368,11 @@ def _prediction_set_from_instance_map(
     if arr.ndim != 2:
         raise ValueError(f"instance_map must be 2D, got shape {arr.shape}")
     height, width = int(arr.shape[0]), int(arr.shape[1])
-    detections: list[dict[str, Any]] = []
-    for label_id in sorted(int(x) for x in np.unique(arr) if x != 0):
-        binary = arr == label_id
-        if not binary.any():
-            continue
-        det: dict[str, Any] = {
-            "segmentation": binary_mask_to_segmentation(
-                binary, height=height, width=width
-            ),
-            "category_id": GRAIN_CLASS_ID,
-        }
-        if include_score:
-            if score_for_label is None:
-                raise ValueError("score_for_label is required for YOLO prediction sets")
-            det["score"] = float(score_for_label(label_id))
-        detections.append(det)
+    detections = _encode_instance_map_detections(
+        arr,
+        include_score=include_score,
+        score_for_label=score_for_label,
+    )
     return PredictionSet(
         schema_version=1,
         height=height,

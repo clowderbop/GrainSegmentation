@@ -16,7 +16,7 @@ from common.prediction_set import (
     PredictionSet,
     load_prediction_set,
     prediction_set_path,
-    segmentation_to_binary_mask,
+    yolo_detection_mask_in_section,
 )
 from yolo.config import variant_choices
 from yolo.predict import load_image_for_yolo
@@ -76,9 +76,10 @@ def write_prediction_set_overlay_visual(
 ) -> None:
     import tifffile
 
+    height, width = prediction_set.height, prediction_set.width
     visual = _as_rgb_uint8(image).astype(np.float32)
     for index, det in enumerate(prediction_set.detections):
-        mask = segmentation_to_binary_mask(det["segmentation"])
+        mask = yolo_detection_mask_in_section(det, height=height, width=width)
         if not mask.any():
             continue
         color = _overlay_color_for_index(index + 1)

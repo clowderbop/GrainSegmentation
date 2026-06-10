@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
+
+from unet.watershed_best_params import load_watershed_best_params
 
 
 def main() -> None:
@@ -16,19 +17,18 @@ def main() -> None:
     if not path.is_file():
         print(f"not a file: {path}", file=sys.stderr)
         sys.exit(1)
-    with path.open(encoding="utf-8") as f:
-        payload = json.load(f)
-    bp = payload.get("best_params")
-    if not isinstance(bp, dict):
-        print("JSON missing best_params object", file=sys.stderr)
+    try:
+        params = load_watershed_best_params(path)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         sys.exit(1)
 
-    min_distance = int(bp["min_distance"])
-    boundary_dilate_iter = int(bp["boundary_dilate_iter"])
-    watershed_connectivity = int(bp["watershed_connectivity"])
-    min_area_px = int(bp["min_area_px"])
-    exclude_border = bool(bp["exclude_border"])
-    ridge_level = bp.get("ridge_level")
+    min_distance = params.min_distance
+    boundary_dilate_iter = params.boundary_dilate_iter
+    watershed_connectivity = params.watershed_connectivity
+    min_area_px = params.min_area_px
+    exclude_border = params.exclude_border
+    ridge_level = params.ridge_level
 
     lines: list[str] = [
         "--instance-method",

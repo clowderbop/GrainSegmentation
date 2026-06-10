@@ -125,6 +125,46 @@ resolve_watershed_json_lenient() {
     printf '\n'
 }
 
+# Sets global extract_args for CC extract_instances.
+# Uses CC_MIN_AREA_PX when set; otherwise reads min_area_px from resolved tune JSON.
+build_cc_extract_args() {
+    local model_path="$1"
+    local explicit_ws="${2:-}"
+    local resolved_ws_json=""
+    local min_area_helper="${3:-$REPO_ROOT/src/unet/watershed_json_min_area_px.py}"
+
+    # shellcheck disable=SC2034
+    extract_args=(--instance-method cc)
+    RESOLVED_WATERSHED_JSON=""
+
+    if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
+        extract_args+=(--min-area-px "$CC_MIN_AREA_PX")
+        return 0
+    fi
+
+    if ! resolved_ws_json="$(resolve_watershed_json_for_model "$MODEL_DIR" "$explicit_ws" "$model_path")"; then
+        return 1
+    fi
+
+    RESOLVED_WATERSHED_JSON="$resolved_ws_json"
+
+    if [[ -z "$resolved_ws_json" ]]; then
+        return 0
+    fi
+
+    require_file "$resolved_ws_json" "Watershed tuning JSON not found"
+    if [[ ! -f "$min_area_helper" ]]; then
+        echo "Missing helper script: $min_area_helper" >&2
+        return 1
+    fi
+
+    local min_area_px=""
+    if ! min_area_px="$(python3 "$min_area_helper" "$resolved_ws_json")"; then
+        return 1
+    fi
+    extract_args+=(--min-area-px "$min_area_px")
+}
+
 # Sets global extract_args for the caller's extract_instances command.
 build_watershed_extract_args() {
     local json_path="$1"

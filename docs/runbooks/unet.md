@@ -133,13 +133,15 @@ Focused tests: `uv run pytest src/unet/tests/test_watershed_tune_smoke.py -q`
 
 **Submit:** `bash SLURM/unet/submit_cc_vs_watershed_train_eval.sh`
 
-Two jobs compare connected components vs tuned watershed on **train** using `whole_eval_models.tsv`, `--manifest-split train`, `train_labels.gpkg`.
+Two jobs compare connected components vs tuned watershed on **train** using `whole_eval_models.tsv`, `--manifest-split train`, `train_labels.gpkg`. Both jobs receive `--watershed-tune-root` so they resolve the same per-variant `watershed_best_*.json` artifacts.
 
 | Output | Path |
 |--------|------|
 | CC | `eval/instance_val_cc/` |
 | Watershed | `eval/instance_val_watershed/` |
 | Selection | `eval/extraction_method_selection.json` |
+
+**CC `min_area_px` policy:** CC extraction stays connected-components; only the area floor is aligned for a fair train comparison. Per registry variant, whole eval reads `best_params.min_area_px` from the latest resolved tune JSON (same rules as watershed eval). Set `CC_MIN_AREA_PX` to override. When no tune root or explicit JSON column is available, CC keeps the default `min_area_px=0`. Prediction-set encoding performance is transparent to callers — only extraction wall time changes.
 
 `submit_cc_vs_watershed_train_eval.sh` submits both eval jobs and a follow-up selection job (`run_cc_vs_watershed_selection.sh`) that picks the method by mean train whole-section **PQ** across registry variants. Overlays remain supporting evidence for failure-mode review, not the selection criterion.
 

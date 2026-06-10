@@ -51,25 +51,25 @@ function log_watershed_extract_config {
     fi
 
     echo "Model $model_label: watershed tune JSON: $resolved_ws_json"
-    python3 - "$resolved_ws_json" <<'PY'
-import json
-import sys
+    python3 "$WATERSHED_LOG_PARAMS_HELPER" "$resolved_ws_json"
+}
 
-with open(sys.argv[1], encoding="utf-8") as handle:
-    payload = json.load(handle)
-best_params = payload.get("best_params")
-if not isinstance(best_params, dict):
-    raise SystemExit(f"JSON missing best_params object: {sys.argv[1]}")
-keys = (
-    "min_distance",
-    "boundary_dilate_iter",
-    "watershed_connectivity",
-    "min_area_px",
-    "exclude_border",
-    "ridge_level",
-)
-print("  " + ", ".join(f"{key}={best_params[key]!r}" for key in keys))
-PY
+function log_cc_extract_config {
+    local model_label="$1"
+    local resolved_ws_json="${2:-}"
+    local min_area_px="${3:-0}"
+
+    if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
+        echo "Model $model_label: CC min_area_px=$CC_MIN_AREA_PX (CC_MIN_AREA_PX override)"
+        return 0
+    fi
+
+    if [[ -z "$resolved_ws_json" ]]; then
+        echo "Model $model_label: CC (no tune JSON; min_area_px=$min_area_px default)"
+        return 0
+    fi
+
+    echo "Model $model_label: CC tune JSON: $resolved_ws_json (min_area_px=$min_area_px)"
 }
 
 function usage {
@@ -83,7 +83,7 @@ Options:
   --gt-gpkg PATH                 (default: dataset/{split}/{split}_labels.gpkg)
   --config-file PATH             (default: SLURM/unet/whole_eval_models.tsv)
   --instance-method cc|watershed (default: watershed)
-  --watershed-tune-root DIR      (watershed only)
+  --watershed-tune-root DIR      (per-variant watershed_best_*.json for watershed + CC min_area_px)
   --overlay-variant VARIANT      (default: PPL)
   --gt-path PATH                 (overlay raster mask; default from staged overlay manifest)
   --patch-size, --stride, --batch-size
@@ -114,11 +114,8 @@ function build_extract_instance_args {
     RESOLVED_WATERSHED_JSON=""
 
     if [[ "$INSTANCE_METHOD" == "cc" ]]; then
-        extract_args=(--instance-method cc)
-        if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
-            extract_args+=(--min-area-px "$CC_MIN_AREA_PX")
-        fi
-        return 0
+        build_cc_extract_args "$model_path" "$explicit_ws" "$WATERSHED_MIN_AREA_HELPER"
+        return $?
     fi
 
     if [[ "$INSTANCE_METHOD" != "watershed" ]]; then
@@ -227,10 +224,6 @@ case "$INSTANCE_METHOD" in
         ;;
 esac
 
-if [[ "$INSTANCE_METHOD" == "cc" && -n "$WATERSHED_TUNE_ROOT" ]]; then
-    echo "Note: --watershed-tune-root is ignored when --instance-method cc." >&2
-fi
-
 require_dir "$MODEL_DIR" "Model directory not found"
 if [ -z "$GT_GPKG" ]; then
     GT_GPKG="$(default_whole_labels_gpkg "$MANIFEST_SPLIT" "$GRAINSEG_ROOT")"
@@ -291,12 +284,19 @@ if [ "${#MODEL_PATHS[@]}" -eq 0 ]; then
 fi
 
 WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
+WATERSHED_MIN_AREA_HELPER="$REPO_ROOT/src/unet/watershed_json_min_area_px.py"
+WATERSHED_LOG_PARAMS_HELPER="$REPO_ROOT/src/unet/watershed_json_log_params.py"
 
-if [[ "$INSTANCE_METHOD" == "watershed" ]]; then
-    if [[ -n "$WATERSHED_TUNE_ROOT" ]]; then
-        echo "Watershed tune root: $WATERSHED_TUNE_ROOT (per-variant latest watershed_best_*.json when config has no explicit path)"
+if [[ -n "$WATERSHED_TUNE_ROOT" ]]; then
+    echo "Watershed tune root: $WATERSHED_TUNE_ROOT (per-variant latest watershed_best_*.json when config has no explicit path)"
+else
+    echo "Watershed tune root: (not set); per-model explicit JSON column or extract_instances CLI defaults"
+fi
+if [[ "$INSTANCE_METHOD" == "cc" ]]; then
+    if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
+        echo "CC min_area_px: $CC_MIN_AREA_PX (CC_MIN_AREA_PX override)"
     else
-        echo "Watershed tune root: (not set); per-model explicit JSON column or extract_instances CLI defaults"
+        echo "CC min_area_px: from tune JSON when available, else 0"
     fi
 fi
 
@@ -344,6 +344,15 @@ for i in "${!MODEL_PATHS[@]}"; do
     fi
     if [[ "$INSTANCE_METHOD" == "watershed" ]]; then
         log_watershed_extract_config "${MODEL_LABELS[$i]}" "$RESOLVED_WATERSHED_JSON"
+    elif [[ "$INSTANCE_METHOD" == "cc" ]]; then
+        cc_min_area_px=0
+        for ((arg_idx=0; arg_idx<${#extract_args[@]}; arg_idx++)); do
+            if [[ "${extract_args[$arg_idx]}" == "--min-area-px" ]]; then
+                cc_min_area_px="${extract_args[$((arg_idx + 1))]}"
+                break
+            fi
+        done
+        log_cc_extract_config "${MODEL_LABELS[$i]}" "$RESOLVED_WATERSHED_JSON" "$cc_min_area_px"
     fi
 
     echo "Model ${MODEL_LABELS[$i]}: predict"

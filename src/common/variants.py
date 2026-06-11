@@ -198,6 +198,12 @@ def get_variant(name: str) -> VariantSpec:
         ) from exc
 
 
+def unet_finetuned_eval_run_name(variant: str) -> str:
+    """Run subdirectory name under a whole-section U-Net eval output dir."""
+    model_file = get_variant(variant).slugs.model_file
+    return f"run_{Path(model_file).stem}"
+
+
 def variant_input_image_count(variant_key: str) -> int:
     """Microscopy image count for an input configuration (thesis complexity axis)."""
     return get_variant(variant_key).unet.num_inputs

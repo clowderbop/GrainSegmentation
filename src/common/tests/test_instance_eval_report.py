@@ -11,6 +11,7 @@ from common.evaluate_instances import evaluate_instance_samples
 from common.instance_eval_report import (
     TRAIN_WHOLE_SECTION_SAMPLE_IDS,
     extract_instance_metric_bundle_from_report,
+    instance_metrics_report_path_for_variant,
     load_train_whole_section_bundle,
     mean_bundle_across_variants,
     validate_train_whole_section_report,
@@ -84,6 +85,14 @@ def test_load_train_whole_section_bundle_validates_before_extract(
     path.write_text(json.dumps(report), encoding="utf-8")
     with pytest.raises(ValueError, match="unit='whole'"):
         load_train_whole_section_bundle(path)
+
+
+def test_instance_metrics_report_path_for_variant_omits_keras_suffix(
+    tmp_path: Path,
+) -> None:
+    """INTENT: whole-section eval run dirs use model stem without .keras (run_whole_test_eval.sh)."""
+    path = instance_metrics_report_path_for_variant(tmp_path, "PPL")
+    assert path == tmp_path / "run_unet_finetuned_PPL" / "instance_metrics.json"
 
 
 def test_mean_bundle_across_variants_averages_numeric_fields() -> None:

@@ -12,6 +12,7 @@ from common.instance_metric_bundle import (
     INSTANCE_METRIC_BUNDLE_INT_KEYS,
     INSTANCE_METRIC_BUNDLE_KEYS,
 )
+from common.variants import unet_finetuned_eval_run_name
 
 TRAIN_WHOLE_SECTION_SAMPLE_IDS: tuple[str, ...] = ("train",)
 
@@ -116,7 +117,7 @@ def mean_bundle_across_variants(
 def instance_metrics_report_path_for_variant(
     eval_output_dir: Path, variant: str
 ) -> Path:
-    run_dir = eval_output_dir / f"run_unet_finetuned_{variant}.keras"
+    run_dir = eval_output_dir / unet_finetuned_eval_run_name(variant)
     return run_dir / "instance_metrics.json"
 
 

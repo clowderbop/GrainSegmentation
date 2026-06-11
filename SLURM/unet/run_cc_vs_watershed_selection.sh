@@ -1,11 +1,16 @@
 #!/bin/bash
+#SBATCH --job-name=cc_ws_select
+#SBATCH --output=logs/%x-%j.log
+#SBATCH --mem=8G
+#SBATCH --cpus-per-task=1
+#SBATCH --time=00:30:00
 # Select CC vs tuned watershed on train using whole-section PQ (ADR 0003).
 # Ops: docs/runbooks/unet.md#cc-vs-watershed-train-section
 
 set -euo pipefail
-# shellcheck source=SLURM/utils/repo_root.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/repo_root.sh"
-cd "$REPO_ROOT"
+# shellcheck source=SLURM/utils/enter_job.sh
+source "${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/SLURM/utils/enter_job.sh"
+mkdir -p "$REPO_ROOT/logs"
 
 GRAINSEG_ROOT="$(grainseg_root)"
 EVAL_ROOT="$GRAINSEG_ROOT/eval"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from common.variants import all_variant_names, get_variant
+from common.variants import all_variant_names, unet_finetuned_eval_run_name
 
 
 @dataclass(frozen=True)
@@ -34,9 +34,7 @@ def yolo_whole_eval_dir(grainseg_root: Path, variant: str) -> Path:
 
 def unet_whole_eval_dir(grainseg_root: Path, variant: str) -> Path:
     """Whole-section U-Net test eval dir (run name omits .keras from model basename)."""
-    model_file = get_variant(variant).slugs.model_file
-    run_name = f"run_{Path(model_file).stem}"
-    return grainseg_root / "eval" / "unet_test" / run_name
+    return grainseg_root / "eval" / "unet_test" / unet_finetuned_eval_run_name(variant)
 
 
 def yolo_patch_variant_dir(grainseg_root: Path, variant: str) -> Path:

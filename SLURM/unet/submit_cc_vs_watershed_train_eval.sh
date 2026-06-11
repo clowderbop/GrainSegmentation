@@ -80,13 +80,14 @@ if [[ "$DRY_RUN" == true ]]; then
 else
     cc_job="$("${cc_cmd[@]}" | awk '{print $NF}')"
     ws_job="$("${ws_cmd[@]}" | awk '{print $NF}')"
-    select_job="$(
+    select_cmd=(
         sbatch
         --parsable
         --job-name=cc_ws_select
         --dependency="afterok:${cc_job}:${ws_job}"
-        "$REPO_ROOT/SLURM/unet/run_cc_vs_watershed_selection.sh" | awk '{print $NF}'
-    )"
+        "$REPO_ROOT/SLURM/unet/run_cc_vs_watershed_selection.sh"
+    )
+    select_job="$("${select_cmd[@]}" | awk '{print $NF}')"
 fi
 
 echo "Submitted CC vs watershed train-section eval jobs."

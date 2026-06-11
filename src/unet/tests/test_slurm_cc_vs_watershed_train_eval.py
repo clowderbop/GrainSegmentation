@@ -19,7 +19,6 @@ def _run_build_cc_extract_args(
     model_path: Path,
     model_dir: Path,
     tune_root: Path,
-    helper: Path,
     cc_min_area_px: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     env_exports = ""
@@ -34,7 +33,7 @@ source "$SLURM_ROOT/utils/watershed.sh"
 MODEL_DIR="{model_dir}"
 WATERSHED_TUNE_ROOT="{tune_root}"
 export VARIANT=PPL
-build_cc_extract_args "{model_path}" "" "{helper}"
+build_cc_extract_args "{model_path}" ""
 printf 'resolved=%s\\n' "$RESOLVED_WATERSHED_JSON"
 printf '%s\\n' "${{extract_args[*]}}"
 """
@@ -83,12 +82,10 @@ def test_build_cc_extract_args_uses_tune_json_min_area_px(tmp_path: Path) -> Non
     model_path = model_dir / "unet_finetuned_PPL.keras"
     model_path.write_text("stub", encoding="utf-8")
 
-    helper = repo_root() / "src" / "unet" / "watershed_json_min_area_px.py"
     result = _run_build_cc_extract_args(
         model_path=model_path,
         model_dir=model_dir,
         tune_root=tune_root,
-        helper=helper,
     )
 
     assert result.returncode == 0, result.stderr
@@ -111,12 +108,10 @@ def test_build_cc_extract_args_cc_min_area_px_override_skips_tune_root_resolutio
     model_path = model_dir / "unet_finetuned_PPL.keras"
     model_path.write_text("stub", encoding="utf-8")
 
-    helper = repo_root() / "src" / "unet" / "watershed_json_min_area_px.py"
     result = _run_build_cc_extract_args(
         model_path=model_path,
         model_dir=model_dir,
         tune_root=tune_root,
-        helper=helper,
         cc_min_area_px="128",
     )
 

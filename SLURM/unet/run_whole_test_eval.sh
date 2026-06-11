@@ -51,7 +51,7 @@ function log_watershed_extract_config {
     fi
 
     echo "Model $model_label: watershed tune JSON: $resolved_ws_json"
-    python3 "$WATERSHED_LOG_PARAMS_HELPER" "$resolved_ws_json"
+    run_common_in_unet_env -m unet.watershed_json_log_params "$resolved_ws_json"
 }
 
 function log_cc_extract_config {
@@ -114,7 +114,7 @@ function build_extract_instance_args {
     RESOLVED_WATERSHED_JSON=""
 
     if [[ "$INSTANCE_METHOD" == "cc" ]]; then
-        build_cc_extract_args "$model_path" "$explicit_ws" "$WATERSHED_MIN_AREA_HELPER"
+        build_cc_extract_args "$model_path" "$explicit_ws"
         return $?
     fi
 
@@ -129,7 +129,7 @@ function build_extract_instance_args {
     fi
 
     RESOLVED_WATERSHED_JSON="$resolved_ws_json"
-    build_watershed_extract_args "$resolved_ws_json" "$WATERSHED_JSON_HELPER"
+    build_watershed_extract_args "$resolved_ws_json"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -282,10 +282,6 @@ if [ "${#MODEL_PATHS[@]}" -eq 0 ]; then
     echo "No models configured for evaluation."
     exit 1
 fi
-
-WATERSHED_JSON_HELPER="$REPO_ROOT/src/unet/watershed_json_to_eval_args.py"
-WATERSHED_MIN_AREA_HELPER="$REPO_ROOT/src/unet/watershed_json_min_area_px.py"
-WATERSHED_LOG_PARAMS_HELPER="$REPO_ROOT/src/unet/watershed_json_log_params.py"
 
 if [[ -n "$WATERSHED_TUNE_ROOT" ]]; then
     echo "Watershed tune root: $WATERSHED_TUNE_ROOT (per-variant latest watershed_best_*.json when config has no explicit path)"

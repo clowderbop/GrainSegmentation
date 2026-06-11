@@ -1,14 +1,16 @@
 # shellcheck shell=bash
-_slurm_utils="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_watershed_utils="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -z "${REPO_ROOT:-}" ] || [ -z "${SLURM_ROOT:-}" ]; then
     # shellcheck source=SLURM/utils/paths.sh
-    source "$_slurm_utils/paths.sh"
+    source "$_watershed_utils/paths.sh"
 fi
 # shellcheck source=SLURM/utils/assertions.sh
-source "$_slurm_utils/assertions.sh"
+source "$_watershed_utils/assertions.sh"
 # shellcheck source=SLURM/utils/variants.sh
-source "$_slurm_utils/variants.sh"
-unset _slurm_utils
+source "$_watershed_utils/variants.sh"
+# shellcheck source=SLURM/utils/manifest_shell.sh
+source "$_watershed_utils/manifest_shell.sh"
+unset _watershed_utils
 
 watershed_tune_subdir() {
     if [ -z "${VARIANT:-}" ]; then
@@ -131,7 +133,6 @@ build_cc_extract_args() {
     local model_path="$1"
     local explicit_ws="${2:-}"
     local resolved_ws_json=""
-    local min_area_helper="${3:-$REPO_ROOT/src/unet/watershed_json_min_area_px.py}"
 
     # shellcheck disable=SC2034
     extract_args=(--instance-method cc)
@@ -153,13 +154,9 @@ build_cc_extract_args() {
     fi
 
     require_file "$resolved_ws_json" "Watershed tuning JSON not found"
-    if [[ ! -f "$min_area_helper" ]]; then
-        echo "Missing helper script: $min_area_helper" >&2
-        return 1
-    fi
 
     local min_area_px=""
-    if ! min_area_px="$(python3 "$min_area_helper" "$resolved_ws_json")"; then
+    if ! min_area_px="$(run_common_in_unet_env -m unet.watershed_json_min_area_px "$resolved_ws_json")"; then
         return 1
     fi
     extract_args+=(--min-area-px "$min_area_px")
@@ -168,16 +165,15 @@ build_cc_extract_args() {
 # Sets global extract_args for the caller's extract_instances command.
 build_watershed_extract_args() {
     local json_path="$1"
-    local helper="${2:-$REPO_ROOT/src/unet/watershed_json_to_eval_args.py}"
+    local ws_args_output=""
     # shellcheck disable=SC2034
     extract_args=(--instance-method watershed)
     if [[ -n "$json_path" ]]; then
         require_file "$json_path" "Watershed tuning JSON not found"
-        if [[ ! -f "$helper" ]]; then
-            echo "Missing helper script: $helper" >&2
+        if ! ws_args_output="$(run_common_in_unet_env -m unet.watershed_json_to_eval_args "$json_path")"; then
             return 1
         fi
         # shellcheck disable=SC2034
-        mapfile -t extract_args < <(python3 "$helper" "$json_path")
+        mapfile -t extract_args <<< "$ws_args_output"
     fi
 }

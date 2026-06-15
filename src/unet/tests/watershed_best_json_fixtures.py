@@ -14,6 +14,7 @@ def write_watershed_best_json(path: Path, params: WatershedParamSet) -> None:
         "best_params": {
             "min_distance": params.min_distance,
             "boundary_dilate_iter": params.boundary_dilate_iter,
+            "h_maxima": params.h_maxima,
             "watershed_connectivity": params.watershed_connectivity,
             "min_area_px": params.min_area_px,
             "exclude_border": params.exclude_border,

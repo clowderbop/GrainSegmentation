@@ -42,6 +42,7 @@ def test_watershed_tune_shard_count_generalizes_to_custom_grid_shapes(
         grid_path,
         {
             "min_distance": [5, 9],
+            "h_maxima": [0],
             "boundary_dilate_iter": [0, 1, 2],
             "watershed_connectivity": [1],
             "min_area_px": [0],
@@ -76,11 +77,11 @@ def _shard_param_sets_union(grid):
 
 
 def test_default_grid_shards_partition_full_grid_without_gaps_or_duplicates() -> None:
-    """INTENT: default grid shards cover all seventy-two tune combos exactly once."""
+    """INTENT: default grid shards cover all tune combos exactly once."""
     grid = load_watershed_tune_grid().grid
     assert watershed_tune_shard_count(grid) == 6
     monolithic = list(iter_watershed_tune_param_sets(grid))
-    assert len(monolithic) == 72
+    assert len(monolithic) == 504
     assert _shard_param_sets_union(grid) == monolithic
 
 
@@ -93,6 +94,7 @@ def test_custom_grid_shards_partition_full_grid_without_gaps_or_duplicates(
         grid_path,
         {
             "min_distance": [5],
+            "h_maxima": [0],
             "boundary_dilate_iter": [0, 1],
             "watershed_connectivity": [1, 2],
             "min_area_px": [0, 64],
@@ -103,7 +105,7 @@ def test_custom_grid_shards_partition_full_grid_without_gaps_or_duplicates(
     grid = load_watershed_tune_grid(grid_path).grid
     assert watershed_tune_shard_count(grid) == 2
     monolithic = list(iter_watershed_tune_param_sets(grid))
-    assert len(monolithic) == 1 * 2 * 2 * 2 * 1 * 1
+    assert len(monolithic) == 1 * 1 * 2 * 2 * 2 * 1 * 1
     assert _shard_param_sets_union(grid) == monolithic
 
 
@@ -116,14 +118,14 @@ def test_watershed_tune_shard_combo_count_matches_materialized_shard_length() ->
         )
 
 
-def test_default_grid_yields_six_shards_of_twelve_combinations_each() -> None:
-    """INTENT: default grid shards align with six min_distance x boundary_dilate_iter pairs of twelve combos."""
+def test_default_grid_yields_six_shards_of_eighty_four_combinations_each() -> None:
+    """INTENT: default grid shards align with six min_distance x boundary_dilate_iter pairs."""
     grid = load_watershed_tune_grid().grid
     shard_sizes = [
         len(list(iter_watershed_tune_param_sets_for_shard(grid, shard)))
         for shard in iter_watershed_tune_shards(grid)
     ]
-    assert shard_sizes == [12] * 6
+    assert shard_sizes == [84] * 6
 
 
 def test_shard_param_order_matches_monolithic_subset_for_each_shard() -> None:

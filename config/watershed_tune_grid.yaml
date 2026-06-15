@@ -3,6 +3,7 @@
 grid:
   min_distance: [5, 9, 11]
   boundary_dilate_iter: [0, 1]
+  h_maxima: [0, 2, 4, 8, 12, 16, 24]
   watershed_connectivity: [1, 2]
   min_area_px: [0, 64, 256]
   exclude_border: [0, 1]

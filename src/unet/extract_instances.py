@@ -68,6 +68,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default="cc",
     )
     parser.add_argument("--watershed-min-distance", type=int, default=1)
+    parser.add_argument("--watershed-h-maxima", type=int, default=0)
     parser.add_argument("--watershed-boundary-dilate-iter", type=int, default=0)
     parser.add_argument("--watershed-connectivity", type=int, choices=(1, 2), default=1)
     parser.add_argument("--watershed-min-area-px", type=int, default=0)
@@ -86,6 +87,8 @@ def _validate_args(
 ) -> None:
     if args.watershed_min_distance < 1:
         raise_cli_argument_error("watershed_min_distance must be >= 1", parser=parser)
+    if args.watershed_h_maxima < 0:
+        raise_cli_argument_error("watershed_h_maxima must be >= 0", parser=parser)
     if args.watershed_boundary_dilate_iter < 0:
         raise_cli_argument_error(
             "watershed_boundary_dilate_iter must be >= 0", parser=parser
@@ -117,6 +120,7 @@ def _instances_from_semantic(
     base = watershed_base_extraction(
         prep,
         min_distance=args.watershed_min_distance,
+        h_maxima=args.watershed_h_maxima,
         boundary_dilate_iter=args.watershed_boundary_dilate_iter,
         watershed_connectivity=args.watershed_connectivity,
         exclude_border=args.watershed_exclude_border,
@@ -151,6 +155,7 @@ def _run_provenance_payload(args: argparse.Namespace) -> dict[str, Any]:
         payload.update(
             {
                 "watershed_min_distance": args.watershed_min_distance,
+                "watershed_h_maxima": args.watershed_h_maxima,
                 "watershed_boundary_dilate_iter": args.watershed_boundary_dilate_iter,
                 "watershed_connectivity": args.watershed_connectivity,
                 "watershed_min_area_px": args.watershed_min_area_px,

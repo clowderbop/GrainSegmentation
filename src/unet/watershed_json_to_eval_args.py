@@ -35,6 +35,8 @@ def main() -> None:
         "watershed",
         "--watershed-min-distance",
         str(min_distance),
+        "--watershed-h-maxima",
+        str(params.h_maxima),
         "--watershed-boundary-dilate-iter",
         str(boundary_dilate_iter),
         "--watershed-connectivity",

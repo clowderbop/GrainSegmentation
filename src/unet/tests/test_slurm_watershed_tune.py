@@ -31,6 +31,7 @@ def _three_axis_grid_yaml(tmp_path: Path) -> Path:
         grid_path,
         {
             "min_distance": [5, 9, 11],
+            "h_maxima": [0],
             "boundary_dilate_iter": [0],
             "watershed_connectivity": [1],
             "min_area_px": [0],
@@ -150,6 +151,7 @@ def test_watershed_tune_shard_count_for_grid_config_derives_from_yaml(
         grid_path,
         {
             "min_distance": [5, 9],
+            "h_maxima": [0],
             "boundary_dilate_iter": [0, 1],
             "watershed_connectivity": [1],
             "min_area_px": [0],

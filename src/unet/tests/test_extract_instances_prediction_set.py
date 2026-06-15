@@ -56,6 +56,7 @@ def test_extract_instances_writes_prediction_set_and_provenance(tmp_path: Path) 
         manifest=manifest_path,
         instance_method="cc",
         watershed_min_distance=1,
+        watershed_h_maxima=0,
         watershed_boundary_dilate_iter=0,
         watershed_connectivity=1,
         watershed_min_area_px=0,
@@ -102,6 +103,7 @@ def test_extract_instances_watershed_writes_prediction_set_and_provenance(
         manifest=manifest_path,
         instance_method="watershed",
         watershed_min_distance=5,
+        watershed_h_maxima=0,
         watershed_boundary_dilate_iter=0,
         watershed_connectivity=1,
         watershed_min_area_px=0,
@@ -121,7 +123,53 @@ def test_extract_instances_watershed_writes_prediction_set_and_provenance(
     assert provenance["producer"] == "unet"
     assert provenance["instance_method"] == "watershed"
     assert provenance["watershed_min_distance"] == 5
+    assert provenance["watershed_h_maxima"] == 0
     assert provenance["watershed_min_area_px"] == 0
+
+
+def test_extract_instances_watershed_h_maxima_reduces_speckle_over_segmentation(
+    tmp_path: Path,
+) -> None:
+    """INTENT: positive watershed_h_maxima via CLI yields fewer instances on speckled interior."""
+    sample_id = "patch001"
+    semantic_dir = tmp_path / "semantic"
+    semantic_dir.mkdir()
+    semantic = np.zeros((120, 120), dtype=np.int32)
+    semantic[40:80, 40:80] = 1
+    for row in range(8, 112, 8):
+        for col in range(8, 112, 8):
+            if row + 3 <= 40 or row >= 80 or col + 3 <= 40 or col >= 80:
+                semantic[row : row + 3, col : col + 3] = 1
+    tifffile.imwrite(semantic_dir / f"{sample_id}_pred.tif", semantic)
+
+    manifest_path = tmp_path / "manifest.json"
+    _write_manifest(manifest_path, sample_id)
+
+    def _run(h_maxima: int, output_dir: Path) -> int:
+        args = argparse.Namespace(
+            semantic_dir=semantic_dir,
+            output_dir=output_dir,
+            manifest=manifest_path,
+            instance_method="watershed",
+            watershed_min_distance=1,
+            watershed_h_maxima=h_maxima,
+            watershed_boundary_dilate_iter=0,
+            watershed_connectivity=1,
+            watershed_min_area_px=0,
+            watershed_exclude_border=False,
+            watershed_ridge_level=None,
+            min_area_px=0,
+        )
+        run_extract_instances(args)
+        prediction_set = load_prediction_set(prediction_set_path(output_dir, sample_id))
+        provenance = load_run_provenance(output_dir)
+        assert provenance["watershed_h_maxima"] == h_maxima
+        return len(prediction_set.detections)
+
+    count_h0 = _run(0, tmp_path / "out_h0")
+    count_h4 = _run(4, tmp_path / "out_h4")
+
+    assert count_h4 < count_h0
 
 
 def test_extract_instances_cc_records_nonzero_min_area_px_in_provenance(
@@ -146,6 +194,7 @@ def test_extract_instances_cc_records_nonzero_min_area_px_in_provenance(
         manifest=manifest_path,
         instance_method="cc",
         watershed_min_distance=1,
+        watershed_h_maxima=0,
         watershed_boundary_dilate_iter=0,
         watershed_connectivity=1,
         watershed_min_area_px=0,

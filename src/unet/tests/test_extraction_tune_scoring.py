@@ -30,6 +30,7 @@ from unet.extraction_tune_scoring import (
     mean_train_pq_for_watershed_params,
     select_best_watershed_tune_row,
     watershed_best_json_summary,
+    watershed_param_set_from_tune_row,
     watershed_per_sample_columns,
     watershed_tune_fieldnames,
     watershed_tune_row,
@@ -66,12 +67,22 @@ def _split_first_grain_pred(height: int = 64, width: int = 64) -> np.ndarray:
     return pred
 
 
+def test_watershed_tune_row_round_trips_h_maxima() -> None:
+    """INTENT: tune CSV rows carry h_maxima and watershed_param_set_from_tune_row restores it."""
+    params = WatershedParamSet(5, 0, 1, 0, False, None, h_maxima=8)
+    mean_pq = {key: 0.0 for key in MERGED_VIEW_PQ_RESULT_KEYS}
+    row = watershed_tune_row(params, mean_pq, per_sample_pq={})
+    assert row["h_maxima"] == 8
+    assert watershed_param_set_from_tune_row(row) == params
+
+
 def test_format_watershed_param_set_matches_tune_job_log_style() -> None:
     """INTENT: watershed param formatting matches the tune job log string convention."""
     params = WatershedParamSet(5, 1, 2, 64, True, None)
     assert format_watershed_ridge_level(None) == "auto"
     assert format_watershed_param_set(params) == (
-        "min_dist=5, dilate=1, conn=2, min_area=64, exclude_border=True, ridge=auto"
+        "min_dist=5, h_maxima=0, dilate=1, conn=2, min_area=64, "
+        "exclude_border=True, ridge=auto"
     )
 
 

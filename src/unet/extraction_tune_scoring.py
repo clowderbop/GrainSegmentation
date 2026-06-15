@@ -77,6 +77,7 @@ class WatershedParamSet:
     min_area_px: int
     exclude_border: bool
     ridge_level: float | None
+    h_maxima: int = 0
 
 
 def format_watershed_ridge_level(ridge_level: float | None) -> str:
@@ -85,7 +86,8 @@ def format_watershed_ridge_level(ridge_level: float | None) -> str:
 
 def format_watershed_param_set(params: WatershedParamSet) -> str:
     return (
-        f"min_dist={params.min_distance}, dilate={params.boundary_dilate_iter}, "
+        f"min_dist={params.min_distance}, h_maxima={params.h_maxima}, "
+        f"dilate={params.boundary_dilate_iter}, "
         f"conn={params.watershed_connectivity}, min_area={params.min_area_px}, "
         f"exclude_border={params.exclude_border}, "
         f"ridge={format_watershed_ridge_level(params.ridge_level)}"
@@ -100,6 +102,7 @@ def watershed_param_set_from_tune_row(row: dict[str, Any]) -> WatershedParamSet:
         min_area_px=int(row["min_area_px"]),
         exclude_border=bool(int(row["exclude_border"])),
         ridge_level=None if row["ridge_level"] == "" else float(row["ridge_level"]),
+        h_maxima=int(row["h_maxima"]),
     )
 
 
@@ -117,6 +120,7 @@ def _watershed_kwargs(
         interior_class=interior_class,
         boundary_class=boundary_class,
         min_distance=params.min_distance,
+        h_maxima=params.h_maxima,
         boundary_dilate_iter=params.boundary_dilate_iter,
         watershed_connectivity=params.watershed_connectivity,
         min_area_px=params.min_area_px,
@@ -140,6 +144,7 @@ def instance_map_for_watershed_params(
     base = watershed_base_extraction(
         prep,
         min_distance=kw["min_distance"],
+        h_maxima=kw["h_maxima"],
         boundary_dilate_iter=kw["boundary_dilate_iter"],
         watershed_connectivity=kw["watershed_connectivity"],
         exclude_border=kw["exclude_border"],
@@ -286,6 +291,7 @@ def watershed_tune_row(
     row: dict[str, Any] = {
         "min_distance": params.min_distance,
         "boundary_dilate_iter": params.boundary_dilate_iter,
+        "h_maxima": params.h_maxima,
         "watershed_connectivity": params.watershed_connectivity,
         "min_area_px": params.min_area_px,
         "exclude_border": int(params.exclude_border),
@@ -305,6 +311,7 @@ def watershed_tune_fieldnames(
     param_fields = [
         "min_distance",
         "boundary_dilate_iter",
+        "h_maxima",
         "watershed_connectivity",
         "min_area_px",
         "exclude_border",
@@ -337,6 +344,7 @@ def watershed_best_json_summary(
         "best_params": {
             "min_distance": best_params.min_distance,
             "boundary_dilate_iter": best_params.boundary_dilate_iter,
+            "h_maxima": best_params.h_maxima,
             "watershed_connectivity": best_params.watershed_connectivity,
             "min_area_px": best_params.min_area_px,
             "exclude_border": best_params.exclude_border,

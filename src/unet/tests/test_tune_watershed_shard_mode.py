@@ -186,6 +186,7 @@ def test_shard_mode_surfaces_catastrophic_over_segmentation_in_csv(
         grid_path,
         grid={
             "min_distance": [5],
+            "h_maxima": [0],
             "boundary_dilate_iter": [0],
             "watershed_connectivity": [1],
             "min_area_px": [0],

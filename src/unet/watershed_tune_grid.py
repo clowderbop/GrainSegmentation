@@ -19,6 +19,7 @@ WATERSHED_TUNE_GRID_CONFIG_REL = Path("config") / "watershed_tune_grid.yaml"
 @dataclass(frozen=True)
 class WatershedTuneGrid:
     min_distance: tuple[int, ...]
+    h_maxima: tuple[int, ...]
     boundary_dilate_iter: tuple[int, ...]
     watershed_connectivity: tuple[int, ...]
     min_area_px: tuple[int, ...]
@@ -57,6 +58,8 @@ def _validate_loaded_grid(grid: WatershedTuneGrid, *, context: str) -> None:
         raise ValueError(
             f"{context}.min_distance must omit pixel-scale value 1 on train whole sections"
         )
+    if any(value < 0 for value in grid.h_maxima):
+        raise ValueError(f"{context}.h_maxima values must be >= 0")
     if any(value < 0 for value in grid.boundary_dilate_iter):
         raise ValueError(f"{context}.boundary_dilate_iter values must be >= 0")
     if any(value < 0 for value in grid.min_area_px):
@@ -89,6 +92,7 @@ def load_watershed_tune_grid(path: Path | None = None) -> WatershedTuneGridSpec:
         min_distance=yv.require_int_list(
             grid_raw.get("min_distance"), context="grid.min_distance"
         ),
+        h_maxima=yv.require_int_list(grid_raw.get("h_maxima"), context="grid.h_maxima"),
         boundary_dilate_iter=yv.require_int_list(
             grid_raw.get("boundary_dilate_iter"),
             context="grid.boundary_dilate_iter",
@@ -122,15 +126,17 @@ def iter_watershed_tune_param_sets(
     for tup in itertools.product(
         grid.min_distance,
         grid.boundary_dilate_iter,
+        grid.h_maxima,
         grid.watershed_connectivity,
         grid.min_area_px,
         grid.exclude_border,
         grid.ridge_level,
     ):
-        md, bdi, wsc, mapx, exb, ridge = tup
+        md, bdi, hmax, wsc, mapx, exb, ridge = tup
         yield WatershedParamSet(
             min_distance=int(md),
             boundary_dilate_iter=int(bdi),
+            h_maxima=int(hmax),
             watershed_connectivity=int(wsc),
             min_area_px=int(mapx),
             exclude_border=bool(int(exb)),

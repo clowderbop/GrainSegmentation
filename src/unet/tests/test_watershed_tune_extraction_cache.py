@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
+import yaml
 
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from unet.extraction_tune_scoring import (
@@ -30,6 +33,21 @@ from unet.watershed_tune_extraction_cache import (
 )
 
 
+CACHE_PARITY_GRID: dict[str, object] = {
+    "min_distance": [5],
+    "boundary_dilate_iter": [0, 1],
+    "h_maxima": [0, 4],
+    "watershed_connectivity": [1, 2],
+    "min_area_px": [64, 256],
+    "exclude_border": [0, 1],
+    "ridge_level": [None],
+}
+
+
+def _write_cache_parity_grid(path: Path) -> None:
+    path.write_text(yaml.safe_dump({"grid": CACHE_PARITY_GRID}), encoding="utf-8")
+
+
 def _multi_grain_semantic_with_boundaries(
     height: int = 64, width: int = 64
 ) -> np.ndarray:
@@ -52,9 +70,23 @@ def _two_grain_gt(height: int = 64, width: int = 64) -> np.ndarray:
     return gt
 
 
-def test_default_grid_extraction_cache_ratio_from_axis_structure() -> None:
-    """INTENT: scored combos are base extractions times min_area_px axis length."""
+def test_committed_default_grid_extraction_cache_counts() -> None:
+    """INTENT: committed default grid base-key and combo counts include the h_maxima axis."""
     grid = load_watershed_tune_grid().grid
+    base_count = watershed_base_extraction_key_count(grid)
+    combo_count = watershed_tune_candidate_count(grid)
+    assert base_count == 168
+    assert combo_count == 504
+    assert combo_count == base_count * len(grid.min_area_px)
+
+
+def test_cache_parity_grid_extraction_cache_ratio_from_axis_structure(
+    tmp_path: Path,
+) -> None:
+    """INTENT: scored combos are base extractions times min_area_px axis length."""
+    grid_path = tmp_path / "grid.yaml"
+    _write_cache_parity_grid(grid_path)
+    grid = load_watershed_tune_grid(grid_path).grid
     base_count = watershed_base_extraction_key_count(grid)
     combo_count = watershed_tune_candidate_count(grid)
     assert base_count == len(list(iter_unique_watershed_base_extraction_keys(grid)))
@@ -75,10 +107,14 @@ def test_cached_instance_map_matches_brute_force_for_single_param() -> None:
     np.testing.assert_array_equal(actual, expected)
 
 
-def test_cached_instance_maps_match_brute_force_for_default_grid() -> None:
-    """INTENT: tune-cache instance maps match brute-force extraction across the default grid."""
+def test_cached_instance_maps_match_brute_force_for_cache_parity_grid(
+    tmp_path: Path,
+) -> None:
+    """INTENT: tune-cache instance maps match brute-force extraction across an h_maxima grid."""
     semantic = _multi_grain_semantic_with_boundaries()
-    grid = load_watershed_tune_grid().grid
+    grid_path = tmp_path / "grid.yaml"
+    _write_cache_parity_grid(grid_path)
+    grid = load_watershed_tune_grid(grid_path).grid
     cache = build_watershed_tune_sample_caches([semantic])[0]
 
     for params in iter_watershed_tune_param_sets(grid):
@@ -105,11 +141,15 @@ def test_mean_train_pq_cached_does_not_require_pred_semantic_arrays() -> None:
         assert cached_per[0][key] == pytest.approx(ref_per[0][key])
 
 
-def test_cached_scoring_matches_brute_force_for_default_grid() -> None:
-    """INTENT: cached grid scoring and best-row selection match brute-force for the default grid."""
+def test_cached_scoring_matches_brute_force_for_cache_parity_grid(
+    tmp_path: Path,
+) -> None:
+    """INTENT: cached grid scoring and best-row selection match brute-force on an h_maxima grid."""
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
-    grid = load_watershed_tune_grid().grid
+    grid_path = tmp_path / "grid.yaml"
+    _write_cache_parity_grid(grid_path)
+    grid = load_watershed_tune_grid(grid_path).grid
     caches = build_watershed_tune_sample_caches([semantic])
     gt_preps = build_gt_overlap_preps([gt])
 
@@ -149,13 +189,16 @@ def test_cached_scoring_matches_brute_force_for_default_grid() -> None:
 
 
 def test_tune_cache_runs_one_base_extraction_per_unique_key(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """INTENT: tune cache invokes base watershed extraction once per unique base key."""
     import unet.watershed_tune_extraction_cache as cache_mod
 
     semantic = _multi_grain_semantic_with_boundaries()
-    grid = load_watershed_tune_grid().grid
+    grid_path = tmp_path / "grid.yaml"
+    _write_cache_parity_grid(grid_path)
+    grid = load_watershed_tune_grid(grid_path).grid
     base_calls = 0
     real_base = cache_mod.watershed_base_extraction
 
@@ -174,6 +217,7 @@ def test_tune_cache_runs_one_base_extraction_per_unique_key(
 
 
 def test_tune_scoring_reuses_prebuilt_gt_overlap_preps_across_grid(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """INTENT: cached grid scoring reuses prebuilt GT overlap preps without recomputing them."""
@@ -181,7 +225,9 @@ def test_tune_scoring_reuses_prebuilt_gt_overlap_preps_across_grid(
 
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
-    grid = load_watershed_tune_grid().grid
+    grid_path = tmp_path / "grid.yaml"
+    _write_cache_parity_grid(grid_path)
+    grid = load_watershed_tune_grid(grid_path).grid
     caches = build_watershed_tune_sample_caches([semantic])
     gt_preps = build_gt_overlap_preps([gt])
 
@@ -207,6 +253,7 @@ def test_tune_scoring_reuses_prebuilt_gt_overlap_preps_across_grid(
 
 
 def test_tune_scoring_runs_overlap_extraction_per_combo(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """INTENT: cached grid scoring runs overlap extraction once per watershed param combo."""
@@ -214,7 +261,9 @@ def test_tune_scoring_runs_overlap_extraction_per_combo(
 
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
-    grid = load_watershed_tune_grid().grid
+    grid_path = tmp_path / "grid.yaml"
+    _write_cache_parity_grid(grid_path)
+    grid = load_watershed_tune_grid(grid_path).grid
     caches = build_watershed_tune_sample_caches([semantic])
     gt_preps = build_gt_overlap_preps([gt])
 
@@ -272,13 +321,16 @@ def test_cached_scoring_logs_extraction_cache_miss_then_hit(
     assert out.count("extraction cache: hit") == 1
 
 
-def test_default_grid_extraction_cache_log_miss_and_hit_counts(
+def test_cache_parity_grid_extraction_cache_log_miss_and_hit_counts(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """INTENT: default-grid cache logging reports misses per base key and hits for reused keys."""
+    """INTENT: cache logging reports misses per base key and hits for reused keys on an h_maxima grid."""
     gt = _two_grain_gt()
     semantic = _multi_grain_semantic_with_boundaries()
-    grid = load_watershed_tune_grid().grid
+    grid_path = tmp_path / "grid.yaml"
+    _write_cache_parity_grid(grid_path)
+    grid = load_watershed_tune_grid(grid_path).grid
     caches = build_watershed_tune_sample_caches([semantic])
     gt_preps = build_gt_overlap_preps([gt])
     base_key_count = watershed_base_extraction_key_count(grid)
@@ -297,8 +349,8 @@ def test_default_grid_extraction_cache_log_miss_and_hit_counts(
     out = capsys.readouterr().out
     assert out.count("extraction cache: miss") == base_key_count
     assert out.count("extraction cache: hit") == combo_count - base_key_count
-    assert base_key_count == 24
-    assert combo_count == 72
+    assert base_key_count == 16
+    assert combo_count == 32
 
 
 def test_mean_train_pq_cached_logs_phase_timings(

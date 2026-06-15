@@ -30,6 +30,7 @@ TUNE_CLI_WIDTH = 64
 
 MINI_TUNE_GRID: dict[str, object] = {
     "min_distance": [5, 9],
+    "h_maxima": [0],
     "boundary_dilate_iter": [0],
     "watershed_connectivity": [1],
     "min_area_px": [0, 64],

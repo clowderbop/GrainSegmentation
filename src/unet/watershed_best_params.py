@@ -22,6 +22,7 @@ def watershed_best_params_from_payload(payload: dict[str, Any]) -> WatershedPara
         min_area_px=int(best_params["min_area_px"]),
         exclude_border=bool(best_params["exclude_border"]),
         ridge_level=None if ridge_level is None else float(ridge_level),
+        h_maxima=int(best_params["h_maxima"]),
     )
 
 

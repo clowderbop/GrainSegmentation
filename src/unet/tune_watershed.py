@@ -300,6 +300,7 @@ def main() -> None:
         "Grid axes: "
         f"min_distance={list(tune_grid.min_distance)}, "
         f"boundary_dilate_iter={list(tune_grid.boundary_dilate_iter)}, "
+        f"h_maxima={list(tune_grid.h_maxima)}, "
         f"watershed_connectivity={list(tune_grid.watershed_connectivity)}, "
         f"min_area_px={list(tune_grid.min_area_px)}, "
         f"exclude_border={list(tune_grid.exclude_border)}, "
@@ -383,6 +384,7 @@ def main() -> None:
     _log("\nBest watershed parameters (max mean train whole-section PQ):")
     _log(f"  min_distance: {best_params.min_distance}")
     _log(f"  boundary_dilate_iter: {best_params.boundary_dilate_iter}")
+    _log(f"  h_maxima: {best_params.h_maxima}")
     _log(f"  watershed_connectivity: {best_params.watershed_connectivity}")
     _log(f"  min_area_px: {best_params.min_area_px}")
     _log(f"  exclude_border: {best_params.exclude_border}")

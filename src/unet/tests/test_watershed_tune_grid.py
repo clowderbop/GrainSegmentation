@@ -21,6 +21,12 @@ def _write_grid_config(path: Path, grid: dict[str, object]) -> None:
     path.write_text(yaml.safe_dump({"grid": grid}), encoding="utf-8")
 
 
+def test_load_committed_watershed_tune_grid_includes_h_maxima_axis() -> None:
+    """INTENT: committed watershed tune grid includes h_maxima axis from Phase 0 sweep."""
+    grid = load_watershed_tune_grid().grid
+    assert grid.h_maxima == (0, 2, 4, 8, 12, 16, 24)
+
+
 def test_load_committed_watershed_tune_grid_excludes_pixel_scale_min_distance() -> None:
     """INTENT: committed watershed tune grid omits pixel-scale min_distance value 1."""
     grid = load_watershed_tune_grid().grid
@@ -36,6 +42,7 @@ def test_load_watershed_tune_grid_rejects_pixel_scale_min_distance(
         grid_path,
         {
             "min_distance": [1, 5],
+            "h_maxima": [0],
             "boundary_dilate_iter": [0],
             "watershed_connectivity": [1],
             "min_area_px": [0],
@@ -56,6 +63,7 @@ def test_watershed_tune_candidate_count_matches_product_of_configured_axes(
         grid_path,
         {
             "min_distance": [5, 9],
+            "h_maxima": [0],
             "boundary_dilate_iter": [0, 1],
             "watershed_connectivity": [2],
             "min_area_px": [0, 64],
@@ -64,7 +72,7 @@ def test_watershed_tune_candidate_count_matches_product_of_configured_axes(
         },
     )
     grid = load_watershed_tune_grid(grid_path).grid
-    assert watershed_tune_candidate_count(grid) == 2 * 2 * 1 * 2 * 2 * 1
+    assert watershed_tune_candidate_count(grid) == 2 * 1 * 2 * 1 * 2 * 2 * 1
 
 
 def test_default_grid_param_iteration_order_is_stable_for_csv_diffing() -> None:
@@ -74,7 +82,7 @@ def test_default_grid_param_iteration_order_is_stable_for_csv_diffing() -> None:
         5, 0, 1, 0, False, None
     )
     ordered = list(iter_watershed_tune_param_sets(grid))
-    assert len(ordered) == 72
+    assert len(ordered) == 504
     assert ordered == list(iter_watershed_tune_param_sets(grid))
 
 
@@ -85,6 +93,7 @@ def test_tune_watershed_cli_accepts_grid_config(tmp_path: Path) -> None:
         grid_path,
         {
             "min_distance": [5],
+            "h_maxima": [0],
             "boundary_dilate_iter": [0],
             "watershed_connectivity": [1],
             "min_area_px": [0],

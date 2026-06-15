@@ -81,6 +81,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--height", type=int, default=None)
     parser.add_argument("--width", type=int, default=None)
     parser.add_argument(
+        "--h-maxima",
+        type=int,
+        default=default_params.h_maxima,
+    )
+    parser.add_argument(
         "--min-distance",
         type=int,
         default=default_params.min_distance,
@@ -129,6 +134,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         min_area_px=args.min_area_px,
         exclude_border=bool(args.exclude_border),
         ridge_level=args.ridge_level,
+        h_maxima=args.h_maxima,
     )
     height, width = _resolve_shape(args)
     run_watershed_tune_smoke(

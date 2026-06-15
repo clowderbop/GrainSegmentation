@@ -38,6 +38,7 @@ def log_extraction_cache_lookup(
 @dataclass(frozen=True)
 class WatershedBaseExtractionKey:
     min_distance: int
+    h_maxima: int
     exclude_border: bool
     boundary_dilate_iter: int
     watershed_connectivity: int
@@ -66,6 +67,7 @@ def base_extraction_key_from_params(
 ) -> WatershedBaseExtractionKey:
     return WatershedBaseExtractionKey(
         min_distance=params.min_distance,
+        h_maxima=params.h_maxima,
         exclude_border=params.exclude_border,
         boundary_dilate_iter=params.boundary_dilate_iter,
         watershed_connectivity=params.watershed_connectivity,
@@ -78,11 +80,10 @@ class WatershedTuneSampleCache:
 
     Retains ``WatershedSemanticPrep`` for the job lifetime and computes each
     unique base-extraction key on first use. Peak memory is one prep plus at
-    most one int32 label map per unique grid base key touched during the job
-    (24 for the default grid). On the train whole section (~520M pixels), 24
-    int32 maps is on the order of 50 GB — well within the 256G tune SLURM
-    allocation; larger grids or rasters should profile before relying on full
-    retention.
+    most one int32 label map per unique grid base key touched during the job.
+    On the train whole section (~520M pixels), many int32 maps can reach tens
+    of GB — well within the 256G tune SLURM allocation; larger grids or
+    rasters should profile before relying on full retention.
     """
 
     def __init__(self, pred_semantic: np.ndarray) -> None:
@@ -111,6 +112,7 @@ class WatershedTuneSampleCache:
         base = watershed_base_extraction(
             self._prep,
             min_distance=key.min_distance,
+            h_maxima=key.h_maxima,
             exclude_border=key.exclude_border,
             boundary_dilate_iter=key.boundary_dilate_iter,
             watershed_connectivity=cast(

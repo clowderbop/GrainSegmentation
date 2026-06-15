@@ -55,7 +55,8 @@ def watershed_tune_shard_combo_count(
 ) -> int:
     """Return combo count for one shard without materializing the param iterator."""
     return (
-        len(grid.watershed_connectivity)
+        len(grid.h_maxima)
+        * len(grid.watershed_connectivity)
         * len(grid.min_area_px)
         * len(grid.exclude_border)
         * len(grid.ridge_level)

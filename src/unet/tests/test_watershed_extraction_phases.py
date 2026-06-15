@@ -22,6 +22,7 @@ from unet.instance_masks import (
     build_watershed_semantic_prep,
     watershed_area_filter,
     watershed_base_extraction,
+    watershed_seed_count,
 )
 from unet.watershed_tune_grid import (
     iter_watershed_tune_param_sets,
@@ -33,6 +34,17 @@ def _two_grain_semantic(height: int = 64, width: int = 64) -> np.ndarray:
     semantic = np.zeros((height, width), dtype=np.uint8)
     semantic[8:28, 8:28] = 1
     semantic[36:56, 36:56] = 1
+    return semantic
+
+
+def _speckle_interior_semantic(height: int = 120, width: int = 120) -> np.ndarray:
+    """One large grain plus many tiny interior-class noise islands (separate CCs)."""
+    semantic = np.zeros((height, width), dtype=np.uint8)
+    semantic[40:80, 40:80] = 1
+    for row in range(8, height - 8, 8):
+        for col in range(8, width - 8, 8):
+            if row + 3 <= 40 or row >= 80 or col + 3 <= 40 or col >= 80:
+                semantic[row : row + 3, col : col + 3] = 1
     return semantic
 
 
@@ -168,6 +180,51 @@ def test_watershed_semantic_prep_exposes_shape_and_dtype_invariants() -> None:
     assert np.any(prep.interior)
     assert not np.any(prep.interior & prep.boundary)
     assert prep.auto_ridge_level > 0
+
+
+def test_watershed_base_extraction_h_maxima_zero_matches_monolithic_reference() -> None:
+    """INTENT: h_maxima=0 preserves pre-change watershed base extraction output."""
+    semantic = _two_grain_semantic_with_boundaries()
+    prep = build_watershed_semantic_prep(semantic)
+    reference = _monolithic_watershed_reference(
+        semantic,
+        min_distance=5,
+        exclude_border=False,
+        boundary_dilate_iter=0,
+        watershed_connectivity=1,
+        min_area_px=0,
+        ridge_level=None,
+    )
+    actual = watershed_base_extraction(
+        prep,
+        h_maxima=0,
+        min_distance=5,
+        exclude_border=False,
+        boundary_dilate_iter=0,
+        watershed_connectivity=1,
+        ridge_level=None,
+    )
+    np.testing.assert_array_equal(actual, reference)
+
+
+def test_h_maxima_suppresses_interior_speckle_seeds() -> None:
+    """INTENT: positive h_maxima yields fewer watershed seeds on speckled interior DT."""
+    prep = build_watershed_semantic_prep(_speckle_interior_semantic())
+    seeds_unfiltered = watershed_seed_count(
+        prep.distance_transform,
+        prep.interior,
+        h_maxima=0,
+        min_distance=1,
+        exclude_border=False,
+    )
+    seeds_filtered = watershed_seed_count(
+        prep.distance_transform,
+        prep.interior,
+        h_maxima=4,
+        min_distance=1,
+        exclude_border=False,
+    )
+    assert seeds_unfiltered > seeds_filtered
 
 
 def test_watershed_base_extraction_labels_grains_before_area_filter() -> None:

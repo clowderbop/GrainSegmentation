@@ -85,7 +85,7 @@ Train-side watershed tuning still selects by **whole-section PQ** on the train *
 | Cache | Built | Reused across | Still per combo |
 |-------|-------|---------------|-----------------|
 | Semantic prep (masks, distance transform, auto ridge) | once per sample | all combos | — |
-| Base watershed label maps | on first touch per unique `(min_distance, exclude_border, boundary_dilate_iter, watershed_connectivity, ridge_level)` | `min_area_px` variants sharing that base | scoring |
+| Base watershed label maps | on first touch per unique `(min_distance, h_maxima, exclude_border, boundary_dilate_iter, watershed_connectivity, ridge_level)` | `min_area_px` variants sharing that base | scoring |
 | GT overlap prep (`GtOverlapPrep`: ids + areas) | once per sample | all combos | pred overlap + pixel co-occurrence scan |
 
 Default grid (`config/watershed_tune_grid.yaml`): **72** scored combinations, **24** full base extractions per sample. The GT overlap prep is a modest metrics-side win (avoids redundant GT `bincount` bookkeeping; pred-side overlap dominates metrics time on large sections) — see docstring on `build_gt_overlap_preps`.
@@ -94,7 +94,7 @@ Default grid (`config/watershed_tune_grid.yaml`): **72** scored combinations, **
 
 **Grid CSV row order:** rows follow `itertools.product` over the YAML axis order (`min_distance`, `boundary_dilate_iter`, `watershed_connectivity`, `min_area_px`, `exclude_border`, `ridge_level`). Order is stable for diffing reruns when `config/watershed_tune_grid.yaml` is unchanged.
 
-**Runtime (order of magnitude):** on the default grid with extraction caching, expect roughly **2–3 hours per shard** when the cluster runs shards concurrently (twelve combos per shard), versus **10–12 hours** for a monolithic `--single-job` run. Shard jobs request **3 hours** wall time (`run_watershed_tune_shard.sh`); monolithic tune requests **12 hours** (`run_watershed_tuning.sh`). Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
+**Runtime (order of magnitude):** on the train whole section (52k×10k, Jun 2026 timing), pre-`h_maxima` grids (~12 combos per shard) finished in **~2 hours per shard**. The committed `h_maxima` grid (504 combos, 84 per shard, 6 shards) needs **~12–15 hours per shard** — shard jobs request **20 hours** wall time (`run_watershed_tune_shard.sh`). Widen `#SBATCH --time` further if you add grid axes. Monolithic `--single-job` (`run_watershed_tuning.sh`, 12 h wall) is impractical for large grids; prefer the default shard path. Do **not** run the full grid on a **login node** — use `bash SLURM/unet/submit_watershed_tuning.sh` or `srun`/`sbatch` for smoke checks (`unet.watershed_tune_smoke`) only.
 
 | Output | Path |
 |--------|------|

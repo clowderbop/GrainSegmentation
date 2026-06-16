@@ -75,8 +75,8 @@ def test_committed_default_grid_extraction_cache_counts() -> None:
     grid = load_watershed_tune_grid().grid
     base_count = watershed_base_extraction_key_count(grid)
     combo_count = watershed_tune_candidate_count(grid)
-    assert base_count == 168
-    assert combo_count == 504
+    assert base_count == 72
+    assert combo_count == 216
     assert combo_count == base_count * len(grid.min_area_px)
 
 

@@ -81,7 +81,7 @@ def test_default_grid_shards_partition_full_grid_without_gaps_or_duplicates() ->
     grid = load_watershed_tune_grid().grid
     assert watershed_tune_shard_count(grid) == 6
     monolithic = list(iter_watershed_tune_param_sets(grid))
-    assert len(monolithic) == 504
+    assert len(monolithic) == 216
     assert _shard_param_sets_union(grid) == monolithic
 
 
@@ -125,7 +125,7 @@ def test_default_grid_yields_six_shards_of_eighty_four_combinations_each() -> No
         len(list(iter_watershed_tune_param_sets_for_shard(grid, shard)))
         for shard in iter_watershed_tune_shards(grid)
     ]
-    assert shard_sizes == [84] * 6
+    assert shard_sizes == [36] * 6
 
 
 def test_shard_param_order_matches_monolithic_subset_for_each_shard() -> None:

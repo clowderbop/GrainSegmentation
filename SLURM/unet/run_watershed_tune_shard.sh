@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --job-name=TuneWatershedShard
 #SBATCH --output=logs/%x-%A_%a.log
-#SBATCH --mem=64G
+#SBATCH --mem=256G
 #SBATCH --cpus-per-task=4
-#SBATCH --time=03:00:00
+#SBATCH --time=20:00:00
 
 set -euo pipefail
 # shellcheck source=SLURM/utils/enter_job.sh

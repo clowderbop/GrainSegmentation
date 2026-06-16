@@ -22,9 +22,9 @@ def _write_grid_config(path: Path, grid: dict[str, object]) -> None:
 
 
 def test_load_committed_watershed_tune_grid_includes_h_maxima_axis() -> None:
-    """INTENT: committed watershed tune grid includes h_maxima axis from Phase 0 sweep."""
+    """INTENT: committed grid sweeps Phase-0 h_maxima levels excluding 0 (scored in partial run)."""
     grid = load_watershed_tune_grid().grid
-    assert grid.h_maxima == (0, 2, 4, 8, 12, 16, 24)
+    assert grid.h_maxima == (2, 4, 8, 12, 16, 24)
 
 
 def test_load_committed_watershed_tune_grid_excludes_pixel_scale_min_distance() -> None:
@@ -79,10 +79,10 @@ def test_default_grid_param_iteration_order_is_stable_for_csv_diffing() -> None:
     """INTENT: default grid param iteration order is stable and starts at the committed first combo."""
     grid = load_watershed_tune_grid().grid
     assert first_watershed_tune_param_set(grid) == WatershedParamSet(
-        5, 0, 1, 0, False, None
+        11, 0, 1, 256, True, None, h_maxima=2
     )
     ordered = list(iter_watershed_tune_param_sets(grid))
-    assert len(ordered) == 504
+    assert len(ordered) == 216
     assert ordered == list(iter_watershed_tune_param_sets(grid))
 
 

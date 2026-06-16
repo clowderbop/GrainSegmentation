@@ -225,6 +225,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--patch-size", type=int, required=True)
     parser.add_argument("--patch-overlap", type=_parse_patch_overlap, required=True)
+    parser.add_argument("--val-patch-overlap", type=_parse_patch_overlap, required=True)
     parser.add_argument("--tile-size", type=int, required=True)
     parser.add_argument("--validation-fraction", type=float, required=True)
     parser.add_argument("--random-state", type=int, required=True)
@@ -318,12 +319,29 @@ def _extract_padded_patch(
     return extract_padded_patch_channel_first(image, patch_bounds, patch_size)
 
 
+def _split_strides(
+    *,
+    patch_size: int,
+    patch_overlap: float,
+    val_patch_overlap: float,
+    test: bool,
+) -> dict[str, int]:
+    if test:
+        return {
+            "test": _stride_from_patch_overlap(patch_size, patch_overlap),
+        }
+    return {
+        "train": _stride_from_patch_overlap(patch_size, patch_overlap),
+        "val": _stride_from_patch_overlap(patch_size, val_patch_overlap),
+    }
+
+
 def export_dataset(
     image_path: Path,
     polygons_path: Path,
     output_dir: Path,
     patch_size: int,
-    stride: int,
+    split_strides: dict[str, int],
     tile_size: int,
     validation_fraction: float,
     random_state: int,
@@ -343,9 +361,12 @@ def export_dataset(
     )
 
     region_bounds = _region_bounds(height, width, tile_size)
+    stride_summary = ", ".join(
+        f"{split_name}={stride}" for split_name, stride in split_strides.items()
+    )
     _progress(
         f"split_tiff_gpkg_to_yolo: {len(region_bounds)} region(s), "
-        f"patch_size={patch_size}, stride={stride}, output_dir={output_dir}"
+        f"patch_size={patch_size}, stride=({stride_summary}), output_dir={output_dir}"
     )
     if test:
         region_splits = (("test", np.arange(len(region_bounds), dtype=np.int64)),)
@@ -370,6 +391,7 @@ def export_dataset(
 
     total_patches_written = 0
     for split_name, region_indices in region_splits:
+        stride = split_strides[split_name]
         image_dir, label_dir = split_dirs[split_name]
         n_regions = int(region_indices.size)
         split_patches_written = 0
@@ -428,9 +450,11 @@ def main(argv: list[str] | None = None) -> None:
         polygons_path=args.polygons,
         output_dir=args.output_dir,
         patch_size=args.patch_size,
-        stride=_stride_from_patch_overlap(
+        split_strides=_split_strides(
             patch_size=args.patch_size,
             patch_overlap=args.patch_overlap,
+            val_patch_overlap=args.val_patch_overlap,
+            test=args.test,
         ),
         tile_size=args.tile_size,
         validation_fraction=args.validation_fraction,

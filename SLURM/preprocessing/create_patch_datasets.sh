@@ -38,6 +38,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --output-dir "$TRAIN_WORK/PPL" \
     --patch-size 1024 \
     --patch-overlap 0.5 \
+    --val-patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42
@@ -48,6 +49,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --output-dir "$TRAIN_WORK/PPLPPXblend" \
     --patch-size 1024 \
     --patch-overlap 0.5 \
+    --val-patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42
@@ -58,6 +60,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --output-dir "$TRAIN_WORK/PPL+PPXblend" \
     --patch-size 1024 \
     --patch-overlap 0.5 \
+    --val-patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42
@@ -68,6 +71,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --output-dir "$TRAIN_WORK/PPL+AllPPX" \
     --patch-size 1024 \
     --patch-overlap 0.5 \
+    --val-patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42
@@ -99,6 +103,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --output-dir "$TEST_WORK/PPL" \
     --patch-size 1024 \
     --patch-overlap 0 \
+    --val-patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \
@@ -110,6 +115,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --output-dir "$TEST_WORK/PPLPPXblend" \
     --patch-size 1024 \
     --patch-overlap 0 \
+    --val-patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \
@@ -121,6 +127,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --output-dir "$TEST_WORK/PPL+PPXblend" \
     --patch-size 1024 \
     --patch-overlap 0 \
+    --val-patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \
@@ -132,6 +139,7 @@ uv run --no-sync python -u split_tiff_gpkg_to_yolo.py \
     --output-dir "$TEST_WORK/PPL+AllPPX" \
     --patch-size 1024 \
     --patch-overlap 0 \
+    --val-patch-overlap 0 \
     --tile-size 4096 \
     --validation-fraction 0.2 \
     --random-state 42 \

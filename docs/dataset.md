@@ -55,6 +55,6 @@ To process the large training section:
 
 1. **Spatial tiling:** The training section is divided into 4096×4096 spatial tiles.
 2. **Coverage stratification:** Grain coverage is computed per tile. Tiles with less than 10% grain coverage go strictly to training. Remaining eligible tiles are binned by coverage and split with stratified sampling (80% train, 20% validation).
-3. **Patch extraction:** Selected tiles are cropped into 1024×1024 patches with 50% overlap. YOLO receives instance polygon labels; U-Net receives raster semantic masks.
+3. **Patch extraction:** Selected tiles are cropped into 1024×1024 patches. Training tiles use 50% overlap; validation and test tiles use 0% overlap (non-overlapping grid). YOLO receives instance polygon labels; U-Net receives raster semantic masks.
 
 Preprocessing runbook: [`runbooks/preprocessing.md`](runbooks/preprocessing.md).

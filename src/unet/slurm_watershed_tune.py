@@ -137,6 +137,20 @@ def watershed_tune_shard_walltime_for_grid_config(
     )
 
 
+def watershed_tune_walltimes_for_grid_config(
+    grid_config: Path | None = None,
+) -> tuple[str, str, str]:
+    """Return ``(shard, monolithic, merge)`` SLURM walltimes for one grid YAML."""
+    grid = load_watershed_tune_grid(watershed_tune_grid_path(grid_config)).grid
+    shard = watershed_tune_walltime_for_combo_count(
+        watershed_tune_shard_combo_count_for_grid(grid)
+    )
+    monolithic = watershed_tune_walltime_for_combo_count(
+        watershed_tune_candidate_count(grid)
+    )
+    return shard, monolithic, WATERSHED_TUNE_MERGE_WALLTIME
+
+
 def watershed_tune_walltime_for_role(
     role: WatershedTuneWalltimeRole,
     *,
@@ -144,8 +158,9 @@ def watershed_tune_walltime_for_role(
 ) -> str:
     if role == "merge":
         return WATERSHED_TUNE_MERGE_WALLTIME
+    shard, monolithic, _merge = watershed_tune_walltimes_for_grid_config(grid_config)
     if role == "monolithic":
-        return watershed_tune_monolithic_walltime_for_grid_config(grid_config)
+        return monolithic
     if role == "shard":
-        return watershed_tune_shard_walltime_for_grid_config(grid_config)
+        return shard
     raise ValueError(f"unsupported watershed tune walltime role: {role!r}")

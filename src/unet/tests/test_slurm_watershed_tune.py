@@ -15,6 +15,7 @@ from unet.slurm_watershed_tune import (
     watershed_tune_monolithic_walltime_for_grid_config,
     watershed_tune_shard_walltime_for_grid_config,
     watershed_tune_walltime_for_combo_count,
+    watershed_tune_walltimes_for_grid_config,
 )
 from unet.tests.watershed_tune_grid_fixtures import (
     grid_path_from_axes,
@@ -299,6 +300,51 @@ def test_watershed_tune_walltime_roles_derive_from_grid_yaml(tmp_path: Path) -> 
         watershed_tune_monolithic_walltime_for_grid_config(monolithic_grid)
         == "05:37:30"
     )
+
+
+def test_watershed_tune_walltimes_for_grid_config_matches_per_role_helpers(
+    tmp_path: Path,
+) -> None:
+    """INTENT: batch walltime helper returns the same values as per-role lookups."""
+    grid_path = grid_path_from_axes(
+        tmp_path,
+        minimal_grid_axes(h_maxima=[0, 4], min_area_px=[0]),
+    )
+    shard, monolithic, merge = watershed_tune_walltimes_for_grid_config(grid_path)
+    assert shard == watershed_tune_shard_walltime_for_grid_config(grid_path)
+    assert monolithic == watershed_tune_monolithic_walltime_for_grid_config(grid_path)
+    assert merge == WATERSHED_TUNE_MERGE_WALLTIME
+
+
+def test_watershed_tune_walltime_cli_all_prints_three_values_on_one_line(
+    tmp_path: Path,
+) -> None:
+    """INTENT: walltime CLI --all emits shard, monolithic, and merge on one line."""
+    grid_path = grid_path_from_axes(
+        tmp_path,
+        minimal_grid_axes(h_maxima=[0, 4], min_area_px=[0]),
+    )
+    expected = watershed_tune_walltimes_for_grid_config(grid_path)
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--directory",
+            str(repo_root() / "src" / "unet"),
+            "python",
+            "-m",
+            "unet.watershed_tune_walltime",
+            "--all",
+            "--grid-config",
+            str(grid_path),
+        ],
+        cwd=repo_root(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == " ".join(expected)
 
 
 def test_submit_watershed_tuning_dry_run_passes_grid_derived_walltime(

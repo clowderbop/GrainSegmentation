@@ -49,3 +49,20 @@ Metrics and thesis ranking policy: [`docs/metrics.md`](docs/metrics.md) and [`do
 | **Staging on nodes** | [`docs/reference/staging.md`](docs/reference/staging.md) |
 
 SLURM submit scripts live under `SLURM/<area>/` and point at [`docs/runbooks/`](docs/runbooks/) in `--help` or header comments.
+
+## Development
+
+Install git hooks once after cloning:
+
+```bash
+uv sync
+pre-commit install
+pre-commit install --hook-type pre-push
+```
+
+| Hook | When | What runs |
+|------|------|-----------|
+| `pre-commit` | `git commit` | ruff, ruff-format, ty (~2–3 s) |
+| `pre-push` | `git push` | full pytest suite (`-n 4`) |
+
+Run tests manually anytime: `uv run pytest -q`.

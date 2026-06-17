@@ -98,17 +98,9 @@ if [ "$shard_count" -lt 1 ]; then
     echo "Watershed tune shard count must be >= 1 (grid: $GRID_CONFIG)" >&2
     exit 1
 fi
-shard_walltime="$(
+read -r shard_walltime monolithic_walltime merge_walltime <<< "$(
     uv run --directory "$REPO_ROOT/src/unet" python -m unet.watershed_tune_walltime \
-        --role shard --grid-config "$GRID_CONFIG" | tr -d '[:space:]'
-)"
-monolithic_walltime="$(
-    uv run --directory "$REPO_ROOT/src/unet" python -m unet.watershed_tune_walltime \
-        --role monolithic --grid-config "$GRID_CONFIG" | tr -d '[:space:]'
-)"
-merge_walltime="$(
-    uv run --directory "$REPO_ROOT/src/unet" python -m unet.watershed_tune_walltime \
-        --role merge | tr -d '[:space:]'
+        --all --grid-config "$GRID_CONFIG"
 )"
 shard_max_parallel="${WATERSHED_TUNE_SHARD_MAX_PARALLEL:-6}"
 

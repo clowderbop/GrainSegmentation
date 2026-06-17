@@ -17,6 +17,10 @@ from unet.extraction_tune_scoring import (
     watershed_tune_row,
     watershed_per_sample_columns,
 )
+from unet.tests.watershed_tune_grid_fixtures import (
+    load_grid_from_axes,
+    minimal_grid_axes,
+)
 from unet.watershed_tune_grid import (
     iter_watershed_tune_param_sets,
     load_watershed_tune_grid,
@@ -70,14 +74,19 @@ def _two_grain_gt(height: int = 64, width: int = 64) -> np.ndarray:
     return gt
 
 
-def test_committed_default_grid_extraction_cache_counts() -> None:
-    """INTENT: committed default grid base-key and combo counts include the h_maxima axis."""
-    grid = load_watershed_tune_grid().grid
+def test_extraction_cache_counts_follow_h_maxima_axis_structure(
+    tmp_path: Path,
+) -> None:
+    """INTENT: base-key and combo counts scale with h_maxima when other axes are singletons."""
+    grid = load_grid_from_axes(
+        tmp_path,
+        minimal_grid_axes(h_maxima=[0, 4, 8], min_area_px=[64]),
+    )
     base_count = watershed_base_extraction_key_count(grid)
     combo_count = watershed_tune_candidate_count(grid)
-    assert base_count == 72
-    assert combo_count == 216
+    assert base_count == len(grid.h_maxima)
     assert combo_count == base_count * len(grid.min_area_px)
+    assert combo_count == len(list(iter_watershed_tune_param_sets(grid)))
 
 
 def test_cache_parity_grid_extraction_cache_ratio_from_axis_structure(

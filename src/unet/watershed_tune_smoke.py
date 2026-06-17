@@ -16,17 +16,14 @@ from unet.watershed_tune_fixtures import (
     TRAIN_WHOLE_SECTION_SHAPE,
     large_shape_sparse_two_grain_masks,
 )
-from unet.watershed_tune_grid import (
-    first_watershed_tune_param_set,
-    load_watershed_tune_grid,
-)
 
 DEFAULT_SMOKE_SHAPE = (1_000, 5_200)
+DEFAULT_SMOKE_PARAMS = WatershedParamSet(5, 0, 1, 0, False, None, h_maxima=0)
 
 
 def default_smoke_watershed_params() -> WatershedParamSet:
-    """First combo from the configured watershed tune grid."""
-    return first_watershed_tune_param_set(load_watershed_tune_grid().grid)
+    """Fixed minimal combo for pre-SLURM smoke (independent of tune grid YAML)."""
+    return DEFAULT_SMOKE_PARAMS
 
 
 def run_watershed_tune_smoke(

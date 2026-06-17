@@ -31,7 +31,6 @@ from yolo.inference_profile_tune import (
     mean_pq_across_variants,
     promote_profile_to_recipe,
     select_best_candidate,
-    tune_grid_path,
     write_grid_winner_json,
 )
 from yolo.tests.profile_tune_fixtures import (
@@ -244,11 +243,16 @@ unet:
 """,
         encoding="utf-8",
     )
-    profile = profile_tune_candidate_from_conf(0.2)
+    profile = profile_tune_candidate_from_conf(
+        0.2, recipe=load_test_inference_recipe(recipe_path)
+    )
     promote_profile_to_recipe(profile, recipe_path)
     updated = yaml.safe_load(recipe_path.read_text(encoding="utf-8"))
+    recipe = load_test_inference_recipe(recipe_path)
     assert updated["yolo"]["conf"] == 0.2
-    assert updated["yolo"]["mask_threshold"] == profile_tune_fixed_mask_threshold()
+    assert updated["yolo"]["mask_threshold"] == profile_tune_fixed_mask_threshold(
+        recipe
+    )
     assert updated["whole"]["window"] == 1024
     assert updated["unet"]["patch"]["batch_size"] == 1
 
@@ -286,11 +290,15 @@ unet:
 """,
         encoding="utf-8",
     )
-    profile = profile_tune_candidate_from_conf(0.2)
+    profile = profile_tune_candidate_from_conf(
+        0.2, recipe=load_test_inference_recipe(recipe_path)
+    )
     promote_profile_to_recipe(profile, recipe_path)
     loaded = load_test_inference_recipe(recipe_path)
     assert loaded.yolo.conf == profile.conf
-    assert loaded.yolo.profile.mask_threshold == profile_tune_fixed_mask_threshold()
+    assert loaded.yolo.profile.mask_threshold == profile_tune_fixed_mask_threshold(
+        loaded
+    )
 
 
 def test_promote_profile_rejects_missing_conf_key_and_preserves_recipe(
@@ -329,17 +337,22 @@ unet:
     assert recipe_path.read_text(encoding="utf-8") == original
 
 
-def test_committed_tune_grid_is_conf_only_seven_candidates() -> None:
-    """INTENT: committed tune grid is conf-only with seven candidates and fixed mask threshold."""
-    spec = load_tune_grid(tune_grid_path())
-    assert len(spec.grid.conf) == 7
-    assert count_grid_candidates(spec) == 7
+def test_load_tune_grid_conf_only_yields_one_candidate_per_conf(
+    tmp_path: Path,
+) -> None:
+    """INTENT: conf-only tune grid yields one unique candidate per conf value with fixed mask threshold."""
+    conf_values = [0.1, 0.2, 0.3]
+    grid_path = tmp_path / "grid.yaml"
+    _write_grid(grid_path, conf=conf_values)
+    spec = load_tune_grid(grid_path)
+
+    assert len(spec.grid.conf) == len(conf_values)
+    assert count_grid_candidates(spec) == len(conf_values)
 
     candidates = list(iter_grid_candidates(spec))
-    assert len(candidates) == 7
-    assert len({c.candidate_id() for c in candidates}) == 7
-    fixed_mask = profile_tune_fixed_mask_threshold()
-    assert all(c.mask_threshold == fixed_mask for c in candidates)
+    assert len(candidates) == len(conf_values)
+    assert len({c.candidate_id() for c in candidates}) == len(conf_values)
+    assert len({c.mask_threshold for c in candidates}) == 1
 
     variants = ("PPL", "PPL+AllPPX")
     assert count_detector_jobs(spec, len(variants)) == len(variants)
@@ -406,7 +419,7 @@ def test_load_grid_winner_round_trips_profile(tmp_path: Path) -> None:
     assert payload["selection_objective"] == PROFILE_SELECTION_OBJECTIVE
     assert payload["mean_pq"] == pytest.approx(0.7)
     assert payload["conf"] == pytest.approx(0.25)
-    assert payload["fixed_mask_threshold"] == profile_tune_fixed_mask_threshold()
+    assert payload["fixed_mask_threshold"] == profile.mask_threshold
     assert "postprocess_type" in payload["removed_grid_axes"]
     loaded = load_grid_winner(winner_path)
     assert loaded == profile

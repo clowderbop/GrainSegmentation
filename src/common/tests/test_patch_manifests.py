@@ -137,9 +137,10 @@ def test_build_unet_patch_manifest_multi_input() -> None:
 
 def test_render_yolo_dataset_yaml_channels() -> None:
     """INTENT: render_yolo_dataset_yaml includes channels only for multi-channel variants when held out."""
-    yaml = render_yolo_dataset_yaml("PPL+AllPPX", held_out=True)
-    assert "channels: 21" in yaml
-    assert "images/test" in yaml
+    multi = get_variant("PPL+AllPPX")
+    yaml_text = render_yolo_dataset_yaml("PPL+AllPPX", held_out=True)
+    assert f"channels: {multi.yolo.input_channels}" in yaml_text
+    assert "images/test" in yaml_text
     assert "channels:" not in render_yolo_dataset_yaml("PPL", held_out=False)
 
 

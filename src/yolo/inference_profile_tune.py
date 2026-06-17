@@ -24,7 +24,6 @@ from common.test_inference import (
     YoloInferenceProfileCandidate,
     load_test_inference_recipe,
     profile_tune_candidate_from_conf,
-    profile_tune_fixed_mask_threshold,
     rewrite_yolo_profile_in_recipe_text,
 )
 from common.variants import repo_root
@@ -257,7 +256,7 @@ def write_grid_winner_json(
     per_variant_pq_results: dict[str, MergedViewPqResult],
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fixed_mask = profile_tune_fixed_mask_threshold()
+    fixed_mask = candidate.mask_threshold
     payload = {
         "selection_objective": PROFILE_SELECTION_OBJECTIVE,
         "mean_pq": mean_pq,
@@ -357,7 +356,11 @@ def promote_profile_to_recipe(
     recipe_path: Path,
 ) -> None:
     original_text = recipe_path.read_text(encoding="utf-8")
-    fixed_mask = profile_tune_fixed_mask_threshold()
+    doc = yv.require_mapping(yaml.safe_load(original_text), context=str(recipe_path))
+    yolo_raw = yv.require_mapping(doc.get("yolo"), context="yolo")
+    fixed_mask = yv.require_float(
+        yolo_raw.get("mask_threshold"), context="yolo.mask_threshold"
+    )
     recipe_path.write_text(
         rewrite_yolo_profile_in_recipe_text(
             original_text,

@@ -6,13 +6,20 @@ import os
 import subprocess
 from pathlib import Path
 
-import yaml
-
 from common.variants import repo_root
 from unet.slurm_watershed_tune import (
+    WATERSHED_TUNE_MERGE_WALLTIME,
     run_watershed_tune_merge_script_path,
     run_watershed_tune_shard_script_path,
     submit_watershed_tuning_script_path,
+    watershed_tune_monolithic_walltime_for_grid_config,
+    watershed_tune_shard_walltime_for_grid_config,
+    watershed_tune_walltime_for_combo_count,
+)
+from unet.tests.watershed_tune_grid_fixtures import (
+    grid_path_from_axes,
+    minimal_grid_axes,
+    write_watershed_tune_grid_config,
 )
 from unet.watershed_tune_grid_shard import watershed_tune_shard_count_for_grid_config
 
@@ -22,7 +29,13 @@ def _sbatch_lines(stdout: str) -> list[str]:
 
 
 def _write_grid_config(path: Path, grid_axes: dict[str, object]) -> None:
-    path.write_text(yaml.safe_dump({"grid": grid_axes}), encoding="utf-8")
+    write_watershed_tune_grid_config(path, grid_axes)
+
+
+def _shard_array_flag(grid_path: Path, *, max_parallel: int | None = None) -> str:
+    shard_count = watershed_tune_shard_count_for_grid_config(grid_path)
+    cap = max_parallel if max_parallel is not None else 6
+    return f"--array=1-{shard_count}%{cap}"
 
 
 def _three_axis_grid_yaml(tmp_path: Path) -> Path:
@@ -42,10 +55,16 @@ def _three_axis_grid_yaml(tmp_path: Path) -> Path:
     return grid_path
 
 
-def test_submit_watershed_tuning_default_dry_run_submits_shard_array_and_merge() -> (
-    None
-):
-    """INTENT: default dry-run chains predict → shard array → merge with afterok per variant."""
+def test_submit_watershed_tuning_default_dry_run_submits_shard_array_and_merge(
+    tmp_path: Path,
+) -> None:
+    """INTENT: dry-run chains predict → shard array → merge with afterok per variant."""
+    grid_path = grid_path_from_axes(
+        tmp_path,
+        minimal_grid_axes(min_distance=[5, 9], boundary_dilate_iter=[0, 1]),
+    )
+    env = {**os.environ, "GRID_CONFIG": str(grid_path)}
+    expected_array = _shard_array_flag(grid_path)
     result = subprocess.run(
         [
             "bash",
@@ -56,13 +75,14 @@ def test_submit_watershed_tuning_default_dry_run_submits_shard_array_and_merge()
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     assert result.returncode == 0, result.stderr
     stdout = result.stdout
     assert "run_watershed_tune_predict.sh" in stdout
     assert str(run_watershed_tune_shard_script_path().name) in stdout
     assert str(run_watershed_tune_merge_script_path().name) in stdout
-    assert "--array=1-6%6" in stdout
+    assert expected_array in stdout
 
     predict_lines = [
         line
@@ -106,10 +126,16 @@ def test_submit_watershed_tuning_single_job_dry_run_skips_shard_and_merge() -> N
     assert "--array=" not in stdout
 
 
-def test_submit_watershed_tuning_use_cached_preds_dry_run_submits_shard_array_and_merge() -> (
-    None
-):
+def test_submit_watershed_tuning_use_cached_preds_dry_run_submits_shard_array_and_merge(
+    tmp_path: Path,
+) -> None:
     """INTENT: --use-cached-preds dry-run skips predict but chains shard array → merge."""
+    grid_path = grid_path_from_axes(
+        tmp_path,
+        minimal_grid_axes(min_distance=[5, 9], boundary_dilate_iter=[0, 1]),
+    )
+    env = {**os.environ, "GRID_CONFIG": str(grid_path)}
+    expected_array = _shard_array_flag(grid_path)
     result = subprocess.run(
         [
             "bash",
@@ -121,13 +147,14 @@ def test_submit_watershed_tuning_use_cached_preds_dry_run_submits_shard_array_an
         capture_output=True,
         text=True,
         check=False,
+        env=env,
     )
     assert result.returncode == 0, result.stderr
     stdout = result.stdout
     assert "run_watershed_tune_predict.sh" not in stdout
     assert str(run_watershed_tune_shard_script_path().name) in stdout
     assert str(run_watershed_tune_merge_script_path().name) in stdout
-    assert "--array=1-6%6" in stdout
+    assert expected_array in stdout
     assert "DRY-RUN shard array from cached preds" in result.stderr
 
     shard_lines = [
@@ -209,9 +236,20 @@ def test_submit_watershed_tuning_dry_run_honors_grid_config_flag(
     assert f"GRID_CONFIG={grid_path}" in result.stdout
 
 
-def test_submit_watershed_tuning_dry_run_honors_shard_max_parallel_env() -> None:
+def test_submit_watershed_tuning_dry_run_honors_shard_max_parallel_env(
+    tmp_path: Path,
+) -> None:
     """INTENT: WATERSHED_TUNE_SHARD_MAX_PARALLEL throttles the shard array percent cap."""
-    env = {**os.environ, "WATERSHED_TUNE_SHARD_MAX_PARALLEL": "2"}
+    grid_path = grid_path_from_axes(
+        tmp_path,
+        minimal_grid_axes(min_distance=[5, 9], boundary_dilate_iter=[0, 1]),
+    )
+    expected_array = _shard_array_flag(grid_path, max_parallel=2)
+    env = {
+        **os.environ,
+        "GRID_CONFIG": str(grid_path),
+        "WATERSHED_TUNE_SHARD_MAX_PARALLEL": "2",
+    }
     result = subprocess.run(
         [
             "bash",
@@ -226,5 +264,67 @@ def test_submit_watershed_tuning_dry_run_honors_shard_max_parallel_env() -> None
         env=env,
     )
     assert result.returncode == 0, result.stderr
-    assert "--array=1-6%2" in result.stdout
-    assert "--array=1-6%6" not in result.stdout
+    assert expected_array in result.stdout
+    assert _shard_array_flag(grid_path) not in result.stdout
+
+
+def test_watershed_tune_walltime_scales_with_combo_count() -> None:
+    """INTENT: tune wall time grows with scored combo count and applies a minimum floor."""
+    assert watershed_tune_walltime_for_combo_count(5) == "01:40:00"
+    assert watershed_tune_walltime_for_combo_count(12) == "03:07:30"
+    assert watershed_tune_walltime_for_combo_count(84) == "18:07:30"
+
+
+def test_watershed_tune_walltime_roles_derive_from_grid_yaml(tmp_path: Path) -> None:
+    """INTENT: monolithic and shard wall times are derived from the grid YAML at submit time."""
+    shard_grid = grid_path_from_axes(
+        tmp_path,
+        minimal_grid_axes(
+            h_maxima=[0, 2, 4, 6, 8, 10],
+            min_area_px=[0, 64],
+        ),
+    )
+    monolithic_grid = tmp_path / "monolithic_grid.yaml"
+    write_watershed_tune_grid_config(
+        monolithic_grid,
+        minimal_grid_axes(
+            min_distance=[5, 9],
+            boundary_dilate_iter=[0, 1],
+            h_maxima=[0, 4, 8],
+            min_area_px=[0, 64],
+        ),
+    )
+    assert watershed_tune_shard_walltime_for_grid_config(shard_grid) == "03:07:30"
+    assert (
+        watershed_tune_monolithic_walltime_for_grid_config(monolithic_grid)
+        == "05:37:30"
+    )
+
+
+def test_submit_watershed_tuning_dry_run_passes_grid_derived_walltime(
+    tmp_path: Path,
+) -> None:
+    """INTENT: submit script passes sbatch --time derived from the grid config."""
+    grid_path = grid_path_from_axes(
+        tmp_path,
+        minimal_grid_axes(h_maxima=[0, 4], min_area_px=[0]),
+    )
+    expected_walltime = watershed_tune_shard_walltime_for_grid_config(grid_path)
+    assert expected_walltime == "01:02:30"
+    env = {**os.environ, "GRID_CONFIG": str(grid_path)}
+    result = subprocess.run(
+        [
+            "bash",
+            str(submit_watershed_tuning_script_path()),
+            "--dry-run",
+            "--use-cached-preds",
+        ],
+        cwd=repo_root(),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"--time={expected_walltime}" in result.stdout
+    assert f"--time={WATERSHED_TUNE_MERGE_WALLTIME}" in result.stdout

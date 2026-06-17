@@ -1,30 +1,37 @@
 # U-Net watershed hyperparameter grid for train whole-section tuning.
 # Override at submit time via GRID_CONFIG / --grid-config.
 #
-# Tuning evidence (Jun 2026): completed run 20260609_* (72 combos, no h_maxima);
-# partial run 20260615_* (h_maxima=0 slice complete before OOM). Merge h_maxima=0
-# shard CSVs from 20260615 with this grid's results before final best selection.
+# Coarse grid: 216 combos/variant; h_maxima dominated
+# (~0.20–0.26 PQ spread); optimum at h=24 (grid ceiling, still rising). Secondary
+# axes negligible at high h: min_distance spread ~0.002; boundary_dilate_iter,
+# watershed_connectivity ~0.000; min_area_px inert at h≥24.
+#
+# Refinement: fix secondary parameters at coarse consensus; extend h_maxima above 24
+# until PQ plateaus. Merge refinement CSVs with coarse results before final selection.
 grid:
-  # Jun 9 favoured min_dist=11 but only tested up to 11; may interact with h_maxima>0.
-  min_distance: [11, 14, 17]
+  # Fixed: monotonic preference for larger separation;
+  # md=17 best in 3/4 variants. PPL+PPXBlend best=14 due to tiebreak, metrics basically identical
+  min_distance: [17]
 
-  # Keep both values: pooled PQ spread ~0.000 in both tunings; defines shard axis
-  # (one shard per min_distance × boundary_dilate_iter pair). Best dilate differs by
-  # variant but the effect is negligible.
-  boundary_dilate_iter: [0, 1]
+  # Fixed: pooled spread ~0.000 in coarse tuning. PPLPPXblend best=1 due to tiebreak
+  # Original: [0, 1]
 
-  # Omit 0: fully scored in the 20260615 partial run (72/504 combos per variant).
-  # Resubmit covers the unexplored Phase-0 sweep levels only.
-  h_maxima: [2, 4, 8, 12, 16, 24]
+  boundary_dilate_iter: [0]
 
-  # Keep both: pooled spread ~0.001 in both tunings; best connectivity varies by variant.
-  watershed_connectivity: [1, 2]
+  # Refinement axis — extend above coarse ceiling (h=24).
+  # Original: [0, 2, 4, 8, 12, 16, 24]
+  h_maxima: [28, 32, 40, 48, 64]
 
-  # Jun 9 favoured min_area=256 (with min_dist=11); Jun 15 h_maxima=0
-  # favoured 1024 (with min_dist=17). Effect may shift once h_maxima>0 is explored.
-  min_area_px: [256, 512, 1024]
+  # Fixed: 8-connected; pooled spread ~0.000 in coarse tuning. PPL best=1 but difference was 0.0001 PQ
+  # Original: [1, 2]
+  watershed_connectivity: [2]
 
-  # Fixed to 1: best in every variant in both tunings; pooled exclude_border spread ~0.001.
+  # Fixed: identical instance maps for 256/512/1024 at h=24 in coarse tuning.
+  # Original: [256, 512, 1024]
+  min_area_px: [256]
+
+  # Fixed: best in every variant in coarse tuning.
+  # Original: [0, 1]
   exclude_border: [1]
 
   ridge_level:

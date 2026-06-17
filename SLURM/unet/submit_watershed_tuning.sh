@@ -98,6 +98,18 @@ if [ "$shard_count" -lt 1 ]; then
     echo "Watershed tune shard count must be >= 1 (grid: $GRID_CONFIG)" >&2
     exit 1
 fi
+shard_walltime="$(
+    uv run --directory "$REPO_ROOT/src/unet" python -m unet.watershed_tune_walltime \
+        --role shard --grid-config "$GRID_CONFIG" | tr -d '[:space:]'
+)"
+monolithic_walltime="$(
+    uv run --directory "$REPO_ROOT/src/unet" python -m unet.watershed_tune_walltime \
+        --role monolithic --grid-config "$GRID_CONFIG" | tr -d '[:space:]'
+)"
+merge_walltime="$(
+    uv run --directory "$REPO_ROOT/src/unet" python -m unet.watershed_tune_walltime \
+        --role merge | tr -d '[:space:]'
+)"
 shard_max_parallel="${WATERSHED_TUNE_SHARD_MAX_PARALLEL:-6}"
 
 for variant in "${MICROSCOPY_VARIANTS[@]}"; do
@@ -147,6 +159,7 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
             "$(slurm_export_assign GRID_CONFIG "$GRID_CONFIG")")"
         tune_cmd=(
             sbatch
+            "--time=${monolithic_walltime}"
             "--job-name=TuneWatershed_${slug}"
             "--export=${tune_export}"
             "$REPO_ROOT/SLURM/unet/run_watershed_tuning.sh"
@@ -180,6 +193,7 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
         "$(slurm_export_assign GRID_CONFIG "$GRID_CONFIG")")"
     shard_cmd=(
         sbatch
+        "--time=${shard_walltime}"
         "--job-name=TuneWatershedShard_${slug}"
         "--export=${shard_export}"
         "--array=1-${shard_count}%${shard_max_parallel}"
@@ -217,6 +231,7 @@ for variant in "${MICROSCOPY_VARIANTS[@]}"; do
         "$(slurm_export_assign GRID_CONFIG "$GRID_CONFIG")")"
     merge_cmd=(
         sbatch
+        "--time=${merge_walltime}"
         "--job-name=TuneWatershedMerge_${slug}"
         "--export=${merge_export}"
         "--dependency=afterok:${shard_job_id}"
@@ -251,5 +266,8 @@ if [ "$DRY_RUN" = false ]; then
     echo "  tune:   $GRAINSEG_ROOT/runs/watershed_tune/{slug}/"
     if [ "$SINGLE_JOB" = false ]; then
         echo "  shards: ${shard_count} tasks per variant (max ${shard_max_parallel} parallel)"
+        echo "  walltime: shard=${shard_walltime} merge=${merge_walltime}"
+    else
+        echo "  walltime: monolithic=${monolithic_walltime}"
     fi
 fi

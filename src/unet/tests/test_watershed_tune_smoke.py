@@ -6,10 +6,7 @@ import pytest
 
 from common.merged_view_pq import MERGED_VIEW_PQ_RESULT_KEYS
 from unet.extraction_tune_scoring import WatershedParamSet
-from unet.watershed_tune_smoke import (
-    default_smoke_watershed_params,
-    run_watershed_tune_smoke,
-)
+from unet.watershed_tune_smoke import run_watershed_tune_smoke
 
 
 def test_run_watershed_tune_smoke_scores_one_combo_with_phase_timings(
@@ -17,7 +14,7 @@ def test_run_watershed_tune_smoke_scores_one_combo_with_phase_timings(
 ) -> None:
     """INTENT: smoke harness scores one combo and logs watershed and metrics phase timings."""
     mean_pq, per_sample = run_watershed_tune_smoke(
-        default_smoke_watershed_params(),
+        WatershedParamSet(5, 0, 1, 0, False, None, h_maxima=0),
         height=64,
         width=64,
         sample_id="train",

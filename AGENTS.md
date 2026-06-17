@@ -16,6 +16,7 @@ This repo is EARLY WIP. Long term maintainability is a core priority: proposing 
 - Don't test documentation content
 - Skip trivial tests. Before writing test, write their intent in a docstring starting with "INTENT:"
 - Tests should not read source, shell, or markdown files to assert substrings or structure
+- Tests should not assert specific values for configurable parameters. Use tmp_path fixtures with minimal grids
 
 ## Agent skills
 

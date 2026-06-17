@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from common.test_inference import load_test_inference_recipe
+from common.test_inference import (
+    load_test_inference_recipe,
+    profile_tune_candidate_from_conf,
+    profile_tune_fixed_mask_threshold,
+)
+from common.tests.test_inference_fixtures import write_minimal_test_inference_recipe
 
 
 def test_load_test_inference_recipe_yolo_profile_from_yaml(tmp_path: Path) -> None:
@@ -50,24 +55,26 @@ unet:
     assert profile.match_threshold == 0.7
 
 
-def test_profile_tune_candidate_from_conf_uses_recipe_mask_threshold() -> None:
+def test_profile_tune_candidate_from_conf_uses_recipe_mask_threshold(
+    tmp_path: Path,
+) -> None:
     """INTENT: profile_tune_candidate_from_conf pairs conf with the fixed recipe mask threshold only."""
-    from common.test_inference import (
-        profile_tune_candidate_from_conf,
-        profile_tune_fixed_mask_threshold,
-    )
+    recipe_path = write_minimal_test_inference_recipe(tmp_path / "test_inference.yaml")
+    recipe = load_test_inference_recipe(recipe_path)
+    fixed_mask = profile_tune_fixed_mask_threshold(recipe)
 
-    candidate = profile_tune_candidate_from_conf(0.25)
+    candidate = profile_tune_candidate_from_conf(0.25, recipe=recipe)
     assert candidate.conf == 0.25
-    assert candidate.mask_threshold == profile_tune_fixed_mask_threshold()
+    assert candidate.mask_threshold == fixed_mask
     assert not hasattr(candidate, "postprocess_type")
     assert candidate.to_dict() == {
         "conf": 0.25,
-        "mask_threshold": profile_tune_fixed_mask_threshold(),
+        "mask_threshold": fixed_mask,
     }
 
 
 def test_emit_shell_exports_yolo_inference_profile(
+    tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """INTENT: emit_shell_exports prints export statements for YOLO inference profile environment variables."""
@@ -78,7 +85,9 @@ def test_emit_shell_exports_yolo_inference_profile(
         emit_shell_exports,
     )
 
-    base = load_test_inference_recipe()
+    base = load_test_inference_recipe(
+        write_minimal_test_inference_recipe(tmp_path / "test_inference.yaml")
+    )
     recipe = TestInferenceRecipe(
         whole=base.whole,
         patch=base.patch,

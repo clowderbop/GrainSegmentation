@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 import numpy as np
@@ -24,10 +25,11 @@ from unet.instance_masks import (
     watershed_base_extraction,
     watershed_seed_count,
 )
-from unet.watershed_tune_grid import (
-    iter_watershed_tune_param_sets,
-    load_watershed_tune_grid,
+from unet.tests.watershed_tune_grid_fixtures import (
+    load_grid_from_axes,
+    minimal_grid_axes,
 )
+from unet.watershed_tune_grid import iter_watershed_tune_param_sets
 
 
 def _two_grain_semantic(height: int = 64, width: int = 64) -> np.ndarray:
@@ -291,10 +293,15 @@ def test_phased_extraction_matches_monolithic_for_representative_params(
     np.testing.assert_array_equal(phased, reference)
 
 
-def test_phased_extraction_matches_monolithic_for_default_grid() -> None:
-    """INTENT: phased watershed extraction matches monolithic reference across the default tune grid."""
+def test_phased_extraction_matches_monolithic_for_minimal_tune_grid(
+    tmp_path: Path,
+) -> None:
+    """INTENT: phased watershed extraction matches monolithic reference across a minimal tune grid."""
     semantic = _two_grain_semantic_with_boundaries()
-    grid = load_watershed_tune_grid().grid
+    grid = load_grid_from_axes(
+        tmp_path,
+        minimal_grid_axes(h_maxima=[0, 4], watershed_connectivity=[1, 2]),
+    )
     for params in iter_watershed_tune_param_sets(grid):
         reference = _monolithic_watershed_reference(
             semantic,

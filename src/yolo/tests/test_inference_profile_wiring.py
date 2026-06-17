@@ -13,6 +13,7 @@ import pytest
 from common.prediction_set import PredictionSet
 from common.run_provenance import load_run_provenance
 from common.test_inference import load_test_inference_recipe, sahi_overlap_ratio
+from common.tests.test_inference_fixtures import write_minimal_test_inference_recipe
 from yolo import predict as predict_module
 
 
@@ -39,11 +40,12 @@ def _resolved_defaults(recipe_path: Path | None = None) -> dict[str, object]:
     }
 
 
-def test_predict_cli_defaults_match_test_inference_recipe() -> None:
+def test_predict_cli_defaults_match_test_inference_recipe(tmp_path: Path) -> None:
     """INTENT: resolve_predict_inference_defaults matches conf, mask threshold, and slice settings from the test recipe."""
-    recipe = load_test_inference_recipe()
+    recipe_path = write_minimal_test_inference_recipe(tmp_path / "test_inference.yaml")
+    recipe = load_test_inference_recipe(recipe_path)
     profile = recipe.yolo.profile
-    defaults = _resolved_defaults()
+    defaults = _resolved_defaults(recipe_path)
     assert defaults["conf"] == recipe.yolo.conf
     assert defaults["mask_threshold"] == profile.mask_threshold
     assert defaults["slice_height"] == recipe.whole.window

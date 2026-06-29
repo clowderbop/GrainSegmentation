@@ -20,10 +20,13 @@ from unet.watershed_tune_grid_shard import (
 
 WatershedTuneWalltimeRole = Literal["monolithic", "shard", "merge"]
 
-# Jun 2026 train whole-section timing (52k×10k): ~2 h / 12 combos per shard,
-# ~12–15 h / 84 combos per shard — see docs/runbooks/unet.md#watershed-tuning.
+# Jun 2026 train whole-section timing (52k×10k):
+# - Pre-/low-h_maxima grids: ~10 min/combo (~2 h / 12 combos per shard).
+# - Refinement h_maxima≥28: ~18 min/combo (multi-channel) to ~28 min/combo (PPL,
+#   PPLPPXblend); use the high end so monolithic jobs do not time out.
+# See docs/runbooks/unet.md#watershed-tuning.
 WATERSHED_TUNE_WALLTIME_SETUP_SECONDS = 30 * 60
-WATERSHED_TUNE_WALLTIME_SECONDS_PER_COMBO = 10 * 60
+WATERSHED_TUNE_WALLTIME_SECONDS_PER_COMBO = 28 * 60
 WATERSHED_TUNE_WALLTIME_HEADROOM = 1.25
 WATERSHED_TUNE_WALLTIME_MIN_SECONDS = 60 * 60
 WATERSHED_TUNE_WALLTIME_MAX_SECONDS = 48 * 60 * 60

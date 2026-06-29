@@ -271,9 +271,9 @@ def test_submit_watershed_tuning_dry_run_honors_shard_max_parallel_env(
 
 def test_watershed_tune_walltime_scales_with_combo_count() -> None:
     """INTENT: tune wall time grows with scored combo count and applies a minimum floor."""
-    assert watershed_tune_walltime_for_combo_count(5) == "01:40:00"
-    assert watershed_tune_walltime_for_combo_count(12) == "03:07:30"
-    assert watershed_tune_walltime_for_combo_count(84) == "18:07:30"
+    assert watershed_tune_walltime_for_combo_count(5) == "03:32:30"
+    assert watershed_tune_walltime_for_combo_count(12) == "07:37:30"
+    assert watershed_tune_walltime_for_combo_count(84) == "2-00:00:00"
 
 
 def test_watershed_tune_walltime_roles_derive_from_grid_yaml(tmp_path: Path) -> None:
@@ -295,10 +295,10 @@ def test_watershed_tune_walltime_roles_derive_from_grid_yaml(tmp_path: Path) -> 
             min_area_px=[0, 64],
         ),
     )
-    assert watershed_tune_shard_walltime_for_grid_config(shard_grid) == "03:07:30"
+    assert watershed_tune_shard_walltime_for_grid_config(shard_grid) == "07:37:30"
     assert (
         watershed_tune_monolithic_walltime_for_grid_config(monolithic_grid)
-        == "05:37:30"
+        == "14:37:30"
     )
 
 
@@ -356,7 +356,7 @@ def test_submit_watershed_tuning_dry_run_passes_grid_derived_walltime(
         minimal_grid_axes(h_maxima=[0, 4], min_area_px=[0]),
     )
     expected_walltime = watershed_tune_shard_walltime_for_grid_config(grid_path)
-    assert expected_walltime == "01:02:30"
+    assert expected_walltime == "01:47:30"
     env = {**os.environ, "GRID_CONFIG": str(grid_path)}
     result = subprocess.run(
         [

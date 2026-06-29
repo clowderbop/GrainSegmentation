@@ -56,20 +56,14 @@ function log_watershed_extract_config {
 
 function log_cc_extract_config {
     local model_label="$1"
-    local resolved_ws_json="${2:-}"
-    local min_area_px="${3:-0}"
+    local min_area_px="${2:-0}"
 
     if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
         echo "Model $model_label: CC min_area_px=$CC_MIN_AREA_PX (CC_MIN_AREA_PX override)"
         return 0
     fi
 
-    if [[ -z "$resolved_ws_json" ]]; then
-        echo "Model $model_label: CC (no tune JSON; min_area_px=$min_area_px default)"
-        return 0
-    fi
-
-    echo "Model $model_label: CC tune JSON: $resolved_ws_json (min_area_px=$min_area_px)"
+    echo "Model $model_label: CC min_area_px=$min_area_px (default)"
 }
 
 function usage {
@@ -292,7 +286,7 @@ if [[ "$INSTANCE_METHOD" == "cc" ]]; then
     if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
         echo "CC min_area_px: $CC_MIN_AREA_PX (CC_MIN_AREA_PX override)"
     else
-        echo "CC min_area_px: from tune JSON when available, else 0"
+        echo "CC min_area_px: ${DEFAULT_CC_MIN_AREA_PX:-512} (default)"
     fi
 fi
 
@@ -348,7 +342,7 @@ for i in "${!MODEL_PATHS[@]}"; do
                 break
             fi
         done
-        log_cc_extract_config "${MODEL_LABELS[$i]}" "$RESOLVED_WATERSHED_JSON" "$cc_min_area_px"
+        log_cc_extract_config "${MODEL_LABELS[$i]}" "$cc_min_area_px"
     fi
 
     echo "Model ${MODEL_LABELS[$i]}: predict"

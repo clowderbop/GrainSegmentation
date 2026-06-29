@@ -69,8 +69,8 @@ def test_submit_cc_vs_watershed_train_eval_dry_run_passes_tune_root_to_cc_job() 
     assert "--instance-method" in cc_lines[0] and " cc " in f" {cc_lines[0]} "
 
 
-def test_build_cc_extract_args_uses_tune_json_min_area_px(tmp_path: Path) -> None:
-    """INTENT: CC whole eval passes tuned min_area_px from watershed_best JSON to extract_instances."""
+def test_build_cc_extract_args_uses_default_min_area_px(tmp_path: Path) -> None:
+    """INTENT: CC whole eval uses DEFAULT_CC_MIN_AREA_PX when CC_MIN_AREA_PX is unset."""
     tune_root = tmp_path / "watershed_tune"
     variant_dir = tune_root / "PPL"
     variant_dir.mkdir(parents=True)
@@ -90,12 +90,9 @@ def test_build_cc_extract_args_uses_tune_json_min_area_px(tmp_path: Path) -> Non
 
     assert result.returncode == 0, result.stderr
     lines = result.stdout.splitlines()
-    assert lines[0].startswith("resolved=")
-    assert lines[0].endswith("watershed_best_1.json")
+    assert lines[0] == "resolved="
     tokens = lines[1].split()
-    assert tokens[:2] == ["--instance-method", "cc"]
-    min_area_idx = tokens.index("--min-area-px")
-    assert tokens[min_area_idx + 1] == "256"
+    assert tokens == ["--instance-method", "cc", "--min-area-px", "512"]
 
 
 def test_build_cc_extract_args_cc_min_area_px_override_skips_tune_root_resolution(

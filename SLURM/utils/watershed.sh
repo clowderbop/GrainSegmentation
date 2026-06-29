@@ -127,38 +127,20 @@ resolve_watershed_json_lenient() {
     printf '\n'
 }
 
+# Train CC sweep winner (Jun 2026); override via CC_MIN_AREA_PX.
+DEFAULT_CC_MIN_AREA_PX="${DEFAULT_CC_MIN_AREA_PX:-512}"
+
 # Sets global extract_args for CC extract_instances.
-# Uses CC_MIN_AREA_PX when set; otherwise reads min_area_px from resolved tune JSON.
+# Uses CC_MIN_AREA_PX when set; otherwise DEFAULT_CC_MIN_AREA_PX.
 build_cc_extract_args() {
-    local model_path="$1"
-    local explicit_ws="${2:-}"
-    local resolved_ws_json=""
+    local _model_path="$1"
+    local _explicit_ws="${2:-}"
 
     # shellcheck disable=SC2034
     extract_args=(--instance-method cc)
     RESOLVED_WATERSHED_JSON=""
 
-    if [[ -n "${CC_MIN_AREA_PX:-}" ]]; then
-        extract_args+=(--min-area-px "$CC_MIN_AREA_PX")
-        return 0
-    fi
-
-    if ! resolved_ws_json="$(resolve_watershed_json_for_model "$MODEL_DIR" "$explicit_ws" "$model_path")"; then
-        return 1
-    fi
-
-    RESOLVED_WATERSHED_JSON="$resolved_ws_json"
-
-    if [[ -z "$resolved_ws_json" ]]; then
-        return 0
-    fi
-
-    require_file "$resolved_ws_json" "Watershed tuning JSON not found"
-
-    local min_area_px=""
-    if ! min_area_px="$(run_common_in_unet_env -m unet.watershed_json_min_area_px "$resolved_ws_json")"; then
-        return 1
-    fi
+    local min_area_px="${CC_MIN_AREA_PX:-$DEFAULT_CC_MIN_AREA_PX}"
     extract_args+=(--min-area-px "$min_area_px")
 }
 
